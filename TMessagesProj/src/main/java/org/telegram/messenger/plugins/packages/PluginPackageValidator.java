@@ -23,6 +23,9 @@ import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
+import org.telegram.messenger.plugins.risk.PluginRiskAnalyzer;
+import org.telegram.messenger.plugins.risk.PluginRiskReport;
+
 public final class PluginPackageValidator {
     public static final long MAX_ARCHIVE_BYTES = 8L * 1024 * 1024;
     public static final long MAX_UNPACKED_BYTES = 32L * 1024 * 1024;
@@ -35,6 +38,7 @@ public final class PluginPackageValidator {
         public final PluginManifest manifest;
         public final String sha256;
         public final byte[] iconBytes;
+        public final PluginRiskReport riskReport;
         public final long archiveBytes, unpackedBytes;
         public final int fileCount;
 
@@ -44,13 +48,15 @@ public final class PluginPackageValidator {
                 long archiveBytes,
                 long unpackedBytes,
                 int fileCount,
-                byte[] iconBytes) {
+                byte[] iconBytes,
+                PluginRiskReport riskReport) {
             this.manifest = manifest;
             this.iconBytes = iconBytes;
             this.sha256 = hash;
             this.archiveBytes = archiveBytes;
             this.unpackedBytes = unpackedBytes;
             this.fileCount = fileCount;
+            this.riskReport = riskReport;
         }
     }
 
@@ -204,12 +210,14 @@ public final class PluginPackageValidator {
                         "Missing Python entrypoint file");
             }
 
+            byte[] dexBytes = null;
+
             if (manifest.javaModule != null) {
                 require(Boolean.FALSE.equals(paths.get(manifest.javaModule.path)), "Missing Java module");
 
                 try (ZipFile zip = new ZipFile(snapshot);
                         InputStream in = zip.getInputStream(zip.getEntry(manifest.javaModule.path))) {
-                    PluginDexValidator.read(in, manifest.javaModule);
+                    dexBytes = PluginDexValidator.read(in, manifest.javaModule);
                 }
             }
 
@@ -232,7 +240,21 @@ public final class PluginPackageValidator {
                 validateIcon(iconBytes, manifest.icon);
             }
 
-            return new Result(manifest, hex(digest.digest()), archiveBytes, total, files, iconBytes);
+            String archiveSha256 = hex(digest.digest());
+            PluginRiskReport riskReport = PluginRiskAnalyzer.analyze(
+                    snapshot,
+                    manifest,
+                    archiveSha256,
+                    dexBytes);
+
+            return new Result(
+                    manifest,
+                    archiveSha256,
+                    archiveBytes,
+                    total,
+                    files,
+                    iconBytes,
+                    riskReport);
         } finally {
             if (!snapshot.delete() && snapshot.exists()) {
                 throw new IOException("Could not remove temporary plugin archive");
@@ -372,7 +394,8 @@ public final class PluginPackageValidator {
                 !parts[0].equalsIgnoreCase("fluxgram") && !parts[0].equalsIgnoreCase("fluxgram.py"),
                 "Do not bundle the FluxGram SDK");
 
-        require(!parts[0].equalsIgnoreCase(".fluxgram-source.fgplugin"),
+        require(!parts[0].equalsIgnoreCase(".fluxgram-source.fgplugin")
+                        && !parts[0].equalsIgnoreCase(".fluxgram-risk-report"),
                 "Reserved package path");
 
         return path;

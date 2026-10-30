@@ -11,8 +11,13 @@ import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
+import org.telegram.messenger.plugins.risk.PluginRiskReport;
+import org.telegram.messenger.plugins.risk.PluginRiskAnalyzer;
+import org.telegram.messenger.plugins.risk.PluginRiskPolicy;
+
 public final class PluginPackageStore {
     public static final String SOURCE_ARCHIVE = ".fluxgram-source.fgplugin";
+    public static final String RISK_REPORT = ".fluxgram-risk-report";
 
     private final File root, cache;
     private Map<String, String> pendingErrors = Collections.emptyMap();
@@ -20,10 +25,12 @@ public final class PluginPackageStore {
     public static final class Installed {
         public final PluginManifest manifest;
         public final File directory;
+        public final PluginRiskReport riskReport;
 
-        Installed(PluginManifest manifest, File directory) {
+        Installed(PluginManifest manifest, File directory, PluginRiskReport riskReport) {
             this.manifest = manifest;
             this.directory = directory;
+            this.riskReport = riskReport;
         }
     }
 
@@ -120,6 +127,11 @@ public final class PluginPackageStore {
                 throw new IOException("Archive changed after review");
             }
 
+            if (PluginRiskPolicy.evaluateInstall(checked.riskReport).decision
+                    == PluginRiskPolicy.Decision.BLOCK) {
+                throw new IOException("Plugin package is blocked by static risk analysis");
+            }
+
             File destination = new File(root, checked.manifest.id);
 
             String id = checked.manifest.id;
@@ -202,6 +214,11 @@ public final class PluginPackageStore {
                 out.getFD().sync();
             }
 
+            try (FileOutputStream out = new FileOutputStream(new File(payload, RISK_REPORT))) {
+                out.write(checked.riskReport.encode());
+                out.getFD().sync();
+            }
+
             if (beforePublish != null) {
                 beforePublish.run();
             }
@@ -212,7 +229,7 @@ public final class PluginPackageStore {
 
             staging = null;
 
-            return new Installed(checked.manifest, destination);
+            return new Installed(checked.manifest, destination, checked.riskReport);
         } finally {
             frozen.delete();
 
@@ -319,7 +336,33 @@ public final class PluginPackageStore {
             throw new IOException("Invalid installed plugin " + expectedId);
         }
 
-        return new Installed(manifest, folder);
+        PluginRiskReport riskReport = null;
+        File riskFile = new File(folder, RISK_REPORT);
+
+        if (riskFile.isFile()) {
+            ByteArrayOutputStream encoded = new ByteArrayOutputStream();
+
+            try {
+                try (InputStream in = new FileInputStream(riskFile)) {
+                    copy(in, encoded, 64 * 1024);
+                }
+
+                riskReport = PluginRiskReport.decode(encoded.toByteArray());
+
+                if (!riskReport.pluginId.equals(manifest.id)
+                        || !riskReport.pluginVersion.equals(manifest.version)
+                        || riskReport.packageSchemaVersion != manifest.schemaVersion
+                        || riskReport.analyzerVersion != PluginRiskAnalyzer.ANALYZER_VERSION
+                        || !PluginRiskAnalyzer.ANALYSIS_CONTEXT_FINGERPRINT.equals(
+                                riskReport.hostFingerprint)) {
+                    riskReport = null;
+                }
+            } catch (IOException ignored) {
+                riskReport = null;
+            }
+        }
+
+        return new Installed(manifest, folder, riskReport);
     }
 
     private static void validateId(String id) throws IOException {

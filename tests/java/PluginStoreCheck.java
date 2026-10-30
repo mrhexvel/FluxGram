@@ -12,6 +12,13 @@ public final class PluginStoreCheck {
                 store.install(new File(args[3]), args[4]);
             }
 
+            if (args[0].equals("installhook")) {
+                store.install(
+                        new File(args[3]),
+                        args[4],
+                        () -> System.out.println("hook"));
+            }
+
             if (args[0].equals("update")) {
                 store.scheduleUpdate(
                         new File(args[3]),
@@ -85,6 +92,14 @@ public final class PluginStoreCheck {
 
             if (args[0].equals("export")) {
                 System.out.println(store.export(args[3], new File(args[4])).getAbsolutePath());
+                return;
+            }
+
+            if (args[0].equals("risk")) {
+                PluginPackageStore.Installed installed = store.get(args[3]);
+                System.out.println(installed.riskReport == null
+                        ? "legacy"
+                        : installed.riskReport.archiveSha256);
                 return;
             }
 

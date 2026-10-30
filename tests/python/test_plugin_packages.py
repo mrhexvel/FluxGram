@@ -50,6 +50,7 @@ class PluginPackagesTest(unittest.TestCase):
         folder = (
             ROOT / "TMessagesProj/src/main/java/org/telegram/messenger/plugins/packages"
         )
+        risk = ROOT / "TMessagesProj/src/main/java/org/telegram/messenger/plugins/risk"
         subprocess.run(
             [
                 "javac",
@@ -61,6 +62,12 @@ class PluginPackagesTest(unittest.TestCase):
                 str(folder / "PluginPackageValidator.java"),
                 str(folder / "PluginDexValidator.java"),
                 str(folder / "PluginPackageStore.java"),
+                str(risk / "PluginRiskEvidence.java"),
+                str(risk / "PluginRiskCatalog.java"),
+                str(risk / "PluginRiskReport.java"),
+                str(risk / "PluginRiskDiff.java"),
+                str(risk / "PluginRiskPolicy.java"),
+                str(risk / "PluginRiskAnalyzer.java"),
                 str(ROOT / "tests/java/PluginStoreCheck.java"),
                 str(ROOT / "tests/java/PluginPackageCheck.java"),
             ],
@@ -119,18 +126,93 @@ class PluginPackagesTest(unittest.TestCase):
     def test_source_archive_path_is_reserved(self):
         self.validate(self.archive(entries=[(".fluxgram-source.fgplugin", "fake")]), False)
         self.validate(self.archive(entries=[(".FLUXGRAM-SOURCE.fgplugin/payload", "fake")]), False)
+        self.validate(self.archive(entries=[(".fluxgram-risk-report", "fake")]), False)
+        self.validate(self.archive(entries=[(".FLUXGRAM-RISK-REPORT/payload", "fake")]), False)
 
     @staticmethod
-    def dex_fixture(descriptor="Lexample/Module;"):
+    def finalize_dex(data, data_offset, map_entries):
+        while len(data) % 4:
+            data.append(0)
+        map_offset = len(data)
+        entries = [(0x0000, 1, 0), *map_entries, (0x1000, 1, map_offset)]
+        entries.sort(key=lambda item: item[2])
+        data += struct.pack("<I", len(entries))
+        for kind, count, offset in entries:
+            data += struct.pack("<HHII", kind, 0, count, offset)
+        struct.pack_into("<II", data, 104, len(data) - data_offset, data_offset)
+        struct.pack_into("<I", data, 52, map_offset)
+        struct.pack_into("<I", data, 32, len(data))
+        data[12:32] = hashlib.sha1(data[32:]).digest()
+        struct.pack_into("<I", data, 8, zlib.adler32(data[12:]) & 0xFFFFFFFF)
+        return bytes(data)
+
+    @staticmethod
+    def reseal_dex(data):
+        data = bytearray(data)
+        data[12:32] = hashlib.sha1(data[32:]).digest()
+        struct.pack_into("<I", data, 8, zlib.adler32(data[12:]) & 0xFFFFFFFF)
+        return bytes(data)
+
+    @classmethod
+    def modern_dex(cls, opcode):
+        original = cls.risk_dex("Lexample/Module;", "target")
+        map_offset = struct.unpack_from("<I", original, 52)[0]
+        map_count = struct.unpack_from("<I", original, map_offset)[0]
+        maps = []
+        for index in range(map_count):
+            position = map_offset + 4 + index * 12
+            kind, _, count, offset = struct.unpack_from("<HHII", original, position)
+            if kind not in {0x0000, 0x1000}:
+                maps.append((kind, count, offset))
+        data = bytearray(original[:map_offset])
+        code = 512
+        extra = []
+
+        if opcode == 0xFA:
+            units = [0x00FA, 0, 0, 0, 0x000E]
+        elif opcode == 0xFC:
+            units = [0x00FC, 0, 0, 0x000E]
+            while len(data) <= 448:
+                data.append(0)
+            struct.pack_into("<I", data, 440, 448)
+            data[448] = 0
+            extra = [(0x0007, 1, 440), (0x2005, 1, 448)]
+        elif opcode == 0xFE:
+            units = [0x00FE, 0, 0x000E]
+            while len(data) < 448:
+                data.append(0)
+            struct.pack_into("<HHHH", data, 440, 4, 0, 0, 0)
+            extra = [(0x0008, 1, 440)]
+        elif opcode == 0xFF:
+            units = [0x00FF, 0, 0x000E]
+        else:
+            raise AssertionError(opcode)
+
+        instructions = struct.pack("<" + "H" * len(units), *units)
+        required = code + 16 + len(instructions)
+        if len(data) < required:
+            data.extend(b"\x00" * (required - len(data)))
+        struct.pack_into("<I", data, code + 12, len(units))
+        data[code + 16:required] = instructions
+        maps.extend(extra)
+        return cls.finalize_dex(data, struct.unpack_from("<I", data, 108)[0], maps)
+
+    @classmethod
+    def dex_fixture(cls, descriptor="Lexample/Module;"):
         encoded = descriptor.encode()
         data = bytearray(152) + bytes([len(encoded)]) + encoded + b"\x00"
         data[:8] = b"dex\n035\x00"
-        struct.pack_into("<III", data, 32, len(data), 112, 0x12345678)
+        struct.pack_into("<III", data, 32, 0, 112, 0x12345678)
         struct.pack_into("<II", data, 56, 1, 112)
         struct.pack_into("<II", data, 64, 1, 116)
         struct.pack_into("<II", data, 96, 1, 120)
         struct.pack_into("<I", data, 112, 152)
-        return bytes(data)
+        return cls.finalize_dex(data, 152, [
+            (0x0001, 1, 112),
+            (0x0002, 1, 116),
+            (0x0006, 1, 120),
+            (0x2002, 1, 152),
+        ])
 
     @staticmethod
     def java_fields(data):
@@ -144,6 +226,371 @@ class PluginPackagesTest(unittest.TestCase):
                 "min_api_minor": 0,
             },
         }
+
+    @classmethod
+    def risk_dex(
+        cls,
+        owner,
+        method,
+        const_string=None,
+        native=False,
+        oversized_code=False,
+        shared_code=False,
+    ):
+        def uleb(value):
+            result = bytearray()
+            while True:
+                current = value & 0x7F
+                value >>= 7
+                result.append(current | (0x80 if value else 0))
+                if not value:
+                    return bytes(result)
+
+        values = ["Lexample/Module;", owner, method, "V"]
+        if shared_code:
+            values.append(method + "Again")
+        if const_string is not None:
+            values.append(const_string)
+        string_ids = 112
+        type_ids = string_ids + len(values) * 4
+        proto_ids = type_ids + 12
+        method_count = 2 if shared_code else 1
+        method_ids = proto_ids + 12
+        class_defs = method_ids + method_count * 8
+        cursor = class_defs + 32
+        offsets = []
+        encoded_strings = bytearray()
+        for value in values:
+            offsets.append(cursor + len(encoded_strings))
+            raw = value.encode()
+            encoded_strings += uleb(len(value)) + raw + b"\x00"
+        class_data = cursor + len(encoded_strings)
+        code = 512
+
+        if native:
+            encoded_class = b"\x00\x00\x01\x00\x00" + uleb(0x101) + b"\x00"
+            instructions = b""
+        else:
+            encoded_class = b"\x00\x00" + bytes([method_count]) + b"\x00\x00\x01" + uleb(code)
+            if shared_code:
+                encoded_class += b"\x01\x01" + uleb(code)
+            units = []
+            if const_string is not None:
+                units.extend((0x001A, len(values) - 1))
+            units.extend((0x0071, 0, 0, 0x000E))
+            instructions = struct.pack("<" + "H" * len(units), *units)
+
+        instruction_count = 262145 if oversized_code else len(instructions) // 2
+        length = code + 16 + instruction_count * 2 if not native else class_data + len(encoded_class)
+        data = bytearray(length)
+        data[:8] = b"dex\n035\x00"
+        struct.pack_into("<III", data, 32, 0, 112, 0x12345678)
+        struct.pack_into("<II", data, 56, len(values), string_ids)
+        struct.pack_into("<II", data, 64, 3, type_ids)
+        struct.pack_into("<II", data, 72, 1, proto_ids)
+        struct.pack_into("<II", data, 88, method_count, method_ids)
+        struct.pack_into("<II", data, 96, 1, class_defs)
+        for index, offset in enumerate(offsets):
+            struct.pack_into("<I", data, string_ids + index * 4, offset)
+        struct.pack_into("<III", data, type_ids, 0, 1, 3)
+        struct.pack_into("<III", data, proto_ids, 3, 2, 0)
+        struct.pack_into("<HHI", data, method_ids, 1, 0, 2)
+        if shared_code:
+            struct.pack_into("<HHI", data, method_ids + 8, 1, 0, 4)
+        struct.pack_into("<IIIIIIII", data, class_defs, 0, 1, 0xFFFFFFFF, 0, 0, 0, class_data, 0)
+        data[cursor:cursor + len(encoded_strings)] = encoded_strings
+        data[class_data:class_data + len(encoded_class)] = encoded_class
+        if not native:
+            struct.pack_into("<HHHHII", data, code, 1, 0, 0, 0, 0, instruction_count)
+            if not oversized_code:
+                data[code + 16:code + 16 + len(instructions)] = instructions
+        maps = [
+            (0x0001, len(values), string_ids),
+            (0x0002, 3, type_ids),
+            (0x0003, 1, proto_ids),
+            (0x0005, method_count, method_ids),
+            (0x0006, 1, class_defs),
+            (0x2002, len(values), cursor),
+            (0x2000, 1, class_data),
+        ]
+        if not native:
+            maps.append((0x2001, 1, code))
+        return cls.finalize_dex(data, cursor, maps)
+
+    @classmethod
+    def count_limit_dex(cls):
+        string_count = 65537
+        string_ids = 112
+        type_ids = string_ids + string_count * 4
+        class_defs = type_ids + 4
+        descriptor = b"Lexample/Module;"
+        string_data = class_defs + 32
+        data = bytearray(string_data + 1 + len(descriptor) + 1)
+        data[:8] = b"dex\n035\x00"
+        struct.pack_into("<III", data, 32, 0, 112, 0x12345678)
+        struct.pack_into("<II", data, 56, string_count, string_ids)
+        struct.pack_into("<II", data, 64, 1, type_ids)
+        struct.pack_into("<II", data, 96, 1, class_defs)
+        struct.pack_into("<I", data, string_ids, string_data)
+        struct.pack_into("<I", data, type_ids, 0)
+        struct.pack_into("<I", data, class_defs, 0)
+        data[string_data] = len(descriptor)
+        data[string_data + 1:string_data + 1 + len(descriptor)] = descriptor
+        return cls.finalize_dex(data, string_data, [
+            (0x0001, string_count, string_ids),
+            (0x0002, 1, type_ids),
+            (0x0006, 1, class_defs),
+            (0x2002, 1, string_data),
+        ])
+
+    @staticmethod
+    def output_values(lines, prefix):
+        return [line[len(prefix):] for line in lines if line.startswith(prefix)]
+
+    def test_risk_report_manifest_facts_and_python_digest(self):
+        first = self.archive(entries=[
+            ("helpers/z.py", b"last"),
+            ("helpers/a.py", b"first"),
+            ("assets/data", b"ignored"),
+        ])
+        reordered = self.archive(entries=[
+            ("helpers/a.py", b"first"),
+            ("helpers/z.py", b"last"),
+            ("assets/data", b"ignored"),
+        ])
+        second = self.archive(entries=[("helpers/b.py", b"first"), ("assets/data", b"ignored")])
+        changed = self.archive(entries=[("helpers/a.py", b"second"), ("assets/data", b"ignored")])
+
+        first_output = self.validate(first, True)
+        reordered_output = self.validate(reordered, True)
+        second_output = self.validate(second, True)
+        changed_output = self.validate(changed, True)
+        first_modules = self.output_values(first_output, "module:python:")
+        reordered_modules = self.output_values(reordered_output, "module:python:")
+        second_modules = self.output_values(second_output, "module:python:")
+        changed_modules = self.output_values(changed_output, "module:python:")
+
+        expected = hashlib.sha256()
+        python_entries = {
+            "main.py": b'raise RuntimeError("Validation must not execute this")\n',
+            "helpers/a.py": b"first",
+            "helpers/z.py": b"last",
+        }
+        for path, content in sorted(python_entries.items()):
+            encoded_path = path.encode()
+            expected.update(struct.pack(">I", len(encoded_path)))
+            expected.update(encoded_path)
+            expected.update(struct.pack(">Q", len(content)))
+            expected.update(content)
+
+        self.assertEqual(first_output[4], "1")
+        self.assertRegex(first_output[5], r"^[0-9a-f]{64}$")
+        self.assertNotEqual(
+            first_output[5],
+            "f2ff60d61f95bb4c1587fecde7d32978e38bbd8c4e3aec2b8d0a9bcdd7e98e6b",
+        )
+        self.assertEqual(first_modules, [expected.hexdigest()])
+        self.assertEqual(first_modules, reordered_modules)
+        self.assertNotEqual(first_modules, second_modules)
+        self.assertNotEqual(first_modules, changed_modules)
+        evidence = set(self.output_values(first_output, "evidence:"))
+        self.assertIn("access.full_process.python:null", evidence)
+        self.assertIn("python.top_level.preflight:main.py", evidence)
+
+    def test_archive_executable_and_native_payload_classification(self):
+        entries = [
+            ("extra.dex", b"data"),
+            ("extra.jar", b"data"),
+            ("extra.apk", b"data"),
+            ("Extra.class", b"data"),
+            ("cache.pyc", b"data"),
+            ("cache.pyo", b"data"),
+            ("native.bin", b"\x7fELFpayload"),
+            ("library.so", b"data"),
+        ]
+        output = self.validate(self.archive(entries=entries), True)
+        evidence = "\n".join(self.output_values(output, "evidence:"))
+        self.assertIn("block.archive.undeclared_executable", evidence)
+        self.assertIn("block.archive.native_payload_forbidden", evidence)
+        self.assertIn("BLOCK", self.output_values(output, "decision:"))
+
+        hidden_dex = self.dex_fixture()
+        output = self.validate(self.archive(entries=[("payload.bin", hidden_dex)]), True)
+        evidence = "\n".join(self.output_values(output, "evidence:"))
+        self.assertIn("block.archive.undeclared_executable", evidence)
+
+        java = self.dex_fixture()
+        java_only = {
+            key: value
+            for key, value in MANIFEST.items()
+            if key not in {"sdk_version", "min_sdk_minor", "entrypoint"}
+        }
+        java_only.update({"schema_version": 4, "java_module": self.java_fields(java)["java_module"]})
+        output = self.validate(self.archive(
+            raw_manifest=json.dumps(java_only),
+            entries=[("java/module.dex", java), ("hidden.py", b"pass")],
+            include_python=False,
+        ), True)
+        self.assertTrue(any(
+            value.startswith("block.archive.undeclared_executable:")
+            for value in self.output_values(output, "evidence:")
+        ))
+
+    def test_dex_direct_and_dynamic_reference_evidence(self):
+        direct = self.risk_dex(
+            "Lorg/telegram/messenger/MessagesController;",
+            "getInstance",
+        )
+        output = self.validate(
+            self.archive(fields=self.java_fields(direct), entries=[("java/module.dex", direct)]),
+            True,
+        )
+        ids = {value.split(":", 1)[0] for value in self.output_values(output, "evidence:")}
+        self.assertIn("host.telegram_internal_direct", ids)
+
+        dynamic = self.risk_dex(
+            "Ljava/lang/Class;",
+            "forName",
+            "org.telegram.messenger.MessagesController",
+        )
+        output = self.validate(
+            self.archive(fields=self.java_fields(dynamic), entries=[("java/module.dex", dynamic)]),
+            True,
+        )
+        ids = {value.split(":", 1)[0] for value in self.output_values(output, "evidence:")}
+        self.assertIn("reflection.general", ids)
+        self.assertIn("analysis.dynamic_target", ids)
+        self.assertIn("host.telegram_internal_direct", ids)
+
+    def test_dex_native_declaration_malformed_and_code_budget(self):
+        native = self.risk_dex("Lexample/Module;", "nativeEntry", native=True)
+        output = self.validate(
+            self.archive(fields=self.java_fields(native), entries=[("java/module.dex", native)]),
+            True,
+        )
+        self.assertTrue(any(
+            value.startswith("code.native_loading:")
+            for value in self.output_values(output, "evidence:")
+        ))
+
+        malformed = bytearray(self.risk_dex("Lexample/Module;", "run"))
+        class_offset = struct.unpack_from("<I", malformed, 100)[0]
+        struct.pack_into("<I", malformed, class_offset + 24, len(malformed) + 1)
+        malformed = bytes(malformed)
+        output = self.validate(
+            self.archive(fields=self.java_fields(malformed), entries=[("java/module.dex", malformed)]),
+            True,
+        )
+        self.assertIn("analysis.incomplete", self.output_values(output, "limitation:"))
+        self.assertIn("BLOCK", self.output_values(output, "decision:"))
+
+        oversized = self.risk_dex("Lexample/Module;", "run", oversized_code=True)
+        output = self.validate(
+            self.archive(fields=self.java_fields(oversized), entries=[("java/module.dex", oversized)]),
+            True,
+        )
+        self.assertIn("analysis.limit_exceeded", self.output_values(output, "limitation:"))
+        self.assertIn("BLOCK", self.output_values(output, "decision:"))
+
+        excessive_count = self.count_limit_dex()
+        output = self.validate(
+            self.archive(
+                fields=self.java_fields(excessive_count),
+                entries=[("java/module.dex", excessive_count)],
+            ),
+            True,
+        )
+        self.assertIn("analysis.limit_exceeded", self.output_values(output, "limitation:"))
+        self.assertIn("BLOCK", self.output_values(output, "decision:"))
+
+    def test_dex_container_integrity_and_map_consistency(self):
+        original = self.risk_dex("Lexample/Module;", "run")
+
+        bad_checksum = bytearray(original)
+        struct.pack_into("<I", bad_checksum, 8, 0)
+
+        bad_signature = bytearray(original)
+        bad_signature[12] ^= 1
+        struct.pack_into("<I", bad_signature, 8, zlib.adler32(bad_signature[12:]) & 0xFFFFFFFF)
+
+        bad_data = bytearray(original)
+        struct.pack_into("<I", bad_data, 104, 1)
+        bad_data = self.reseal_dex(bad_data)
+
+        bad_map = bytearray(original)
+        map_offset = struct.unpack_from("<I", bad_map, 52)[0]
+        map_count = struct.unpack_from("<I", bad_map, map_offset)[0]
+        for index in range(map_count):
+            position = map_offset + 4 + index * 12
+            kind = struct.unpack_from("<H", bad_map, position)[0]
+            if kind == 0x0001:
+                struct.pack_into("<I", bad_map, position + 4, 1_000)
+                break
+        bad_map = self.reseal_dex(bad_map)
+
+        unknown_map = bytearray(original)
+        map_offset = struct.unpack_from("<I", unknown_map, 52)[0]
+        map_count = struct.unpack_from("<I", unknown_map, map_offset)[0]
+        for index in range(map_count):
+            position = map_offset + 4 + index * 12
+            kind = struct.unpack_from("<H", unknown_map, position)[0]
+            if kind == 0x2000:
+                struct.pack_into("<H", unknown_map, position, 0x7777)
+                break
+        unknown_map = self.reseal_dex(unknown_map)
+
+        for data in (
+            bytes(bad_checksum),
+            bytes(bad_signature),
+            bad_data,
+            bad_map,
+            unknown_map,
+        ):
+            with self.subTest(digest=hashlib.sha256(data).hexdigest()):
+                output = self.validate(
+                    self.archive(fields=self.java_fields(data), entries=[("java/module.dex", data)]),
+                    True,
+                )
+                self.assertIn("analysis.incomplete", self.output_values(output, "limitation:"))
+                self.assertIn("BLOCK", self.output_values(output, "decision:"))
+
+    def test_optional_offsets_require_matching_map_sections(self):
+        data = bytearray(self.risk_dex("Lexample/Module;", "run"))
+        class_offset = struct.unpack_from("<I", data, 100)[0]
+        map_offset = struct.unpack_from("<I", data, 52)[0]
+        struct.pack_into("<I", data, class_offset + 20, map_offset)
+        struct.pack_into("<I", data, class_offset + 28, map_offset)
+        data = self.reseal_dex(data)
+        output = self.validate(
+            self.archive(fields=self.java_fields(data), entries=[("java/module.dex", data)]),
+            True,
+        )
+        self.assertIn("analysis.incomplete", self.output_values(output, "limitation:"))
+        self.assertIn("BLOCK", self.output_values(output, "decision:"))
+
+    def test_modern_dex_opcodes_are_conservative(self):
+        for opcode in (0xFA, 0xFC, 0xFE, 0xFF):
+            with self.subTest(opcode=hex(opcode)):
+                data = self.modern_dex(opcode)
+                output = self.validate(
+                    self.archive(fields=self.java_fields(data), entries=[("java/module.dex", data)]),
+                    True,
+                )
+                ids = {
+                    value.split(":", 1)[0]
+                    for value in self.output_values(output, "evidence:")
+                }
+                self.assertIn("analysis.dynamic_target", ids)
+                self.assertIn("analysis.obfuscated_or_dynamic", ids)
+                self.assertNotIn("analysis.incomplete", self.output_values(output, "limitation:"))
+
+    def test_shared_code_item_is_scanned_once(self):
+        data = self.risk_dex("Lexample/Module;", "run", shared_code=True)
+        output = self.validate(
+            self.archive(fields=self.java_fields(data), entries=[("java/module.dex", data)]),
+            True,
+        )
+        self.assertNotIn("analysis.incomplete", self.output_values(output, "limitation:"))
 
     def test_java_module_metadata_and_hash(self):
         data = self.dex_fixture()
@@ -484,6 +931,59 @@ class PluginStoreTest(unittest.TestCase):
     setUp = PluginPackagesTest.setUp
     archive = PluginPackagesTest.archive
 
+    def test_block_report_prevents_install_update_and_debug_reload(self):
+        blocked = self.archive(entries=[("extra.dex", b"payload")])
+        self.assertEqual(self.store("installhook", blocked, accepted=False), [])
+        self.assertEqual(self.store("list"), [])
+        self.assertEqual(list((self.root / "installed").iterdir()), [])
+
+        malformed_dex = bytearray(PluginPackagesTest.risk_dex("Lexample/Module;", "run"))
+        struct.pack_into("<I", malformed_dex, 8, 0)
+        malformed_dex = bytes(malformed_dex)
+        malformed_package = self.archive(
+            fields=PluginPackagesTest.java_fields(malformed_dex),
+            entries=[("java/module.dex", malformed_dex)],
+        )
+        self.store("install", malformed_package, accepted=False)
+        self.assertEqual(self.store("list"), [])
+        self.assertEqual(list((self.root / "installed").iterdir()), [])
+
+        self.store("install", self.archive())
+        blocked_update = self.archive(
+            fields={"version": "2.0.0"},
+            entries=[("extra.dex", b"payload")],
+        )
+        self.store(
+            "update",
+            blocked_update,
+            accepted=False,
+            extra=(MANIFEST["id"], MANIFEST["version"], "false"),
+        )
+        self.assertEqual(self.store("pending"), [])
+        self.assertEqual(self.installed_version(), MANIFEST["version"])
+
+        blocked_reload = self.archive(entries=[("extra.dex", b"payload")])
+        self.store(
+            "debugreload",
+            blocked_reload,
+            accepted=False,
+            extra=(MANIFEST["id"], MANIFEST["version"], "true"),
+        )
+        self.assertEqual(self.store("pending"), [])
+        self.assertEqual(self.installed_version(), MANIFEST["version"])
+
+    def test_confirm_report_remains_installable(self):
+        data = PluginPackagesTest.risk_dex(
+            "Lorg/telegram/messenger/MessagesController;",
+            "getInstance",
+        )
+        package = self.archive(
+            fields=PluginPackagesTest.java_fields(data),
+            entries=[("java/module.dex", data)],
+        )
+        self.store("install", package)
+        self.assertEqual(self.store("list"), [MANIFEST["id"]])
+
     def test_java_only_install_export_and_update(self):
         data = PluginPackagesTest.dex_fixture()
         java_only = {
@@ -576,6 +1076,49 @@ class PluginStoreTest(unittest.TestCase):
         self.assertTrue(
             (self.root / "installed" / MANIFEST["id"] / "helpers/__init__.py").is_file()
         )
+        report = self.root / "installed" / MANIFEST["id"] / ".fluxgram-risk-report"
+        self.assertTrue(report.is_file())
+        self.assertEqual(self.store("risk", extra=(MANIFEST["id"],)), [hashlib.sha256(data).hexdigest()])
+
+    def test_damaged_persisted_report_does_not_hide_installation(self):
+        self.store("install", self.archive())
+        report = self.root / "installed" / MANIFEST["id"] / ".fluxgram-risk-report"
+        report.write_bytes(b"damaged")
+        self.assertEqual(self.store("list"), [MANIFEST["id"]])
+        self.assertEqual(self.store("risk", extra=(MANIFEST["id"],)), ["legacy"])
+
+    def test_foreign_valid_report_is_not_exposed(self):
+        first_id = MANIFEST["id"]
+        second_id = "test.foreign_fixture"
+        self.store("install", self.archive())
+        self.store("install", self.archive(fields={"id": second_id, "name": "Foreign"}))
+        root = self.root / "installed"
+        shutil.copyfile(
+            root / second_id / ".fluxgram-risk-report",
+            root / first_id / ".fluxgram-risk-report",
+        )
+
+        self.assertEqual(self.store("risk", extra=(first_id,)), ["legacy"])
+        self.assertCountEqual(self.store("list"), [first_id, second_id])
+
+    def test_pending_update_persists_risk_report(self):
+        self.store("install", self.archive())
+        update = self.archive(fields={"version": "2.0.0"})
+        self.store(
+            "update",
+            update,
+            extra=(MANIFEST["id"], MANIFEST["version"], "false"),
+        )
+        report = (
+            self.root / "installed" / (".pending-" + MANIFEST["id"])
+            / "package" / ".fluxgram-risk-report"
+        )
+        self.assertTrue(report.is_file())
+        self.store("activate", extra=(MANIFEST["id"],))
+        self.assertEqual(
+            self.store("risk", extra=(MANIFEST["id"],)),
+            [hashlib.sha256(update).hexdigest()],
+        )
 
     def test_legacy_installation_remains_visible_and_exportable(self):
         legacy = MANIFEST.copy()
@@ -593,6 +1136,7 @@ class PluginStoreTest(unittest.TestCase):
             self.store("listcompat"),
             [f'{legacy["id"]}:false:1:0'],
         )
+        self.assertEqual(self.store("risk", extra=(legacy["id"],)), ["legacy"])
         output = self.store(
             "export", extra=(legacy["id"], str(self.root / "shares"))
         )

@@ -12,6 +12,27 @@ public final class PluginPackageCheck {
             System.out.println(result.sha256);
             System.out.println(result.fileCount);
             System.out.println(result.unpackedBytes);
+            System.out.println(result.riskReport.analyzerVersion);
+            System.out.println(result.riskReport.hostFingerprint);
+            System.out.println(
+                    "decision:"
+                            + org.telegram.messenger.plugins.risk.PluginRiskPolicy
+                                    .evaluateInstall(result.riskReport)
+                                    .decision);
+
+            for (org.telegram.messenger.plugins.risk.PluginRiskReport.ModuleDigest module
+                    : result.riskReport.modules) {
+                System.out.println("module:" + module.role + ":" + module.sha256);
+            }
+
+            for (org.telegram.messenger.plugins.risk.PluginRiskEvidence evidence
+                    : result.riskReport.evidence) {
+                System.out.println("evidence:" + evidence.id + ":" + evidence.detail);
+            }
+
+            for (String limitation : result.riskReport.limitations) {
+                System.out.println("limitation:" + limitation);
+            }
         } catch (IOException expected) {
             System.err.println(expected.getMessage());
             System.exit(2);
