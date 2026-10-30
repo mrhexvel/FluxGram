@@ -347,17 +347,7 @@ public final class IconPackRuntime {
             byId.put(pack.manifest.id, pack);
         }
 
-        ArrayList<IconPackStore.Installed> active = new ArrayList<>();
-
-        for (String id : activeIds) {
-            IconPackStore.Installed pack = byId.get(id);
-
-            if (pack != null) {
-                active.add(pack);
-            }
-        }
-
-        Plan plan = new Plan(resources, store, active, requestId);
+        Plan plan = new Plan(resources, store, byId, activeIds, requestId);
         List<Demand> requested;
 
         synchronized (DEMAND_LOCK) {
@@ -520,9 +510,52 @@ public final class IconPackRuntime {
             }
         }
 
-        for (IconPackStore.Installed pack : plan.active) {
+        for (String id : plan.activeIds) {
             if (!currentRequest.getAsBoolean()) {
                 return null;
+            }
+            IconPackBuiltIns.Pack builtIn = IconPackBuiltIns.get(id);
+
+            if (builtIn != null) {
+                String targetName = IconPackBuiltIns.targetResourceName(id, resourceName);
+                int targetId = targetName == null ? 0 : plan.catalog.drawableId(targetName);
+
+                if (targetId == 0) {
+                    continue;
+                }
+
+                String source = builtInSource(
+                        builtIn,
+                        resourceName,
+                        targetId,
+                        plan.densityDpi,
+                        width,
+                        height);
+                Bitmap bitmap = cached(source);
+
+                if (bitmap == null) {
+                    Drawable drawable = originalDrawable(
+                            plan.resources,
+                            targetId,
+                            plan.densityDpi);
+                    bitmap = render(drawable, width, height, plan.densityDpi);
+
+                    if (bitmap != null) {
+                        cache(source, bitmap);
+                    }
+                }
+
+                if (bitmap != null && isCached(source, bitmap)) {
+                    return new Resolution(source);
+                }
+
+                continue;
+            }
+
+            IconPackStore.Installed pack = plan.externalById.get(id);
+
+            if (pack == null) {
+                continue;
             }
             if (!pack.manifest.icons.containsKey(resourceName)) {
                 continue;
@@ -555,6 +588,22 @@ public final class IconPackRuntime {
         }
 
         return null;
+    }
+
+    private static String builtInSource(
+            IconPackBuiltIns.Pack pack,
+            String resourceName,
+            int targetId,
+            int densityDpi,
+            int width,
+            int height) {
+        return pack.id + "\n"
+                + pack.version + "\n"
+                + resourceName + "\n"
+                + targetId + "\n"
+                + densityDpi + "\n"
+                + width + "\n"
+                + height;
     }
 
     private static Drawable originalDrawable(Resources resources, int drawableId, int densityDpi) {
@@ -740,7 +789,8 @@ public final class IconPackRuntime {
     private static final class Plan {
         private final Resources resources;
         private final IconPackStore store;
-        private final List<IconPackStore.Installed> active;
+        private final Map<String, IconPackStore.Installed> externalById;
+        private final List<String> activeIds;
         private final IconPackAndroidCatalog catalog;
         private final int densityDpi;
         private final int fallbackSize;
@@ -749,11 +799,13 @@ public final class IconPackRuntime {
         private Plan(
                 Resources resources,
                 IconPackStore store,
-                List<IconPackStore.Installed> active,
+                Map<String, IconPackStore.Installed> externalById,
+                List<String> activeIds,
                 long requestId) {
             this.resources = resources;
             this.store = store;
-            this.active = Collections.unmodifiableList(new ArrayList<>(active));
+            this.externalById = Collections.unmodifiableMap(new HashMap<>(externalById));
+            this.activeIds = Collections.unmodifiableList(new ArrayList<>(activeIds));
             this.catalog = new IconPackAndroidCatalog(resources);
             this.densityDpi = resources.getDisplayMetrics().densityDpi;
             this.fallbackSize = Math.max(1, Math.round(FALLBACK_ICON_SIZE_DP * densityDpi

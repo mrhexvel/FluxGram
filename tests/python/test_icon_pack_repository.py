@@ -36,6 +36,9 @@ class IconPackRepositoryTest(unittest.TestCase):
             first = self.write_archive(root, "first.icons", "1.0")
             update = self.write_archive(root, "update.icons", "2.0")
             other = self.write_archive(root, "other.icons", "1.0", "other.pack")
+            reserved = self.write_archive(
+                root, "reserved.icons", "1.0", "fluxgram.solar"
+            )
             invalid = root / "invalid.icons"
             invalid.write_text("invalid")
             oversized = root / "oversized.icons"
@@ -53,6 +56,7 @@ class IconPackRepositoryTest(unittest.TestCase):
                     str(ICONS / "IconPackArchiveValidator.java"),
                     str(ICONS / "IconPackStore.java"),
                     str(ICONS / "IconPackAndroidCatalog.java"),
+                    str(ICONS / "IconPackBuiltIns.java"),
                     str(ICONS / "IconPackSettings.java"),
                     str(ICONS / "IconPackRepository.java"),
                     str(ROOT / "tests/java/IconPackRepositoryCheck.java"),
@@ -87,6 +91,7 @@ class IconPackRepositoryTest(unittest.TestCase):
                     other,
                     invalid,
                     oversized,
+                    reserved,
                 ],
                 capture_output=True,
                 text=True,

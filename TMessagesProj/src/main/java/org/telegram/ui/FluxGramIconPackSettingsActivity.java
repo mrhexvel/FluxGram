@@ -158,13 +158,39 @@ public final class FluxGramIconPackSettingsActivity extends BaseFragment {
                     R.string.FluxGramActiveIconPacksInfo)));
         }
 
-        if (state.activeIds.size() < state.packs.size()) {
+        boolean hasInactiveBuiltIn = false;
+        boolean hasInactiveExternal = false;
+
+        for (IconPackRepository.Pack pack : state.packs) {
+            if (!state.isActive(pack.id)) {
+                if (pack.builtIn) {
+                    hasInactiveBuiltIn = true;
+                } else {
+                    hasInactiveExternal = true;
+                }
+            }
+        }
+
+        if (hasInactiveBuiltIn) {
+            addSectionLabel(items, R.string.FluxGramBuiltInIconPacks);
+
+            for (IconPackRepository.Pack pack : state.packs) {
+                if (pack.builtIn && !state.isActive(pack.id)) {
+                    items.add(packItem(pack, false, busy));
+                }
+            }
+
+            items.add(UItem.asShadow(LocaleController.getString(
+                    R.string.FluxGramBuiltInIconPacksInfo)));
+        }
+
+        if (hasInactiveExternal) {
             addSectionLabel(items, hasActive
                     ? R.string.FluxGramInactiveIconPacks
                     : R.string.FluxGramInstalledIconPacks);
 
             for (IconPackRepository.Pack pack : state.packs) {
-                if (!state.isActive(pack.id)) {
+                if (!pack.builtIn && !state.isActive(pack.id)) {
                     items.add(packItem(pack, false, busy));
                 }
             }
@@ -230,25 +256,34 @@ public final class FluxGramIconPackSettingsActivity extends BaseFragment {
         IconPackRepository.Pack pack = (IconPackRepository.Pack) item.object;
         int activeIndex = state.activeIds.indexOf(pack.id);
         ItemOptions options = ItemOptions.makeOptions(this, view);
+        boolean hasOptions = false;
 
         if (activeIndex > 0) {
+            hasOptions = true;
             options.add(
                     R.drawable.msg_go_up,
                     LocaleController.getString(R.string.FluxGramIconPackPriorityUp),
                     () -> move(pack.id, -1));
         }
         if (activeIndex >= 0 && activeIndex + 1 < state.activeIds.size()) {
+            hasOptions = true;
             options.add(
                     R.drawable.msg_go_down,
                     LocaleController.getString(R.string.FluxGramIconPackPriorityDown),
                     () -> move(pack.id, 1));
         }
 
-        options.add(
-                R.drawable.msg_delete,
-                LocaleController.getString(R.string.Delete),
-                true,
-                () -> confirmDelete(pack));
+        if (!pack.builtIn) {
+            hasOptions = true;
+            options.add(
+                    R.drawable.msg_delete,
+                    LocaleController.getString(R.string.Delete),
+                    true,
+                    () -> confirmDelete(pack));
+        }
+        if (!hasOptions) {
+            return false;
+        }
         options.show();
 
         return true;

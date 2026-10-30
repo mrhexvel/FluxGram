@@ -27,6 +27,13 @@ public final class IconPackSettingsCheck {
         require(IconPackSettings.getActiveIds(store).isEmpty());
 
         IconPackSettings.setActiveIds(
+                Collections.singletonList(IconPackBuiltIns.SOLAR_ID),
+                store);
+        require(IconPackSettings.getActiveIds(store)
+                .equals(Collections.singletonList(IconPackBuiltIns.SOLAR_ID)));
+        IconPackSettings.setActiveIds(Collections.emptyList(), store);
+
+        IconPackSettings.setActiveIds(
                 Arrays.asList("comma,:; pack", "missing", "alpha", "alpha", "Солнечный 🌞"),
                 store);
 
@@ -107,6 +114,7 @@ public final class IconPackSettingsCheck {
         expectInvalidArgument(() -> IconPackSettings.setActiveIds(active, null));
         expectInvalidArgument(() -> IconPackSettings.delete(null, "alpha"));
         expectInvalidArgument(() -> IconPackSettings.delete(store, null));
+        expectInvalidArgument(() -> IconPackSettings.delete(store, IconPackBuiltIns.SOLAR_ID));
 
         IconPackSettings.reset();
         require(IconPackSettings.getActiveIds(store).isEmpty());

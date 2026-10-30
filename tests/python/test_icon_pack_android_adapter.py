@@ -22,6 +22,7 @@ class IconPackAndroidAdapterTest(unittest.TestCase):
                 [
                     str(ICONS / "IconPackAndroidCatalog.java"),
                     str(ICONS / "IconPackAndroidDrawableDecoder.java"),
+                    str(ICONS / "IconPackBuiltIns.java"),
                     str(ICONS / "IconPackResources.java"),
                     str(ICONS / "IconPackRuntime.java"),
                     str(ROOT / "tests/java/IconPackAndroidCheck.java"),
@@ -68,6 +69,7 @@ class IconPackAndroidAdapterTest(unittest.TestCase):
         self.assertIn("BooleanSupplier currentRequest", runtime)
         self.assertIn("source.recycle()", runtime)
         self.assertIn("IconPackAndroidCatalog.hasVisiblePixels(result)", runtime)
+        self.assertIn("IconPackBuiltIns.targetResourceName", runtime)
         resolve_paths = runtime.split("public static Drawable resolve", 1)[1].split("static boolean rebuild", 1)[0]
         self.assertNotIn("store.resolve", resolve_paths)
         self.assertNotIn("IconPackAndroidDrawableDecoder", resolve_paths)
@@ -80,6 +82,7 @@ class IconPackAndroidAdapterTest(unittest.TestCase):
 
         build = (ROOT / "TMessagesProj/build.gradle").read_text()
         self.assertIn("com.caverock:androidsvg-aar:1.4", build)
+        self.assertIn("src/main/res-solar", build)
 
         application = (ROOT / "TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java").read_text()
         activity = (ROOT / "TMessagesProj/src/main/java/org/telegram/ui/BasePermissionsActivity.java").read_text()

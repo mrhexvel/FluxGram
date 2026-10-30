@@ -281,12 +281,14 @@
     <string name="FluxGramIconPackInstallFailed">Не удалось установить пакет иконок.</string>
     <string name="FluxGramIconPackStorageFailed">Хранилище пакетов иконок временно недоступно.</string>
     <string name="FluxGramInstalledIconPacks">Установленные пакеты</string>
+    <string name="FluxGramBuiltInIconPacks">Встроенные пакеты</string>
+    <string name="FluxGramBuiltInIconPacksInfo">Встроенные пакеты можно включать и выключать, но нельзя удалить.</string>
     <string name="FluxGramActiveIconPacks">Активные пакеты</string>
     <string name="FluxGramInactiveIconPacks">Неактивные пакеты</string>
     <string name="FluxGramNoInstalledIconPacks">Нет установленных пакетов иконок</string>
     <string name="FluxGramIconPackListDetails">Версия %1$s · %2$s · %3$d иконок</string>
     <string name="FluxGramIconPackManagementInfo">Нажмите пакет, чтобы включить или выключить его. Удерживайте строку для удаления и других действий.</string>
-    <string name="FluxGramActiveIconPacksInfo">Пакеты проверяются сверху вниз. Удерживайте строку, чтобы изменить приоритет или удалить пакет.</string>
+    <string name="FluxGramActiveIconPacksInfo">Пакеты проверяются сверху вниз. Удерживайте строку, чтобы изменить приоритет или удалить внешний пакет.</string>
     <string name="FluxGramIconPackPriorityUp">Повысить приоритет</string>
     <string name="FluxGramIconPackPriorityDown">Понизить приоритет</string>
     <string name="FluxGramDeleteIconPack">Удалить пакет иконок?</string>

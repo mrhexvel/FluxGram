@@ -54,6 +54,7 @@ class IconPackSettingsTest(unittest.TestCase):
                     str(ICONS / "IconPackManifest.java"),
                     str(ICONS / "IconPackArchiveValidator.java"),
                     str(ICONS / "IconPackStore.java"),
+                    str(ICONS / "IconPackBuiltIns.java"),
                     str(ICONS / "IconPackSettings.java"),
                     str(ROOT / "tests/java/IconPackSettingsCheck.java"),
                 ]

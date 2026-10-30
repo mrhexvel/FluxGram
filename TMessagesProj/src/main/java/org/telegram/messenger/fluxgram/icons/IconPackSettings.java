@@ -72,6 +72,7 @@ public final class IconPackSettings {
     public static synchronized void delete(IconPackStore store, String id) throws IOException {
         require(store != null, "Icon pack store is required");
         require(IconPackManifest.isValidId(id), "Valid icon pack ID is required");
+        require(!IconPackBuiltIns.contains(id), "Built-in icon pack cannot be deleted");
 
         deleteWithInstalled(store, id, store.list());
     }
@@ -82,6 +83,7 @@ public final class IconPackSettings {
             List<IconPackStore.Installed> installed) throws IOException {
         require(store != null, "Icon pack store is required");
         require(IconPackManifest.isValidId(id), "Valid icon pack ID is required");
+        require(!IconPackBuiltIns.contains(id), "Built-in icon pack cannot be deleted");
         require(installed != null, "Installed icon packs are required");
 
         SharedPreferences preferences = MessagesController.getGlobalMainSettings();
@@ -139,6 +141,7 @@ public final class IconPackSettings {
                 }
             }
         }
+        available.addAll(IconPackBuiltIns.ids());
 
         LinkedHashSet<String> normalized = new LinkedHashSet<>();
 

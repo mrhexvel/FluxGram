@@ -34,6 +34,17 @@ public final class IconPackAndroidCheck {
         Resources resources = new Resources();
         IconPackAndroidCatalog catalog = new IconPackAndroidCatalog(resources);
 
+        require(IconPackBuiltIns.contains(IconPackBuiltIns.SOLAR_ID));
+        require(IconPackBuiltIns.targetResourceName(
+                IconPackBuiltIns.SOLAR_ID,
+                "msg_delete").equals("msg_delete_solar"));
+        require(IconPackBuiltIns.targetResourceName(
+                IconPackBuiltIns.SOLAR_ID,
+                "msg_forward").equals("msg_share_solar"));
+        require(IconPackBuiltIns.targetResourceName(
+                "external.pack",
+                "msg_delete") == null);
+
         for (int i = 0; i < NAMES.length; i++) {
             require(catalog.contains(NAMES[i]));
             require(catalog.drawableId(NAMES[i]) == i + 1);

@@ -48,6 +48,7 @@ public final class IconPackRepository {
         public final String author;
         public final String version;
         public final int iconCount;
+        public final boolean builtIn;
 
         private Pack(IconPackStore.Installed installed) {
             IconPackManifest manifest = installed.manifest;
@@ -56,6 +57,16 @@ public final class IconPackRepository {
             author = manifest.author;
             version = manifest.version;
             iconCount = manifest.icons.size();
+            builtIn = false;
+        }
+
+        private Pack(IconPackBuiltIns.Pack pack) {
+            id = pack.id;
+            name = pack.name;
+            author = pack.author;
+            version = pack.version;
+            iconCount = pack.iconCount;
+            builtIn = true;
         }
     }
 
@@ -215,6 +226,12 @@ public final class IconPackRepository {
                     throw new ImportException(Failure.INVALID, error);
                 } catch (Exception error) {
                     throw new ImportException(Failure.STORAGE, error);
+                }
+
+                if (IconPackBuiltIns.contains(snapshot.result.manifest.id)) {
+                    throw new ImportException(
+                            Failure.INVALID,
+                            new IOException("Icon pack ID is reserved"));
                 }
 
                 String previousVersion;
@@ -380,7 +397,7 @@ public final class IconPackRepository {
                 ArrayList<String> updated = new ArrayList<>(activeSnapshot);
 
                 if (active) {
-                    if (!contains(installedSnapshot, id)) {
+                    if (!IconPackBuiltIns.contains(id) && !contains(installedSnapshot, id)) {
                         throw new IOException("Icon pack is not installed");
                     }
                     if (!updated.contains(id)) {
@@ -438,7 +455,7 @@ public final class IconPackRepository {
     }
 
     public static void delete(String id, Callback<State> callback) {
-        if (!IconPackManifest.isValidId(id)) {
+        if (!IconPackManifest.isValidId(id) || IconPackBuiltIns.contains(id)) {
             throw new IllegalArgumentException("Valid icon pack ID is required");
         }
 
@@ -656,6 +673,13 @@ public final class IconPackRepository {
         HashSet<String> added = new HashSet<>();
 
         for (String id : activeIds) {
+            IconPackBuiltIns.Pack builtIn = IconPackBuiltIns.get(id);
+
+            if (builtIn != null) {
+                packs.add(new Pack(builtIn));
+                added.add(id);
+                continue;
+            }
             for (IconPackStore.Installed pack : installed) {
                 if (pack.manifest.id.equals(id)) {
                     packs.add(new Pack(pack));
@@ -665,8 +689,17 @@ public final class IconPackRepository {
             }
         }
 
+        for (String id : IconPackBuiltIns.ids()) {
+            IconPackBuiltIns.Pack builtIn = IconPackBuiltIns.get(id);
+
+            if (builtIn != null && added.add(id)) {
+                packs.add(new Pack(builtIn));
+            }
+        }
+
         for (IconPackStore.Installed pack : installed) {
-            if (added.add(pack.manifest.id)) {
+            if (!IconPackBuiltIns.contains(pack.manifest.id)
+                    && added.add(pack.manifest.id)) {
                 packs.add(new Pack(pack));
             }
         }

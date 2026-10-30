@@ -11318,12 +11318,14 @@
     <string name="FluxGramIconPackInstallFailed">Could not install the icon pack.</string>
     <string name="FluxGramIconPackStorageFailed">Icon pack storage is temporarily unavailable.</string>
     <string name="FluxGramInstalledIconPacks">Installed packs</string>
+    <string name="FluxGramBuiltInIconPacks">Built-in packs</string>
+    <string name="FluxGramBuiltInIconPacksInfo">Built-in packs can be enabled or disabled but cannot be deleted.</string>
     <string name="FluxGramActiveIconPacks">Active packs</string>
     <string name="FluxGramInactiveIconPacks">Inactive packs</string>
     <string name="FluxGramNoInstalledIconPacks">No icon packs installed</string>
     <string name="FluxGramIconPackListDetails">Version %1$s · %2$s · %3$d icons</string>
     <string name="FluxGramIconPackManagementInfo">Tap a pack to enable or disable it. Touch and hold for deletion and other actions.</string>
-    <string name="FluxGramActiveIconPacksInfo">Packs are checked from top to bottom. Touch and hold a pack to change its priority or delete it.</string>
+    <string name="FluxGramActiveIconPacksInfo">Packs are checked from top to bottom. Touch and hold a pack to change its priority or delete an external pack.</string>
     <string name="FluxGramIconPackPriorityUp">Increase priority</string>
     <string name="FluxGramIconPackPriorityDown">Decrease priority</string>
     <string name="FluxGramDeleteIconPack">Delete icon pack?</string>

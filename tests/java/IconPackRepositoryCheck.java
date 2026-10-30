@@ -48,8 +48,19 @@ public final class IconPackRepositoryCheck {
         if (initialState.error != null) {
             throw initialState.error;
         }
-        require(initialState.value.packs.size() == 1);
+        require(initialState.value.packs.size() == 2);
         require(initialState.value.activeIds.isEmpty());
+        require(initialState.value.packs.get(0).id.equals(IconPackBuiltIns.SOLAR_ID));
+        require(initialState.value.packs.get(0).builtIn);
+        require(initialState.value.withActive(IconPackBuiltIns.SOLAR_ID, true)
+                .activeIds.equals(Collections.singletonList(IconPackBuiltIns.SOLAR_ID)));
+
+        try {
+            IconPackRepository.delete(IconPackBuiltIns.SOLAR_ID, (value, error) -> {
+            });
+            throw new AssertionError();
+        } catch (IllegalArgumentException expected) {
+        }
 
         IconPackRepository.State optimistic = initialState.value.withActive("example.pack", true);
         require(initialState.value.activeIds.isEmpty());
@@ -147,6 +158,12 @@ public final class IconPackRepositoryCheck {
         require(((IconPackRepository.ImportException) oversized.error).failure
                 == IconPackRepository.Failure.INVALID);
 
+        Outcome<IconPackRepository.Review> reserved = review(new File(args[6]));
+        require(reserved.value == null);
+        require(reserved.error instanceof IconPackRepository.ImportException);
+        require(((IconPackRepository.ImportException) reserved.error).failure
+                == IconPackRepository.Failure.INVALID);
+
         Outcome<IconPackRepository.Review> cleanup = review(new File(args[2]));
         require(cleanup.error == null);
         File snapshot = snapshot(cleanup.value);
@@ -172,8 +189,8 @@ public final class IconPackRepositoryCheck {
 
         Outcome<IconPackRepository.State> deleted = delete("example.pack");
         require(deleted.error == null);
-        require(deleted.value.packs.size() == 1);
-        require(delete("other.pack").value.packs.isEmpty());
+        require(deleted.value.packs.size() == 2);
+        require(delete("other.pack").value.packs.size() == 1);
 
         System.exit(0);
     }
