@@ -14,6 +14,7 @@ import java.util.Set;
 
 public final class PluginManifest {
     public static final int SCHEMA_VERSION = 5;
+    public static final int PARSED_SCHEMA_VERSION = 6;
     public static final int SDK_VERSION = 2;
     public static final int SDK_MINOR_VERSION = 12;
     public static final int JAVA_API_VERSION = 2;
@@ -176,7 +177,7 @@ public final class PluginManifest {
         }
 
         require(
-                schemaVersion >= 1 && schemaVersion <= SCHEMA_VERSION,
+                schemaVersion >= 1 && schemaVersion <= PARSED_SCHEMA_VERSION,
                 "Unsupported schema_version");
 
         boolean anyPythonField = fields.contains("sdk_version")
@@ -207,8 +208,11 @@ public final class PluginManifest {
                 "java_module is required in schema_version 3");
         require(schemaVersion != 5 || javaModule != null,
                 "java_module is required in schema_version 5");
-        require(javaModule == null || javaModule.hostFingerprint == null || schemaVersion == 5,
-                "host_fingerprint requires schema_version 5");
+        require(javaModule == null
+                        || javaModule.hostFingerprint == null
+                        || schemaVersion == 5
+                        || schemaVersion == 6,
+                "host_fingerprint requires schema_version 5 or 6");
         require(schemaVersion != 5 || javaModule.hostFingerprint != null,
                 "host_fingerprint is required in schema_version 5");
 

@@ -170,6 +170,18 @@ public final class PluginSignatureVerifier {
         }
     }
 
+    public static PluginSignatureVerification missing(String pluginId) {
+        if (!PluginSignerIdentity.isPluginId(pluginId)) {
+            throw new IllegalArgumentException("Invalid unsigned plugin identity");
+        }
+
+        return result(
+                PluginSignatureVerification.Status.MISSING_SIGNATURE,
+                pluginId,
+                null,
+                null);
+    }
+
     private static PublicKey decodePublicKey(byte[] encoded)
             throws NoSuchAlgorithmException, InvalidKeySpecException {
         if (encoded.length != P256_SPKI_PREFIX.length + 64

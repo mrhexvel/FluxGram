@@ -16,7 +16,9 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Enumeration;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.zip.CRC32;
@@ -26,6 +28,9 @@ import java.util.zip.ZipFile;
 import org.telegram.messenger.plugins.risk.PluginRiskAnalyzer;
 import org.telegram.messenger.plugins.risk.PluginRiskReport;
 import org.telegram.messenger.plugins.risk.PluginPythonRiskScanner;
+import org.telegram.messenger.plugins.signing.PluginSignatureVerification;
+import org.telegram.messenger.plugins.signing.PluginSignatureVerifier;
+import org.telegram.messenger.plugins.signing.PluginSignedPayload;
 
 public final class PluginPackageValidator {
     public static final long MAX_ARCHIVE_BYTES = 8L * 1024 * 1024;
@@ -40,6 +45,7 @@ public final class PluginPackageValidator {
         public final String sha256;
         public final byte[] iconBytes;
         public final PluginRiskReport riskReport;
+        public final PluginSignatureVerification signatureVerification;
         public final long archiveBytes, unpackedBytes;
         public final int fileCount;
 
@@ -50,7 +56,8 @@ public final class PluginPackageValidator {
                 long unpackedBytes,
                 int fileCount,
                 byte[] iconBytes,
-                PluginRiskReport riskReport) {
+                PluginRiskReport riskReport,
+                PluginSignatureVerification signatureVerification) {
             this.manifest = manifest;
             this.iconBytes = iconBytes;
             this.sha256 = hash;
@@ -58,6 +65,7 @@ public final class PluginPackageValidator {
             this.unpackedBytes = unpackedBytes;
             this.fileCount = fileCount;
             this.riskReport = riskReport;
+            this.signatureVerification = signatureVerification;
         }
     }
 
@@ -119,6 +127,8 @@ public final class PluginPackageValidator {
             Map<String, String> spellings = new HashMap<>();
 
             byte[] manifestBytes = null;
+            byte[] signatureBytes = null;
+            List<PluginSignedPayload.Entry> signedEntries = new ArrayList<>();
             int entries = 0, files = 0;
             long total = 0;
 
@@ -130,7 +140,11 @@ public final class PluginPackageValidator {
 
                     require(++entries <= MAX_ENTRIES, "Too many ZIP entries");
 
-                    String path = validatePath(entry.getName(), entry.isDirectory());
+                    boolean isSignature = entry.getName().equals(PluginSignedPayload.SIGNATURE_ENTRY)
+                            && !entry.isDirectory();
+                    String path = isSignature
+                            ? PluginSignedPayload.SIGNATURE_ENTRY
+                            : validatePath(entry.getName(), entry.isDirectory());
 
                     require(
                             paths.put(path, entry.isDirectory()) == null,
@@ -149,7 +163,9 @@ public final class PluginPackageValidator {
                     }
 
                     boolean isManifest = path.equals("manifest.json") && !entry.isDirectory();
-                    long limit = isManifest ? MAX_MANIFEST_BYTES : MAX_FILE_BYTES;
+                    long limit = isSignature
+                            ? 512
+                            : isManifest ? MAX_MANIFEST_BYTES : MAX_FILE_BYTES;
 
                     require(
                             entry.getSize() >= 0 && entry.getSize() <= limit,
@@ -158,8 +174,16 @@ public final class PluginPackageValidator {
                             !entry.isDirectory() || entry.getSize() == 0,
                             "Directory contains file data");
 
-                    ByteArrayOutputStream metadata =
-                            isManifest ? new ByteArrayOutputStream() : null;
+                    ByteArrayOutputStream metadata = isManifest || isSignature
+                            ? new ByteArrayOutputStream()
+                            : null;
+                    MessageDigest entryDigest;
+
+                    try {
+                        entryDigest = MessageDigest.getInstance("SHA-256");
+                    } catch (NoSuchAlgorithmException impossible) {
+                        throw new IOException(impossible);
+                    }
                     CRC32 crc = new CRC32();
                     long size = 0;
 
@@ -175,6 +199,7 @@ public final class PluginPackageValidator {
                                     "Unpacked size limit exceeded");
 
                             crc.update(buffer, 0, read);
+                            entryDigest.update(buffer, 0, read);
 
                             if (metadata != null) {
                                 metadata.write(buffer, 0, read);
@@ -190,8 +215,18 @@ public final class PluginPackageValidator {
                         files++;
                     }
 
-                    if (metadata != null) {
+                    if (isManifest) {
                         manifestBytes = metadata.toByteArray();
+                    } else if (isSignature) {
+                        signatureBytes = metadata.toByteArray();
+                    }
+
+                    if (!isSignature) {
+                        signedEntries.add(new PluginSignedPayload.Entry(
+                                path,
+                                entry.isDirectory(),
+                                size,
+                                hex(entryDigest.digest())));
                     }
                 }
             }
@@ -210,6 +245,30 @@ public final class PluginPackageValidator {
             require(manifestBytes != null, "Missing root manifest.json");
 
             PluginManifest manifest = PluginManifest.parse(decodeUtf8(manifestBytes));
+            PluginSignatureVerification signatureVerification;
+
+            if (manifest.schemaVersion == 6) {
+                require(signatureBytes != null, "Manifest schema 6 requires a signature envelope");
+                try {
+                    PluginSignedPayload signedPayload = new PluginSignedPayload(
+                            manifest.id,
+                            manifest.version,
+                            manifest.schemaVersion,
+                            signedEntries);
+                    signatureVerification = PluginSignatureVerifier.verifyEncoded(
+                            signedPayload,
+                            signatureBytes);
+                } catch (IllegalArgumentException error) {
+                    throw new IOException("Invalid signed package payload", error);
+                }
+                require(
+                        signatureVerification.isVerified(),
+                        "Plugin signature verification failed: "
+                                + signatureVerification.status.name());
+            } else {
+                require(signatureBytes == null, "Signature envelope requires manifest schema 6");
+                signatureVerification = PluginSignatureVerifier.missing(manifest.id);
+            }
 
             if (requireCompatible) {
                 require(manifest.isCompatible(), manifest.compatibilityError());
@@ -267,7 +326,8 @@ public final class PluginPackageValidator {
                     total,
                     files,
                     iconBytes,
-                    riskReport);
+                    riskReport,
+                    signatureVerification);
         } finally {
             if (!snapshot.delete() && snapshot.exists()) {
                 throw new IOException("Could not remove temporary plugin archive");
@@ -408,7 +468,8 @@ public final class PluginPackageValidator {
                 "Do not bundle the FluxGram SDK");
 
         require(!parts[0].equalsIgnoreCase(".fluxgram-source.fgplugin")
-                        && !parts[0].equalsIgnoreCase(".fluxgram-risk-report"),
+                        && !parts[0].equalsIgnoreCase(".fluxgram-risk-report")
+                        && !parts[0].equalsIgnoreCase(PluginSignedPayload.SIGNATURE_ENTRY),
                 "Reserved package path");
 
         return path;

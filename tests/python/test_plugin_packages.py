@@ -1,5 +1,6 @@
 import hashlib
 import ast
+import base64
 import io
 import json
 import os
@@ -51,6 +52,7 @@ class PluginPackagesTest(unittest.TestCase):
             ROOT / "TMessagesProj/src/main/java/org/telegram/messenger/plugins/packages"
         )
         risk = ROOT / "TMessagesProj/src/main/java/org/telegram/messenger/plugins/risk"
+        signing = ROOT / "TMessagesProj/src/main/java/org/telegram/messenger/plugins/signing"
         subprocess.run(
             [
                 "javac",
@@ -70,10 +72,17 @@ class PluginPackagesTest(unittest.TestCase):
                 str(risk / "PluginRiskDiff.java"),
                 str(risk / "PluginRiskPolicy.java"),
                 str(risk / "PluginRiskAnalyzer.java"),
+                str(signing / "PluginSignedPayload.java"),
+                str(signing / "PluginSignatureEnvelope.java"),
+                str(signing / "PluginSignatureVerification.java"),
+                str(signing / "PluginSignatureVerifier.java"),
+                str(signing / "PluginSignerIdentity.java"),
                 str(ROOT / "tests/java/FakePluginPythonRiskScanner.java"),
                 str(ROOT / "tests/java/PluginStoreCheck.java"),
                 str(ROOT / "tests/java/PluginPackageCheck.java"),
                 str(ROOT / "tests/java/PluginPythonRiskResponseCheck.java"),
+                str(ROOT / "tests/java/PluginArchiveSignerCheck.java"),
+                str(ROOT / "tests/java/PluginInstalledPackageCheck.java"),
             ],
             check=True,
             capture_output=True,
@@ -115,6 +124,74 @@ class PluginPackagesTest(unittest.TestCase):
                     z.writestr(name, content)
         return data.getvalue()
 
+    def signed_archive(self, fields=None, entries=None, python_source=None):
+        signed_fields = {"schema_version": 6}
+
+        if fields:
+            signed_fields.update(fields)
+
+        unsigned = self.archive(
+            fields=signed_fields,
+            entries=entries,
+            python_source=(
+                python_source
+                if python_source is not None
+                else b'raise RuntimeError("Validation must not execute this")\n'
+            ),
+        )
+        source = self.root / "unsigned.fgplugin"
+        source.write_bytes(unsigned)
+        result = subprocess.run(
+            ["java", "-cp", self.classpath, "PluginArchiveSignerCheck", str(source)],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        envelope = base64.b64decode(result.stdout.strip(), validate=True)
+        output = io.BytesIO()
+
+        with zipfile.ZipFile(io.BytesIO(unsigned)) as archive:
+            with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as signed:
+                for info in archive.infolist():
+                    signed.writestr(info, archive.read(info))
+
+                signed.writestr(".fluxgram-signature", envelope)
+
+        return output.getvalue()
+
+    def mutate_archive(self, data, replacements=None, additions=None, removals=()):
+        replacements = replacements or {}
+        removals = set(removals)
+        output = io.BytesIO()
+
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as changed:
+                for info in archive.infolist():
+                    if info.filename in removals:
+                        continue
+
+                    changed.writestr(
+                        info,
+                        replacements.get(info.filename, archive.read(info)),
+                    )
+
+                for name, content in additions or []:
+                    changed.writestr(name, content)
+
+        return output.getvalue()
+
+    def repack_archive(self, data):
+        output = io.BytesIO()
+
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            entries = [(info.filename, archive.read(info)) for info in archive.infolist()]
+
+        with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_STORED) as changed:
+            for name, content in reversed(entries):
+                changed.writestr(name, content)
+
+        return output.getvalue()
+
     def validate(self, data, accepted):
         archive = self.root / "example.fgplugin"
         archive.write_bytes(data)
@@ -133,6 +210,44 @@ class PluginPackagesTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0 if accepted else 2, result.stderr)
         self.assertEqual(list(self.cache.iterdir()), [], "Temporary archive leaked")
         return result.stdout.splitlines()
+
+    def validate_error(self, data):
+        archive = self.root / "invalid.fgplugin"
+        archive.write_bytes(data)
+        result = subprocess.run(
+            [
+                "java",
+                "-cp",
+                self.classpath,
+                "PluginPackageCheck",
+                str(archive),
+                str(self.cache),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertEqual(list(self.cache.iterdir()), [], "Temporary archive leaked")
+        return result.stderr.strip()
+
+    def validate_installed(self, data, accepted=True):
+        archive = self.root / "installed.fgplugin"
+        archive.write_bytes(data)
+        result = subprocess.run(
+            [
+                "java",
+                "-cp",
+                self.classpath,
+                "org.telegram.messenger.plugins.packages.PluginInstalledPackageCheck",
+                str(archive),
+                str(self.cache),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0 if accepted else 2, result.stderr)
+        self.assertEqual(list(self.cache.iterdir()), [], "Temporary archive leaked")
+        return result.stdout.splitlines() if accepted else result.stderr.strip()
 
     def decode_python_risk_response(self, value, accepted):
         result = subprocess.run(
@@ -792,6 +907,103 @@ class PluginPackagesTest(unittest.TestCase):
         fields["schema_version"] = 4
         self.validate(self.archive(fields=fields, entries=[("java/module.dex", data)]), False)
 
+    def test_schema_six_signature_is_verified_before_compatibility(self):
+        signed = self.signed_archive()
+        self.assertIn("incompatible with schema 5", self.validate_error(signed))
+
+        installed = self.validate_installed(signed)
+        self.assertIn("signature:VERIFIED", installed)
+        self.assertIn("plugin:test.package.fixture", installed)
+        key = next(value for value in installed if value.startswith("key:"))
+        payload = next(value for value in installed if value.startswith("payload:"))
+        self.assertRegex(key, r"key:p256:[a-f0-9]{64}")
+        self.assertRegex(payload, r"payload:[a-f0-9]{64}")
+
+    def test_legacy_package_reports_missing_signature(self):
+        output = self.validate(self.archive(), True)
+        self.assertIn("signature:MISSING_SIGNATURE", output)
+
+    def test_schema_six_requires_signature_and_future_schema_is_rejected(self):
+        missing = self.archive(fields={"schema_version": 6})
+        self.assertIn("requires a signature envelope", self.validate_error(missing))
+        self.assertIn(
+            "Unsupported schema_version",
+            self.validate_error(self.archive(fields={"schema_version": 7})),
+        )
+
+    def test_legacy_schema_cannot_smuggle_signature_envelope(self):
+        signed = self.signed_archive(fields={"schema_version": 4})
+        self.assertIn(
+            "Signature envelope requires manifest schema 6",
+            self.validate_error(signed),
+        )
+        self.assertIn(
+            "Reserved package path",
+            self.validate_error(self.archive(entries=[(".fluxgram-signature/data", b"x")])),
+        )
+        self.assertIn(
+            "Reserved package path",
+            self.validate_error(self.archive(entries=[(".FLUXGRAM-SIGNATURE", b"x")])),
+        )
+
+    def test_signed_archive_detects_payload_mutations(self):
+        source = b"value = 1\n"
+        signed = self.signed_archive(python_source=source)
+        mutations = [
+            self.mutate_archive(signed, replacements={"main.py": b"value = 2\n"}),
+            self.mutate_archive(signed, additions=[("assets/data.txt", b"data")]),
+            self.mutate_archive(signed, removals={"main.py"}),
+        ]
+
+        with zipfile.ZipFile(io.BytesIO(signed)) as archive:
+            manifest = json.loads(archive.read("manifest.json"))
+        manifest["version"] = "1.0.1"
+        mutations.append(self.mutate_archive(
+            signed,
+            replacements={"manifest.json": json.dumps(manifest).encode()},
+        ))
+
+        for changed in mutations:
+            with self.subTest(digest=hashlib.sha256(changed).hexdigest()):
+                self.assertIn(
+                    "Plugin signature verification failed",
+                    self.validate_installed(changed, accepted=False),
+                )
+
+    def test_signed_archive_ignores_zip_order_compression_and_timestamp(self):
+        signed = self.signed_archive(entries=[("assets/data.txt", b"data")])
+        repacked = self.repack_archive(signed)
+        self.assertNotEqual(hashlib.sha256(signed).digest(), hashlib.sha256(repacked).digest())
+        self.assertIn("signature:VERIFIED", self.validate_installed(repacked))
+
+    def test_signed_archive_detects_directory_file_type_change(self):
+        signed = self.signed_archive(entries=[("assets/", b"")])
+        changed = self.mutate_archive(
+            signed,
+            additions=[("assets", b"")],
+            removals={"assets/"},
+        )
+        self.assertIn(
+            "Plugin signature verification failed",
+            self.validate_installed(changed, accepted=False),
+        )
+
+    def test_signed_archive_rejects_malformed_envelope(self):
+        signed = self.signed_archive()
+        malformed = self.mutate_archive(
+            signed,
+            replacements={".fluxgram-signature": b"invalid"},
+        )
+        self.assertIn(
+            "MALFORMED_ENVELOPE",
+            self.validate_installed(malformed, accepted=False),
+        )
+        oversized = self.mutate_archive(
+            signed,
+            replacements={".fluxgram-signature": b"x" * 513},
+        )
+        self.assertIn("Oversized or invalid file", self.validate_error(oversized))
+
     def test_java_module_compatibility_and_strict_fields(self):
         data = self.dex_fixture()
 
@@ -1067,6 +1279,13 @@ class PluginStoreTest(unittest.TestCase):
     setUpClass = classmethod(PluginPackagesTest.setUpClass.__func__)
     setUp = PluginPackagesTest.setUp
     archive = PluginPackagesTest.archive
+    signed_archive = PluginPackagesTest.signed_archive
+
+    def test_schema_six_cannot_publish_before_signer_state_is_durable(self):
+        signed = self.signed_archive()
+        self.assertEqual(self.store("install", signed, accepted=False), [])
+        self.assertEqual(self.store("list"), [])
+        self.assertEqual(list((self.root / "installed").iterdir()), [])
 
     def test_block_report_prevents_install_update_and_debug_reload(self):
         python_blocked = self.archive(python_source=b"FAKE_BLOCK\n")
