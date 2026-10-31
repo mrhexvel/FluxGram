@@ -4,6 +4,8 @@ import org.telegram.messenger.plugins.signing.PluginSignatureVerifier;
 import org.telegram.messenger.plugins.signing.PluginSignedPayload;
 import org.telegram.messenger.plugins.signing.PluginKeyRotationProof;
 import org.telegram.messenger.plugins.signing.PluginSignerIdentity;
+import org.telegram.messenger.plugins.signing.PluginSignerJournal;
+import org.telegram.messenger.plugins.signing.PluginSignerState;
 import org.telegram.messenger.plugins.signing.PluginSignerTransition;
 
 import java.math.BigInteger;
@@ -14,6 +16,7 @@ import java.security.Signature;
 import java.security.spec.ECGenParameterSpec;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
 
@@ -29,6 +32,7 @@ public final class PluginPackageSigningCheck {
         malformedInput();
         rotationProof();
         signerTransition();
+        persistedSignerCodecs();
     }
 
     private static void canonicalPayload() {
@@ -205,6 +209,34 @@ public final class PluginPackageSigningCheck {
 
         require(proof.verify().status == PluginKeyRotationProof.Status.VERIFIED);
         require(Arrays.equals(message, proof.message()));
+        PluginKeyRotationProof decodedProof = PluginKeyRotationProof.decode(proof.encode());
+        require(decodedProof.verify().status == PluginKeyRotationProof.Status.VERIFIED);
+        require(decodedProof.fromKeyId.equals(proof.fromKeyId));
+        require(decodedProof.toKeyId.equals(proof.toKeyId));
+        byte[] futureProof = proof.encode();
+        futureProof[7] = 2;
+        expectIo(() -> PluginKeyRotationProof.decode(futureProof));
+        expectIo(() -> PluginKeyRotationProof.decode(
+                Arrays.copyOf(proof.encode(), proof.encode().length - 1)));
+        expectIo(() -> PluginKeyRotationProof.decode(
+                Arrays.copyOf(proof.encode(), proof.encode().length + 1)));
+
+        byte[] fixedProofBytes = fixedRotationProof().encode();
+        PluginKeyRotationProof fixedProof = PluginKeyRotationProof.decode(fixedProofBytes);
+        require(fixedProof.verify().isVerified());
+        require(Arrays.equals(fixedProof.encode(), fixedProofBytes));
+        require(hex(sha256(fixedProofBytes)).equals(
+                "f2da6c1ec56c7cf7ac385c3f6901eb107f862f18e004ae83f616763f83ef5a40"));
+
+        byte[] badProofMagic = fixedProofBytes.clone();
+        badProofMagic[0] = 0;
+        expectIo(() -> PluginKeyRotationProof.decode(badProofMagic));
+        byte[] badProofUtf8 = fixedProofBytes.clone();
+        badProofUtf8[12] = (byte) 0xed;
+        badProofUtf8[13] = (byte) 0xa0;
+        badProofUtf8[14] = (byte) 0x80;
+        expectIo(() -> PluginKeyRotationProof.decode(badProofUtf8));
+        expectIo(() -> PluginKeyRotationProof.decode(new byte[2049]));
 
         PluginKeyRotationProof wrongOld = new PluginKeyRotationProof(
                 "example.plugin",
@@ -411,6 +443,238 @@ public final class PluginPackageSigningCheck {
 
     private static PluginSignatureVerification verified(KeyPair key) throws Exception {
         return verified(key, "example.plugin");
+    }
+
+    private static void persistedSignerCodecs() throws Exception {
+        PluginSignerState unsignedA = new PluginSignerState(
+                digest('a'),
+                PluginSignerIdentity.unsigned("example.plugin", digest('a')));
+        PluginSignerState unsignedB = new PluginSignerState(
+                digest('b'),
+                PluginSignerIdentity.unsigned("example.plugin", digest('b')));
+        PluginSignerState signedA = new PluginSignerState(
+                digest('c'),
+                PluginSignerIdentity.signed("example.plugin", "p256:" + digest('1'), 0));
+        PluginSignerState signedSame = new PluginSignerState(
+                digest('d'),
+                PluginSignerIdentity.signed("example.plugin", "p256:" + digest('1'), 0));
+        PluginSignerState signedB = new PluginSignerState(
+                digest('e'),
+                PluginSignerIdentity.signed("example.plugin", "p256:" + digest('2'), 1));
+
+        require(PluginSignerState.decode(unsignedA.encode()).equals(unsignedA));
+        require(PluginSignerState.decode(signedA.encode()).equals(signedA));
+        require(hex(sha256(unsignedA.encode())).equals(
+                "691db57e12baec158b6af9dc6fe47912e696e9564fe68d34275d9ffe0105f6dd"));
+        require(hex(sha256(signedA.encode())).equals(
+                "a63a7e1c31f3902773537ee7872d90e8378b31163d37a09c4c40f407e5dbf2ed"));
+
+        PluginSignerJournal first = journal(
+                null,
+                unsignedA,
+                PluginSignerTransition.Reason.PIN_FIRST_IDENTITY);
+        require(PluginSignerJournal.decode(first.encode()).after.equals(unsignedA));
+        require(hex(sha256(first.encode())).equals(
+                "404d5f6d16062e21a5b8797ee8a6e67e20e8af26c456b2a922323478795bf9af"));
+
+        PluginSignerJournal changedUnsigned = journal(
+                unsignedA,
+                unsignedB,
+                PluginSignerTransition.Reason.UNSIGNED_PACKAGE_CHANGED);
+        PluginSignerJournal upgrade = journal(
+                unsignedA,
+                signedA,
+                PluginSignerTransition.Reason.UPGRADE_UNSIGNED_TO_SIGNED);
+        PluginSignerJournal same = journal(
+                signedA,
+                signedSame,
+                PluginSignerTransition.Reason.SAME_IDENTITY);
+        KeyPair oldKey = keyPair();
+        KeyPair newKey = keyPair();
+        PluginSignatureVerification oldVerification = verified(oldKey);
+        PluginSignatureVerification newVerification = verified(newKey);
+        PluginSignerState rotationBefore = new PluginSignerState(
+                digest('e'),
+                PluginSignerIdentity.signed(
+                        "example.plugin", oldVerification.keyId, 0));
+        PluginSignerState rotationAfter = new PluginSignerState(
+                digest('f'),
+                PluginSignerIdentity.signed(
+                        "example.plugin", newVerification.keyId, 1));
+        byte[] rotationMessage = PluginKeyRotationProof.message(
+                "example.plugin",
+                oldVerification.keyId,
+                newVerification.keyId,
+                0,
+                1);
+        PluginKeyRotationProof rotationProof = new PluginKeyRotationProof(
+                "example.plugin",
+                oldVerification.keyId,
+                newVerification.keyId,
+                0,
+                1,
+                envelope(oldKey, sign(oldKey, rotationMessage)),
+                envelope(newKey, sign(newKey, rotationMessage)));
+        PluginSignerJournal rotation = journal(
+                rotationBefore,
+                rotationAfter,
+                PluginSignerTransition.Reason.VERIFIED_ROTATION,
+                rotationProof);
+
+        PluginKeyRotationProof fixedProof = fixedRotationProof();
+        PluginSignerState fixedBefore = new PluginSignerState(
+                digest('a'),
+                PluginSignerIdentity.signed(
+                        "example.plugin", fixedProof.fromKeyId, 0));
+        PluginSignerState fixedAfter = new PluginSignerState(
+                digest('b'),
+                PluginSignerIdentity.signed(
+                        "example.plugin", fixedProof.toKeyId, 1));
+        PluginSignerJournal fixedRotation = journal(
+                fixedBefore,
+                fixedAfter,
+                PluginSignerTransition.Reason.VERIFIED_ROTATION,
+                fixedProof);
+        require(hex(sha256(fixedRotation.encode())).equals(
+                "8e2995a749b1cd0598fe279b297d012fb9071dda4629596e28deeb7d2ebb59a5"));
+
+        require(hex(sha256(changedUnsigned.encode())).equals(
+                "5edee291bebe30eb66dd07df5848e9627a69071ef9d0f0d2df18769531099d45"));
+        require(hex(sha256(upgrade.encode())).equals(
+                "88dc815f025aeea93f9b50874f56d68c832f7bc728676da843b486042f377e73"));
+        require(hex(sha256(same.encode())).equals(
+                "52e4a100f703d609a8da9326ba09cc5a9fd9483a077315859685ee377d0b2f19"));
+
+        for (PluginSignerJournal item : Arrays.asList(
+                changedUnsigned, upgrade, same, rotation)) {
+            PluginSignerJournal decoded = PluginSignerJournal.decode(item.encode());
+            require(decoded.pluginId.equals(item.pluginId));
+            require(decoded.before.equals(item.before));
+            require(decoded.after.equals(item.after));
+            require(decoded.reason == item.reason);
+            require((decoded.rotationProof == null) == (item.rotationProof == null));
+        }
+
+        expectInvalid(() -> new PluginSignerState(
+                digest('b'),
+                PluginSignerIdentity.unsigned("example.plugin", digest('a'))));
+        expectInvalid(() -> journal(
+                unsignedA,
+                unsignedB,
+                PluginSignerTransition.Reason.SAME_IDENTITY));
+        expectInvalid(() -> journal(
+                signedA,
+                new PluginSignerState(
+                        digest('f'),
+                        PluginSignerIdentity.signed(
+                                "example.plugin", "p256:" + digest('2'), 2)),
+                PluginSignerTransition.Reason.VERIFIED_ROTATION));
+        expectInvalid(() -> journal(
+                signedA,
+                signedB,
+                PluginSignerTransition.Reason.VERIFIED_ROTATION));
+        expectInvalid(() -> journal(
+                null,
+                new PluginSignerState(
+                        digest('f'),
+                        PluginSignerIdentity.signed(
+                                "example.plugin", "p256:" + digest('2'), 2)),
+                PluginSignerTransition.Reason.PIN_FIRST_IDENTITY));
+        expectInvalid(() -> journal(
+                unsignedA,
+                new PluginSignerState(
+                        digest('f'),
+                        PluginSignerIdentity.signed(
+                                "example.plugin", "p256:" + digest('2'), 2)),
+                PluginSignerTransition.Reason.UPGRADE_UNSIGNED_TO_SIGNED));
+        expectInvalid(() -> journal(
+                signedA,
+                signedB,
+                PluginSignerTransition.Reason.KEY_CHANGED));
+
+        byte[] futureState = unsignedA.encode();
+        futureState[7] = 2;
+        expectIo(() -> PluginSignerState.decode(futureState));
+        byte[] invalidUtf8 = unsignedA.encode();
+        invalidUtf8[12] = (byte) 0xed;
+        invalidUtf8[13] = (byte) 0xa0;
+        invalidUtf8[14] = (byte) 0x80;
+        expectIo(() -> PluginSignerState.decode(invalidUtf8));
+        expectIo(() -> PluginSignerState.decode(
+                Arrays.copyOf(unsignedA.encode(), unsignedA.encode().length - 1)));
+        expectIo(() -> PluginSignerState.decode(
+                Arrays.copyOf(unsignedA.encode(), unsignedA.encode().length + 1)));
+        byte[] unknownKind = unsignedA.encode();
+        unknownKind[unknownKind.length - 1] = 3;
+        expectIo(() -> PluginSignerState.decode(unknownKind));
+        byte[] negativeGeneration = signedA.encode();
+        Arrays.fill(
+                negativeGeneration,
+                negativeGeneration.length - 8,
+                negativeGeneration.length,
+                (byte) 0xff);
+        expectIo(() -> PluginSignerState.decode(negativeGeneration));
+
+        byte[] futureJournal = first.encode();
+        futureJournal[7] = 2;
+        expectIo(() -> PluginSignerJournal.decode(futureJournal));
+        expectIo(() -> PluginSignerJournal.decode(
+                Arrays.copyOf(first.encode(), first.encode().length - 1)));
+        expectIo(() -> PluginSignerJournal.decode(
+                Arrays.copyOf(first.encode(), first.encode().length + 1)));
+        expectIo(() -> PluginSignerJournal.decode(new byte[4097]));
+        byte[] unknownReason = first.encode();
+        unknownReason[29] = 99;
+        expectIo(() -> PluginSignerJournal.decode(unknownReason));
+        byte[] invalidBaseline = first.encode();
+        invalidBaseline[30] = 2;
+        expectIo(() -> PluginSignerJournal.decode(invalidBaseline));
+        byte[] invalidProofFlag = first.encode();
+        invalidProofFlag[invalidProofFlag.length - 1] = 2;
+        expectIo(() -> PluginSignerJournal.decode(invalidProofFlag));
+        byte[] invalidStateLength = first.encode();
+        Arrays.fill(invalidStateLength, 31, 35, (byte) 0);
+        expectIo(() -> PluginSignerJournal.decode(invalidStateLength));
+        byte[] invalidJournalUtf8 = first.encode();
+        invalidJournalUtf8[12] = (byte) 0xed;
+        invalidJournalUtf8[13] = (byte) 0xa0;
+        invalidJournalUtf8[14] = (byte) 0x80;
+        expectIo(() -> PluginSignerJournal.decode(invalidJournalUtf8));
+    }
+
+    private static PluginSignerJournal journal(
+            PluginSignerState before,
+            PluginSignerState after,
+            PluginSignerTransition.Reason reason) {
+        return journal(before, after, reason, null);
+    }
+
+    private static PluginSignerJournal journal(
+            PluginSignerState before,
+            PluginSignerState after,
+            PluginSignerTransition.Reason reason,
+            PluginKeyRotationProof proof) {
+        return new PluginSignerJournal(
+                "example.plugin",
+                before,
+                after,
+                reason,
+                proof);
+    }
+
+    private static PluginKeyRotationProof fixedRotationProof() throws Exception {
+        return PluginKeyRotationProof.decode(Base64.getDecoder().decode(
+                "RkdSUAAAAAEAAAAOZXhhbXBsZS5wbHVnaW4AAABFcDI1Njo3YjdkYWFiM2M3ZTcxZDY4MjYw"
+                        + "MGFlYzA5MzViZTdjNjY3MmEyYmNmZTkzMzQwNTY0YzAzNTgwMDk0YTUzNjMzAAAARXAy"
+                        + "NTY6NzJiNDcyZWUwZjQ4Njc4NzVhMTUyMmQ1Nzg4ZDk0ZDAyM2E1MDE4NDJjMjYxZjJj"
+                        + "MjQ1ZWJiNjBlMzc0OTMwYgAAAAAAAAAAAAAAAAAAAAEAAAC1RkdTRQAAAAEAAAABAAAAWzBZ"
+                        + "MBMGByqGSM49AgEGCCqGSM49AwEHA0IABFlKKx3dZBzh66qRbMhihcygethYsrVLgSoX"
+                        + "v/Co+nVEzIexx5ykjMPbHiQJgQrhFH02HNSkOFG/rkoRf/sp3hgAAABGMEQCIGmICbdK"
+                        + "5/K0PVo7pMz1K+LZaoMW2xvUGFplLegJrmG1AiAFV418FTkvHnFQepi0G37ZcL2KiQWY"
+                        + "FIVLIEBVznSf4QAAALZGR1NFAAAAAQAAAAEAAABbMFkwEwYHKoZIzj0CAQYIKoZIzj0D"
+                        + "AQcDQgAEYnfB9cslQR9x6F5RzThTUo73+zTC2NPqbKw+vOPYNbYJNk5WKR1iFXhkhxtz"
+                        + "vbrfd8pF9CIBVr11Ro2qA3XD5AAAAEcwRQIhALIPvO/Tc3G8BYDAE8rFbsgcIRqnqy5r"
+                        + "urh9kMiVv8pGAiBC8ey0LOUhC0y14P2aTwqTnzFV1XBGeexNvtjdXVnJnA=="));
     }
 
     private static PluginSignatureVerification verified(KeyPair key, String pluginId)
