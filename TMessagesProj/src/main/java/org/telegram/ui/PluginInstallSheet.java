@@ -2,12 +2,17 @@ package org.telegram.ui;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
 
+import android.app.Activity;
 import android.content.Context;
-import org.telegram.ui.Components.FluxGramPluginIconView;
 import android.content.Intent;
+import android.graphics.Color;
 import android.net.Uri;
+import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -17,6 +22,7 @@ import org.telegram.messenger.FileLoader;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.R;
+import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.plugins.ExternalPlugins;
 import org.telegram.messenger.plugins.PluginManager;
 import org.telegram.messenger.plugins.packages.PluginManifest;
@@ -27,6 +33,8 @@ import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.BottomSheet;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.CheckBoxCell;
+import org.telegram.ui.Components.FluxGramPluginIconView;
+import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.LinkSpanDrawable;
 
@@ -131,9 +139,24 @@ public final class PluginInstallSheet {
         view.setText(text);
         view.setTextSize(size);
         view.setTextColor(fragment.getThemedColor(secondary ? Theme.key_dialogTextGray : Theme.key_dialogTextBlack));
+        view.setTypeface(AndroidUtilities.regular());
         view.setPadding(0, dp(8), 0, dp(8));
 
         return view;
+    }
+
+    private void applyRegularTypeface(View view) {
+        if (view instanceof TextView) {
+            ((TextView) view).setTypeface(AndroidUtilities.regular());
+        }
+
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+
+            for (int i = 0; i < group.getChildCount(); i++) {
+                applyRegularTypeface(group.getChildAt(i));
+            }
+        }
     }
 
     private void show(ExternalPlugins.Review review) {
@@ -146,14 +169,42 @@ public final class PluginInstallSheet {
                 manifest.version, review.installedVersion) > 0;
         boolean blocked = review.riskPolicy.decision == PluginRiskPolicy.Decision.BLOCK;
         boolean canInstall = pending == null && newer && !blocked;
+        InstallBottomSheet sheet = new InstallBottomSheet(
+                context, fragment.getResourceProvider());
+        sheet.fixNavigationBar(fragment.getThemedColor(Theme.key_dialogBackground));
         LinearLayout content = new LinearLayout(context);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(16), dp(8), dp(16), dp(12));
+        content.setPadding(dp(16), 0, dp(16), dp(12));
+
+        FrameLayout header = new FrameLayout(context);
+
+        TextView screenTitle = sheetText(
+                context, LocaleController.getString(R.string.FluxGramPluginInstallTitle), 27, false);
+        screenTitle.setGravity(Gravity.CENTER_VERTICAL);
+        screenTitle.setSingleLine(true);
+        screenTitle.setEllipsize(TextUtils.TruncateAt.END);
+        screenTitle.setPadding(0, 0, 0, 0);
+        header.addView(screenTitle, LayoutHelper.createFrameRelatively(
+                LayoutHelper.MATCH_PARENT, 64, Gravity.FILL_HORIZONTAL | Gravity.TOP, 4, 0, 64, 0));
+
+        ImageView close = new ImageView(context);
+        close.setImageResource(R.drawable.ic_ab_close);
+        close.setScaleType(ImageView.ScaleType.CENTER);
+        close.setColorFilter(fragment.getThemedColor(Theme.key_dialogTextGray));
+        close.setBackground(Theme.createSimpleSelectorRoundRectDrawable(
+                dp(24),
+                Theme.multAlpha(fragment.getThemedColor(Theme.key_dialogTextGray), 0.10f),
+                fragment.getThemedColor(Theme.key_listSelector)));
+        close.setContentDescription(LocaleController.getString(R.string.Close));
+        close.setOnClickListener(view -> sheet.dismiss());
+        header.addView(close, LayoutHelper.createFrameRelatively(
+                48, 48, Gravity.END | Gravity.CENTER_VERTICAL, 0, 0, 0, 0));
+        content.addView(header, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 64));
 
         ScrollView scroll = new ScrollView(context) {
             @Override
             protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-                int available = (int) (AndroidUtilities.displaySize.y * 0.85f) - dp(132);
+                int available = (int) (windowHeight(context) * 0.85f) - dp(196);
                 int limit = Math.min(MeasureSpec.getSize(heightMeasureSpec), available);
 
                 if (MeasureSpec.getMode(heightMeasureSpec) == MeasureSpec.UNSPECIFIED) {
@@ -161,7 +212,7 @@ public final class PluginInstallSheet {
                 }
 
                 super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(
-                        Math.max(dp(100), limit), MeasureSpec.AT_MOST));
+                        Math.max(0, limit), MeasureSpec.AT_MOST));
             }
         };
         scroll.setFillViewport(false);
@@ -169,47 +220,98 @@ public final class PluginInstallSheet {
 
         LinearLayout details = new LinearLayout(context);
         details.setOrientation(LinearLayout.VERTICAL);
-        details.setPadding(dp(4), 0, dp(4), dp(12));
+        details.setPadding(0, dp(16), 0, dp(12));
+
+        LinearLayout pluginRow = new LinearLayout(context);
+        pluginRow.setOrientation(LinearLayout.HORIZONTAL);
+        pluginRow.setGravity(Gravity.CENTER_VERTICAL);
 
         FluxGramPluginIconView icon = new FluxGramPluginIconView(
                 context, fragment.getResourceProvider(), manifest.id, manifest.name);
-        icon.setRoundRadius(dp(20));
+        icon.setRoundRadius(dp(18));
 
         if (review.icon != null) {
             icon.setImageBitmap(review.icon);
         }
 
-        details.addView(icon, LayoutHelper.createLinear(80, 80, Gravity.CENTER_HORIZONTAL, 0, 20, 0, 12));
+        pluginRow.addView(icon, LayoutHelper.createLinear(80, 80, Gravity.CENTER_VERTICAL));
 
-        TextView title = sheetText(context, manifest.name, 21, false);
+        LinearLayout identity = new LinearLayout(context);
+        identity.setOrientation(LinearLayout.VERTICAL);
+        identity.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView title = sheetText(context, manifest.name, 26, false);
         title.setTypeface(AndroidUtilities.bold());
-        title.setGravity(Gravity.CENTER);
-        details.addView(title, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        title.setSingleLine(true);
+        title.setEllipsize(TextUtils.TruncateAt.END);
+        title.setPadding(0, 0, 0, dp(4));
+        identity.addView(title, LayoutHelper.createLinear(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
         TextView metadata = sheetText(context,
-                LocaleController.getString(R.string.FluxGramPluginVersion) + " " + manifest.version
-                        + " · " + manifest.author, 14, true);
-        metadata.setGravity(Gravity.CENTER);
-        metadata.setPadding(0, 0, 0, dp(20));
-        details.addView(metadata, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+                manifest.version + "  ·  " + manifest.author, 15, true);
+        metadata.setSingleLine(true);
+        metadata.setEllipsize(TextUtils.TruncateAt.END);
+        metadata.setPadding(0, 0, 0, 0);
+        identity.addView(metadata, LayoutHelper.createLinear(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        LinearLayout.LayoutParams identityParams = LayoutHelper.createLinear(
+                0, LayoutHelper.WRAP_CONTENT, 1f, Gravity.CENTER_VERTICAL);
+        identityParams.setMarginStart(dp(18));
+        pluginRow.addView(identity, identityParams);
+        details.addView(pluginRow, LayoutHelper.createLinear(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 0, 0, 20));
+
+        TextView description = sheetText(context, manifest.description, 17, true);
+        description.setLineSpacing(dp(3), 1f);
+        description.setPadding(0, 0, 0, dp(14));
+        details.addView(description, LayoutHelper.createLinear(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
         if (!canInstall && !blocked) {
-            details.addView(sheetText(context, LocaleController.getString(pending != null ? R.string.FluxGramPluginRestartRequired : sameVersion ? R.string.FluxGramPluginAlreadyInstalled : R.string.FluxGramPluginNewerVersionRequired), 15, true));
+            TextView state = sheetText(context, LocaleController.getString(
+                    pending != null
+                            ? R.string.FluxGramPluginRestartRequired
+                            : sameVersion
+                                    ? R.string.FluxGramPluginAlreadyInstalled
+                                    : R.string.FluxGramPluginNewerVersionRequired), 15, true);
+            state.setPadding(0, 0, 0, dp(12));
+            details.addView(state);
         }
 
         if (update && canInstall) {
-            details.addView(sheetText(context, review.installedVersion + " → " + manifest.version, 18, false));
-            details.addView(sheetText(context, LocaleController.getString(R.string.FluxGramPluginUpdateInfo), 14, true));
+            TextView version = sheetText(
+                    context, review.installedVersion + " → " + manifest.version, 17, false);
+            version.setPadding(0, 0, 0, dp(2));
+            details.addView(version);
+
+            TextView updateInfo = sheetText(
+                    context, LocaleController.getString(R.string.FluxGramPluginUpdateInfo), 14, true);
+            updateInfo.setPadding(0, 0, 0, dp(12));
+            details.addView(updateInfo);
         }
 
-        details.addView(sheetText(context, manifest.description, 16, false));
-        details.addView(createRiskSummary(context, review, update), LayoutHelper.createLinear(
-                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 0, 12, 0, 12));
-        details.addView(sheetText(context, LocaleController.getString(R.string.FluxGramFullAccess), 17, false));
-        details.addView(sheetText(context, LocaleController.getString(R.string.FluxGramPluginTrust), 15, false));
+        View[] openReport = new View[1];
+        details.addView(createRiskCard(context, review, update, openReport), LayoutHelper.createLinear(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 4, 0, 18));
+        details.addView(createFullAccessRow(context), LayoutHelper.createLinear(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
         scroll.addView(details);
         content.addView(scroll, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+
+        CheckBoxCell enable = new CheckBoxCell(
+                context, CheckBoxCell.TYPE_CHECK_BOX_UNKNOWN, fragment.getResourceProvider());
+        enable.setText(LocaleController.getString(update
+                        ? R.string.FluxGramEnableAfterUpdate : R.string.FluxGramEnableAfterInstall),
+                "", update && PluginManager.getInstance().isEnabled(manifest.id), false);
+        applyRegularTypeface(enable);
+        enable.setEnabled(canInstall);
+        enable.setAlpha(canInstall ? 1f : 0.5f);
+        enable.setOnClickListener(view -> enable.setChecked(!enable.isChecked(), true));
+        enable.setVisibility(blocked ? View.GONE : View.VISIBLE);
+        content.addView(enable, LayoutHelper.createLinear(
+                LayoutHelper.MATCH_PARENT, 50, Gravity.START));
 
         TextView install = sheetText(context,
                 LocaleController.getString(blocked
@@ -226,19 +328,10 @@ public final class PluginInstallSheet {
                 fragment.getThemedColor(Theme.key_listSelector)));
         content.addView(install, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 50, 0, 8, 0, 10));
 
-        CheckBoxCell enable = new CheckBoxCell(
-                context, CheckBoxCell.TYPE_CHECK_BOX_UNKNOWN, fragment.getResourceProvider());
-        enable.setText(LocaleController.getString(update
-                        ? R.string.FluxGramEnableAfterUpdate : R.string.FluxGramEnableAfterInstall),
-                "", update && PluginManager.getInstance().isEnabled(manifest.id), false);
-        enable.setEnabled(canInstall);
-        enable.setAlpha(canInstall ? 1f : 0.5f);
-        enable.setOnClickListener(view -> enable.setChecked(!enable.isChecked(), true));
-        enable.setVisibility(blocked ? View.GONE : View.VISIBLE);
-        content.addView(enable, LayoutHelper.createLinear(
-                LayoutHelper.WRAP_CONTENT, 50, Gravity.CENTER_HORIZONTAL));
-
-        BottomSheet sheet = new BottomSheet.Builder(context, false, fragment.getResourceProvider()).setCustomView(content).create();
+        PluginRiskReportView reportView = new PluginRiskReportView(
+                context, review, fragment.getResourceProvider(), sheet::showSummary, sheet::dismiss);
+        sheet.setPages(content, reportView);
+        openReport[0].setOnClickListener(view -> sheet.showReport());
         boolean[] installing = {false};
         boolean[] active = {true};
         boolean[] confirming = {false};
@@ -330,11 +423,14 @@ public final class PluginInstallSheet {
         }
     }
 
-    private LinearLayout createRiskSummary(
-            Context context, ExternalPlugins.Review review, boolean update) {
+    private View createRiskCard(
+            Context context,
+            ExternalPlugins.Review review,
+            boolean update,
+            View[] openReport) {
         LinearLayout card = new LinearLayout(context);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(14), dp(10), dp(14), dp(10));
+        card.setPadding(dp(20), dp(16), dp(20), 0);
 
         int color;
         int titleId;
@@ -344,7 +440,7 @@ public final class PluginInstallSheet {
             titleId = R.string.FluxGramPluginRiskBlocked;
         } else if (review.riskPolicy.decision == PluginRiskPolicy.Decision.CONFIRM) {
             color = fragment.getThemedColor(Theme.key_avatar_nameInMessageOrange);
-            titleId = R.string.FluxGramPluginRiskConfirm;
+            titleId = R.string.FluxGramPluginRiskIssues;
         } else {
             color = fragment.getThemedColor(Theme.key_windowBackgroundWhiteGreenText);
             titleId = update
@@ -352,21 +448,150 @@ public final class PluginInstallSheet {
                     : R.string.FluxGramPluginRiskChecked;
         }
 
-        card.setBackground(Theme.createRoundRectDrawable(dp(14), Theme.multAlpha(color, 0.10f)));
+        card.setBackground(Theme.createRoundRectDrawable(
+                dp(22),
+                Theme.multAlpha(fragment.getThemedColor(Theme.key_dialogTextBlack), 0.06f)));
+
+        LinearLayout heading = new LinearLayout(context);
+        heading.setOrientation(LinearLayout.HORIZONTAL);
+        heading.setGravity(Gravity.CENTER_VERTICAL);
+
+        ImageView shield = riskIcon(context, R.drawable.outline_shield_plain_24, color);
+        heading.addView(shield, LayoutHelper.createLinear(28, 28, Gravity.CENTER_VERTICAL));
 
         TextView title = sheetText(context, LocaleController.getString(titleId), 16, false);
         title.setTypeface(AndroidUtilities.bold());
-        title.setTextColor(color);
-        title.setPadding(0, 0, 0, dp(4));
-        card.addView(title, LayoutHelper.createLinear(
-                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        title.setTextSize(18);
+        title.setPaddingRelative(dp(12), 0, 0, 0);
+        heading.addView(title, LayoutHelper.createLinear(
+                0, LayoutHelper.WRAP_CONTENT, 1f, Gravity.CENTER_VERTICAL));
+        card.addView(heading, LayoutHelper.createLinear(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 0, 0, 12));
 
-        TextView message = sheetText(context, riskMessage(review, update), 14, false);
-        message.setPadding(0, 0, 0, 0);
-        card.addView(message, LayoutHelper.createLinear(
-                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        List<RiskReason> reasons = riskReasonItems(review.riskPolicy.reasons);
+
+        if (reasons.isEmpty()) {
+            reasons = Collections.singletonList(new RiskReason(
+                    riskMessage(review, update), R.drawable.msg_info));
+        }
+
+        int count = Math.min(4, reasons.size());
+
+        for (int i = 0; i < count; i++) {
+            RiskReason reason = reasons.get(i);
+            LinearLayout row = new LinearLayout(context);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.TOP);
+
+            ImageView reasonIcon = riskIcon(
+                    context,
+                    reason.icon,
+                    fragment.getThemedColor(Theme.key_dialogTextGray));
+            row.addView(reasonIcon, LayoutHelper.createLinear(26, 26, Gravity.TOP, 0, 3, 0, 0));
+
+            TextView reasonText = sheetText(context, reason.text, 15, false);
+            reasonText.setLineSpacing(dp(2), 1f);
+            reasonText.setPadding(0, 0, 0, 0);
+            LinearLayout.LayoutParams reasonParams = LayoutHelper.createLinear(
+                    0, LayoutHelper.WRAP_CONTENT, 1f, Gravity.TOP);
+            reasonParams.setMarginStart(dp(14));
+            row.addView(reasonText, reasonParams);
+            card.addView(row, LayoutHelper.createLinear(
+                    LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 0, 0, 14));
+        }
+
+        View divider = new View(context);
+        divider.setBackgroundColor(fragment.getThemedColor(Theme.key_divider));
+        card.addView(divider, LayoutHelper.createLinear(
+                LayoutHelper.MATCH_PARENT, 1f / AndroidUtilities.density));
+
+        FrameLayout report = new FrameLayout(context);
+        report.setBackground(Theme.createSimpleSelectorRoundRectDrawable(
+                dp(12), Color.TRANSPARENT, fragment.getThemedColor(Theme.key_listSelector)));
+        report.setContentDescription(LocaleController.getString(R.string.FluxGramPluginRiskReportView));
+
+        TextView reportText = sheetText(
+                context, LocaleController.getString(R.string.FluxGramPluginRiskReportView), 15, false);
+        reportText.setTypeface(AndroidUtilities.bold());
+        reportText.setTextColor(fragment.getThemedColor(Theme.key_windowBackgroundWhiteBlueText));
+        reportText.setGravity(Gravity.CENTER_VERTICAL);
+        reportText.setPadding(0, 0, 0, 0);
+        report.addView(reportText, LayoutHelper.createFrameRelatively(
+                LayoutHelper.MATCH_PARENT, 52, Gravity.FILL_HORIZONTAL | Gravity.TOP, 0, 0, 36, 0));
+
+        ImageView arrow = riskIcon(
+                context,
+                R.drawable.msg_arrowright,
+                fragment.getThemedColor(Theme.key_windowBackgroundWhiteBlueText));
+        arrow.setScaleX(LocaleController.isRTL ? -1f : 1f);
+        report.addView(arrow, LayoutHelper.createFrameRelatively(
+                24, 24, Gravity.END | Gravity.CENTER_VERTICAL));
+        card.addView(report, LayoutHelper.createLinear(
+                LayoutHelper.MATCH_PARENT, 52));
+        openReport[0] = report;
 
         return card;
+    }
+
+    private View createFullAccessRow(Context context) {
+        LinearLayout row = new LinearLayout(context);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.TOP);
+
+        ImageView icon = riskIcon(
+                context,
+                R.drawable.wallet_key,
+                fragment.getThemedColor(Theme.key_dialogTextGray));
+        LinearLayout.LayoutParams iconParams = LayoutHelper.createLinear(30, 30, Gravity.TOP);
+        iconParams.setMarginStart(dp(8));
+        iconParams.topMargin = dp(2);
+        row.addView(icon, iconParams);
+
+        LinearLayout text = new LinearLayout(context);
+        text.setOrientation(LinearLayout.VERTICAL);
+
+        TextView title = sheetText(
+                context, LocaleController.getString(R.string.FluxGramFullAccess), 17, false);
+        title.setTypeface(AndroidUtilities.bold());
+        title.setPadding(0, 0, 0, dp(4));
+        text.addView(title, LayoutHelper.createLinear(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+
+        TextView description = sheetText(
+                context, LocaleController.getString(R.string.FluxGramPluginTrust), 15, true);
+        description.setLineSpacing(dp(2), 1f);
+        description.setPadding(0, 0, 0, 0);
+        text.addView(description, LayoutHelper.createLinear(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        LinearLayout.LayoutParams textParams = LayoutHelper.createLinear(
+                0, LayoutHelper.WRAP_CONTENT, 1f, Gravity.TOP);
+        textParams.setMarginStart(dp(14));
+        textParams.setMarginEnd(dp(8));
+        row.addView(text, textParams);
+
+        return row;
+    }
+
+    private ImageView riskIcon(Context context, int resource, int color) {
+        ImageView icon = new ImageView(context);
+        icon.setImageResource(resource);
+        icon.setScaleType(ImageView.ScaleType.CENTER);
+        icon.setColorFilter(color);
+        icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+
+        return icon;
+    }
+
+    private int windowHeight(Context context) {
+        if (context instanceof Activity) {
+            int height = ((Activity) context).getWindow().getDecorView().getHeight();
+
+            if (height > 0) {
+                return height;
+            }
+        }
+
+        return AndroidUtilities.displaySize.y;
     }
 
     private CharSequence riskMessage(ExternalPlugins.Review review, boolean update) {
@@ -391,76 +616,191 @@ public final class PluginInstallSheet {
 
     private List<CharSequence> riskReasons(List<String> reasonIds) {
         ArrayList<CharSequence> result = new ArrayList<>();
+
+        for (RiskReason reason : riskReasonItems(reasonIds)) {
+            result.add(reason.text);
+        }
+
+        return result;
+    }
+
+    private List<RiskReason> riskReasonItems(List<String> reasonIds) {
+        ArrayList<RiskReason> result = new ArrayList<>();
         LinkedHashSet<Integer> known = new LinkedHashSet<>();
 
         for (String reasonId : reasonIds) {
-            int stringId = riskReasonString(reasonId);
+            int stringId = PluginRiskReportView.reasonString(reasonId);
 
             if (stringId != 0) {
                 if (known.add(stringId)) {
-                    result.add(LocaleController.getString(stringId));
+                    result.add(new RiskReason(
+                            LocaleController.getString(stringId), riskReasonIcon(stringId)));
                 }
             } else {
-                result.add(LocaleController.formatString(
-                        R.string.FluxGramPluginRiskReasonUnknown, reasonId));
+                result.add(new RiskReason(
+                        LocaleController.formatString(
+                                R.string.FluxGramPluginRiskReasonUnknown, reasonId),
+                        R.drawable.msg_info));
             }
         }
 
         return result;
     }
 
-    private int riskReasonString(String id) {
-        if (id.equals("update.previous_report_unavailable")) {
-            return R.string.FluxGramPluginRiskReasonBaseline;
+    private int riskReasonIcon(int stringId) {
+        if (stringId == R.string.FluxGramPluginRiskReasonInternals
+                || stringId == R.string.FluxGramPluginRiskReasonFiles
+                || stringId == R.string.FluxGramPluginRiskReasonManagedStorage) {
+            return R.drawable.msg_filled_storageusage;
         }
-        if (id.startsWith("analysis.")) {
-            return R.string.FluxGramPluginRiskReasonAnalysis;
+        if (stringId == R.string.FluxGramPluginRiskReasonPythonRuntime
+                || stringId == R.string.FluxGramPluginRiskReasonDynamicCode
+                || stringId == R.string.FluxGramPluginRiskReasonProcess) {
+            return R.drawable.menu_feature_code;
         }
-        if (id.equals("block.module.digest_mismatch")
-                || id.equals("block.host_fingerprint_mismatch")) {
-            return R.string.FluxGramPluginRiskReasonIntegrity;
-        }
-        if (id.startsWith("block.")) {
-            return R.string.FluxGramPluginRiskReasonForbiddenStructure;
-        }
-        if (id.startsWith("hook.")) {
-            return R.string.FluxGramPluginRiskReasonHooks;
-        }
-        if (id.contains("network")) {
-            return R.string.FluxGramPluginRiskReasonNetwork;
-        }
-        if (id.startsWith("filesystem.") || id.startsWith("storage.cross_")) {
-            return R.string.FluxGramPluginRiskReasonFiles;
-        }
-        if (id.startsWith("process.") || id.startsWith("code.native_")) {
-            return R.string.FluxGramPluginRiskReasonProcess;
-        }
-        if (id.startsWith("bridge.") || id.startsWith("host.")
-                || id.startsWith("android.")) {
-            return R.string.FluxGramPluginRiskReasonInternals;
-        }
-        if (id.startsWith("reflection.") || id.startsWith("code.dynamic_")
-                || id.startsWith("python.dynamic_")
-                || id.startsWith("python.global_")) {
-            return R.string.FluxGramPluginRiskReasonDynamicCode;
-        }
-        if (id.startsWith("thread.") || id.startsWith("lifecycle.")) {
-            return R.string.FluxGramPluginRiskReasonLifecycle;
-        }
-        if (id.startsWith("ui.")) {
-            return R.string.FluxGramPluginRiskReasonUi;
-        }
-        if (id.startsWith("declaration.")) {
-            return R.string.FluxGramPluginRiskReasonDeclaration;
-        }
-        if (id.startsWith("update.")) {
-            return R.string.FluxGramPluginRiskReasonStructure;
+        if (stringId == R.string.FluxGramPluginRiskReasonHooks
+                || stringId == R.string.FluxGramPluginRiskReasonFullProcess) {
+            return R.drawable.msg_permissions;
         }
 
-        return 0;
+        return R.drawable.msg_info;
     }
 
     private void showRestartInfo() {
         fragment.showDialog(new AlertDialog.Builder(fragment.getParentActivity(), fragment.getResourceProvider()).setTitle(LocaleController.getString(R.string.FluxGramPluginRestartRequired)).setMessage(LocaleController.getString(R.string.FluxGramPluginRestartInfo)).setNegativeButton(LocaleController.getString(R.string.OK), null).setPositiveButton(LocaleController.getString(R.string.FluxGramOpenAndroidSettings), (dialog, which) -> fragment.getParentActivity().startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:" + fragment.getParentActivity().getPackageName())))).create());
+    }
+
+    private static final class RiskReason {
+        final CharSequence text;
+        final int icon;
+
+        RiskReason(CharSequence text, int icon) {
+            this.text = text;
+            this.icon = icon;
+        }
+    }
+
+    private static final class InstallBottomSheet extends BottomSheet {
+        private View summary;
+        private View report;
+        private boolean reportVisible;
+        private int transitionGeneration;
+
+        InstallBottomSheet(
+                Context context, Theme.ResourcesProvider resourcesProvider) {
+            super(context, false, resourcesProvider);
+        }
+
+        void setPages(View summary, View report) {
+            this.summary = summary;
+            this.report = report;
+            report.setVisibility(View.INVISIBLE);
+            report.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+
+            FrameLayout pages = new FrameLayout(getContext());
+            pages.addView(summary, LayoutHelper.createFrame(
+                    LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+            pages.addView(report, LayoutHelper.createFrame(
+                    LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+            setCustomView(pages);
+        }
+
+        void showReport() {
+            if (reportVisible || summary == null || report == null) {
+                return;
+            }
+
+            reportVisible = true;
+            setAllowNestedScroll(false);
+            switchPage(summary, report, true);
+            report.announceForAccessibility(LocaleController.getString(
+                    R.string.FluxGramPluginRiskReportTitle));
+        }
+
+        void showSummary() {
+            if (!reportVisible || summary == null || report == null) {
+                return;
+            }
+
+            reportVisible = false;
+            setAllowNestedScroll(true);
+            switchPage(report, summary, false);
+        }
+
+        private void switchPage(View previous, View next, boolean forward) {
+            int generation = ++transitionGeneration;
+            previous.animate().cancel();
+            next.animate().cancel();
+            previous.setImportantForAccessibility(
+                    View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+            next.setVisibility(View.VISIBLE);
+            next.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
+
+            if (!SharedConfig.animationsEnabled()) {
+                previous.setVisibility(View.INVISIBLE);
+                previous.setAlpha(1f);
+                previous.setTranslationX(0f);
+                previous.setScaleX(1f);
+                previous.setScaleY(1f);
+                next.setAlpha(1f);
+                next.setTranslationX(0f);
+                next.setScaleX(1f);
+                next.setScaleY(1f);
+                return;
+            }
+
+            float direction = forward ? 1f : -1f;
+            next.setAlpha(0f);
+            next.setTranslationX(direction * dp(18));
+            next.setScaleX(0.985f);
+            next.setScaleY(0.985f);
+            next.animate()
+                    .alpha(1f)
+                    .translationX(0f)
+                    .scaleX(1f)
+                    .scaleY(1f)
+                    .setDuration(240)
+                    .setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT)
+                    .start();
+            previous.animate()
+                    .alpha(0f)
+                    .translationX(-direction * dp(10))
+                    .scaleX(0.992f)
+                    .scaleY(0.992f)
+                    .setDuration(170)
+                    .setInterpolator(CubicBezierInterpolator.DEFAULT)
+                    .withEndAction(() -> {
+                        if (generation != transitionGeneration) {
+                            return;
+                        }
+
+                        previous.setVisibility(View.INVISIBLE);
+                        previous.setAlpha(1f);
+                        previous.setTranslationX(0f);
+                        previous.setScaleX(1f);
+                        previous.setScaleY(1f);
+                    })
+                    .start();
+        }
+
+        @Override
+        public void onBackPressed() {
+            if (reportVisible) {
+                showSummary();
+                return;
+            }
+
+            super.onBackPressed();
+        }
+
+        @Override
+        protected boolean canDismissWithSwipe() {
+            return !reportVisible;
+        }
+
+        @Override
+        protected boolean canDismissWithTouchOutside() {
+            return !reportVisible;
+        }
     }
 }
