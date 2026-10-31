@@ -57,7 +57,7 @@ public final class PluginSignatureVerifier {
                 verification.payloadSha256);
     }
 
-    static PluginSignatureVerification verifyCanonicalMessage(
+    public static PluginSignatureVerification verifyCanonicalMessage(
             byte[] encodedPayload,
             PluginSignatureEnvelope envelope) {
         if (encodedPayload == null) {
