@@ -1,7 +1,12 @@
+import base64
 import hashlib
 import json
 from pathlib import Path
 import re
+import shutil
+import subprocess
+import sys
+import tempfile
 import unittest
 import zipfile
 
@@ -140,6 +145,108 @@ class PluginDevkitContractTest(unittest.TestCase):
                 ROOT / "TMessagesProj/config/release/AndroidManifest.xml",
                 ROOT / "TMessagesProj/config/release/AndroidManifest_SDK23.xml"):
             self.assertNotIn("PluginDebugProvider", manifest.read_text())
+
+    def test_signing_contract_matches_host_and_java_crypto(self):
+        try:
+            sys.path.insert(0, str(ROOT / "sdk/python/devkit/src"))
+            from cryptography.hazmat.primitives.asymmetric import ec
+            from fluxgram_devkit.signing import (
+                ENVELOPE_FORMAT_VERSION,
+                PAYLOAD_FORMAT_VERSION,
+                SIGNATURE_ENTRY,
+                SIGNED_SCHEMA_VERSION,
+                Envelope,
+                canonical_public_key,
+                decode_envelope,
+                encode_envelope,
+                sign_payload,
+                verify_payload,
+            )
+        except ImportError:
+            self.skipTest("Requires devkit cryptography dependency")
+        finally:
+            if sys.path and sys.path[0] == str(ROOT / "sdk/python/devkit/src"):
+                sys.path.pop(0)
+
+        if not shutil.which("javac") or not shutil.which("java"):
+            self.skipTest("Requires JDK")
+
+        manifest_source = MANIFEST_SOURCE.read_text()
+        payload_source = (
+            ROOT
+            / "TMessagesProj/src/main/java/org/telegram/messenger/plugins/signing/PluginSignedPayload.java"
+        ).read_text()
+        envelope_source = (
+            ROOT
+            / "TMessagesProj/src/main/java/org/telegram/messenger/plugins/signing/PluginSignatureEnvelope.java"
+        ).read_text()
+        self.assertEqual(
+            SIGNED_SCHEMA_VERSION,
+            int(re.search(r"PARSED_SCHEMA_VERSION = (\d+)", manifest_source).group(1)),
+        )
+        self.assertEqual(5, int(re.search(r"SCHEMA_VERSION = (\d+)", manifest_source).group(1)))
+        self.assertEqual(
+            PAYLOAD_FORMAT_VERSION,
+            int(re.search(r"FORMAT_VERSION = (\d+)", payload_source).group(1)),
+        )
+        self.assertEqual(
+            ENVELOPE_FORMAT_VERSION,
+            int(re.search(r"FORMAT_VERSION = (\d+)", envelope_source).group(1)),
+        )
+        self.assertIn(f'SIGNATURE_ENTRY = "{SIGNATURE_ENTRY}"', payload_source)
+        payload = b"fluxgram-devkit-java-interop"
+        signing = ROOT / "TMessagesProj/src/main/java/org/telegram/messenger/plugins/signing"
+        sources = [
+            signing / "PluginSignatureEnvelope.java",
+            signing / "PluginSignatureVerification.java",
+            signing / "PluginSignatureVerifier.java",
+            signing / "PluginSignedPayload.java",
+            signing / "PluginSignerIdentity.java",
+            ROOT / "tests/java/PluginDevkitSigningInteropCheck.java",
+        ]
+
+        with tempfile.TemporaryDirectory(prefix="plugin-devkit-signing-") as output:
+            subprocess.run(
+                ["javac", "--release", "8", "-d", output, *map(str, sources)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            private_key = ec.generate_private_key(ec.SECP256R1())
+            public_key = canonical_public_key(private_key.public_key())
+            python_envelope = encode_envelope(
+                Envelope(1, public_key, sign_payload(payload, private_key))
+            )
+            verified = subprocess.run(
+                [
+                    "java",
+                    "-cp",
+                    output,
+                    "org.telegram.messenger.plugins.signing.PluginDevkitSigningInteropCheck",
+                    "verify",
+                    base64.b64encode(payload).decode(),
+                    base64.b64encode(python_envelope).decode(),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            self.assertTrue(verified.startswith("VERIFIED p256:"), verified)
+            java_envelope = subprocess.run(
+                [
+                    "java",
+                    "-cp",
+                    output,
+                    "org.telegram.messenger.plugins.signing.PluginDevkitSigningInteropCheck",
+                    "sign",
+                    base64.b64encode(payload).decode(),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            result = verify_payload(payload, decode_envelope(base64.b64decode(java_envelope)))
+            self.assertRegex(result.key_id, r"p256:[a-f0-9]{64}")
 
 
 if __name__ == "__main__":
