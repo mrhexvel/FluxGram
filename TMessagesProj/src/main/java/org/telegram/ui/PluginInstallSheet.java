@@ -9,6 +9,7 @@ import android.graphics.Color;
 import android.net.Uri;
 import android.text.TextUtils;
 import android.view.Gravity;
+import android.view.HapticFeedbackConstants;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
@@ -39,6 +40,7 @@ import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.LinkSpanDrawable;
 import org.telegram.ui.Components.RadialProgressView;
+import org.telegram.ui.Components.RLottieImageView;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -201,7 +203,10 @@ public final class PluginInstallSheet {
                 Theme.multAlpha(fragment.getThemedColor(Theme.key_dialogTextGray), 0.10f),
                 fragment.getThemedColor(Theme.key_listSelector)));
         close.setContentDescription(LocaleController.getString(R.string.Close));
-        close.setOnClickListener(view -> sheet.dismiss());
+        close.setOnClickListener(view -> {
+            performClickHaptic(view);
+            sheet.dismiss();
+        });
         header.addView(close, LayoutHelper.createFrameRelatively(
                 48, 48, Gravity.END | Gravity.CENTER_VERTICAL, 0, 0, 0, 0));
         content.addView(header, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 64));
@@ -313,7 +318,10 @@ public final class PluginInstallSheet {
         applyRegularTypeface(enable);
         enable.setEnabled(canInstall);
         enable.setAlpha(canInstall ? 1f : 0.5f);
-        enable.setOnClickListener(view -> enable.setChecked(!enable.isChecked(), true));
+        enable.setOnClickListener(view -> {
+            performClickHaptic(view);
+            enable.setChecked(!enable.isChecked(), true);
+        });
         enable.setVisibility(blocked ? View.GONE : View.VISIBLE);
         content.addView(enable, LayoutHelper.createLinear(
                 LayoutHelper.MATCH_PARENT, 50, Gravity.START));
@@ -333,13 +341,186 @@ public final class PluginInstallSheet {
                 fragment.getThemedColor(Theme.key_listSelector)));
         content.addView(install, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 50, 0, 8, 0, 10));
 
-        PluginRiskReportView reportView = new PluginRiskReportView(
-                context, review, fragment.getResourceProvider(), sheet::showSummary, sheet::dismiss);
         InstallStateView stateView = new InstallStateView(context, sheet);
-        sheet.setPages(content, reportView, stateView);
-        openReport[0].setOnClickListener(view -> sheet.showReport());
+        sheet.setPages(content, stateView);
         boolean[] installing = {false};
         boolean[] active = {true};
+        boolean[] consumed = {false};
+        boolean[] confirmed = {false};
+        boolean[] transferred = {false};
+        Runnable installAction = () -> {
+            if (!active[0] || installing[0] || !canInstall || !isPresentationUsable()) {
+                return;
+            }
+
+            install(
+                    review,
+                    update,
+                    confirmed[0],
+                    enable,
+                    install,
+                    sheet,
+                    stateView,
+                    active,
+                    installing,
+                    consumed);
+        };
+
+        install.setOnClickListener(view -> {
+            if (!active[0] || installing[0] || !canInstall) {
+                return;
+            }
+
+            performClickHaptic(view);
+
+            if (review.riskPolicy.decision == PluginRiskPolicy.Decision.CONFIRM
+                    || review.signerReview.transition.decision
+                            == PluginSignerTransition.Decision.CONFIRM) {
+                sheet.setTerminal(false);
+                stateView.showConfirmation(
+                        update,
+                        confirmationMessage(review),
+                        sheet::showSummary,
+                        () -> {
+                            if (sheet.canConfirm()) {
+                                confirmed[0] = true;
+                                installAction.run();
+                            }
+                        });
+                sheet.showState();
+            } else {
+                installAction.run();
+            }
+        });
+
+        openReport[0].setOnClickListener(view -> {
+            if (!active[0] || installing[0]) {
+                return;
+            }
+
+            performClickHaptic(view);
+            transferred[0] = true;
+            sheet.dismiss();
+        });
+
+        if (fragment.showDialog(sheet, dialog -> {
+            active[0] = false;
+
+            if (transferred[0]) {
+                showReport(review);
+            } else if (!installing[0] && !consumed[0]) {
+                review.close();
+            }
+        }) == null) {
+            review.close();
+        }
+    }
+
+    private void showReport(ExternalPlugins.Review review) {
+        if (!isPresentationUsable()) {
+            review.close();
+            return;
+        }
+
+        Context context = fragment.getParentActivity();
+        PluginManifest manifest = review.result.manifest;
+        boolean update = review.installedVersion != null;
+        PluginPackageStore.Pending pending = ExternalPlugins.getPending(manifest.id);
+        boolean newer = !update || PluginPackageStore.compareVersions(
+                manifest.version, review.installedVersion) > 0;
+        boolean blocked = review.riskPolicy.decision == PluginRiskPolicy.Decision.BLOCK
+                || review.signerReview.transition.decision
+                        == PluginSignerTransition.Decision.BLOCK;
+        boolean canInstall = pending == null && newer && !blocked;
+        InstallBottomSheet sheet = new InstallBottomSheet(
+                context, fragment.getResourceProvider());
+        sheet.fixNavigationBar(fragment.getThemedColor(Theme.key_dialogBackground));
+
+        LinearLayout content = new LinearLayout(context);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(16), 0, dp(16), dp(12));
+
+        FrameLayout header = new FrameLayout(context);
+        TextView screenTitle = sheetText(
+                context, LocaleController.getString(R.string.FluxGramPluginRiskReportTitle), 27, false);
+        screenTitle.setGravity(Gravity.CENTER_VERTICAL);
+        screenTitle.setSingleLine(true);
+        screenTitle.setEllipsize(TextUtils.TruncateAt.END);
+        screenTitle.setPadding(0, 0, 0, 0);
+        header.addView(screenTitle, LayoutHelper.createFrameRelatively(
+                LayoutHelper.MATCH_PARENT, 64, Gravity.FILL_HORIZONTAL | Gravity.TOP, 4, 0, 64, 0));
+
+        ImageView close = new ImageView(context);
+        close.setImageResource(R.drawable.ic_ab_close);
+        close.setScaleType(ImageView.ScaleType.CENTER);
+        close.setColorFilter(fragment.getThemedColor(Theme.key_dialogTextGray));
+        close.setBackground(Theme.createSimpleSelectorRoundRectDrawable(
+                dp(24),
+                Theme.multAlpha(fragment.getThemedColor(Theme.key_dialogTextGray), 0.10f),
+                fragment.getThemedColor(Theme.key_listSelector)));
+        close.setContentDescription(LocaleController.getString(R.string.Close));
+        close.setOnClickListener(view -> {
+            performClickHaptic(view);
+            sheet.dismiss();
+        });
+        header.addView(close, LayoutHelper.createFrameRelatively(
+                48, 48, Gravity.END | Gravity.CENTER_VERTICAL));
+        content.addView(header, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 64));
+
+        TextView plugin = sheetText(
+                context, manifest.name + "  ·  " + manifest.version, 20, false);
+        plugin.setTypeface(AndroidUtilities.bold());
+        plugin.setPadding(dp(4), dp(8), dp(4), dp(4));
+        content.addView(plugin, LayoutHelper.createLinear(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+
+        TextView description = sheetText(context, manifest.description, 15, true);
+        description.setLineSpacing(dp(2), 1f);
+        description.setPadding(dp(4), 0, dp(4), dp(8));
+        content.addView(description, LayoutHelper.createLinear(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+
+        PluginRiskReportView reportView = new PluginRiskReportView(
+                context, review, fragment.getResourceProvider());
+        content.addView(reportView, LayoutHelper.createLinear(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+
+        CheckBoxCell enable = new CheckBoxCell(
+                context, CheckBoxCell.TYPE_CHECK_BOX_UNKNOWN, fragment.getResourceProvider());
+        enable.setText(LocaleController.getString(update
+                        ? R.string.FluxGramEnableAfterUpdate : R.string.FluxGramEnableAfterInstall),
+                "", update && PluginManager.getInstance().isEnabled(manifest.id), false);
+        applyRegularTypeface(enable);
+        enable.setEnabled(canInstall);
+        enable.setAlpha(canInstall ? 1f : 0.5f);
+        enable.setVisibility(blocked ? View.GONE : View.VISIBLE);
+        enable.setOnClickListener(view -> {
+            performClickHaptic(view);
+            enable.setChecked(!enable.isChecked(), true);
+        });
+        content.addView(enable, LayoutHelper.createLinear(
+                LayoutHelper.MATCH_PARENT, 50, Gravity.START));
+
+        TextView install = sheetText(context,
+                LocaleController.getString(blocked
+                        ? R.string.FluxGramPluginRiskBlocked
+                        : update ? R.string.FluxGramUpdatePlugin : R.string.FluxGramInstallPlugin),
+                16, false);
+        install.setEnabled(canInstall);
+        install.setAlpha(canInstall ? 1f : 0.5f);
+        install.setGravity(Gravity.CENTER);
+        install.setTypeface(AndroidUtilities.bold());
+        install.setTextColor(fragment.getThemedColor(Theme.key_featuredStickers_buttonText));
+        install.setBackground(Theme.createSimpleSelectorRoundRectDrawable(
+                dp(25), fragment.getThemedColor(Theme.key_featuredStickers_addButton),
+                fragment.getThemedColor(Theme.key_listSelector)));
+        content.addView(install, LayoutHelper.createLinear(
+                LayoutHelper.MATCH_PARENT, 50, 0, 8, 0, 10));
+
+        InstallStateView stateView = new InstallStateView(context, sheet);
+        sheet.setPages(content, stateView);
+        boolean[] active = {true};
+        boolean[] installing = {false};
         boolean[] consumed = {false};
         boolean[] confirmed = {false};
         Runnable installAction = () -> {
@@ -347,61 +528,24 @@ public final class PluginInstallSheet {
                 return;
             }
 
-            installing[0] = true;
-            consumed[0] = true;
-            sheet.setBusy(true);
-            install.setEnabled(false);
-            enable.setEnabled(false);
-            install.setText(LocaleController.getString(R.string.FluxGramPluginInstalling));
-            stateView.showInstalling(manifest.name);
-            sheet.showState();
-
-            ExternalPlugins.install(
+            install(
                     review,
-                    enable.isChecked(),
-                    update ? review.installedVersion : null,
+                    update,
                     confirmed[0],
-                    (id, error) -> {
-                        installing[0] = false;
-                        sheet.setBusy(false);
-
-                        if (!active[0]) {
-                            return;
-                        }
-
-                        if (!isPresentationUsable()) {
-                            sheet.dismiss();
-                            return;
-                        }
-
-                        if (error != null) {
-                            sheet.setTerminal(true);
-                            stateView.showError(error.getMessage(), sheet::dismiss);
-                        } else {
-                            ExternalPlugins.changed();
-                            sheet.setTerminal(true);
-
-                            if (update) {
-                                stateView.showUpdated(
-                                        manifest.name,
-                                        () -> {
-                                            Intent intent = new Intent(
-                                                    android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                                    android.net.Uri.parse("package:" + context.getPackageName()));
-                                            context.startActivity(intent);
-                                        },
-                                        sheet::dismiss);
-                            } else {
-                                stateView.showInstalled(manifest.name, sheet::dismiss);
-                            }
-                        }
-                    });
+                    enable,
+                    install,
+                    sheet,
+                    stateView,
+                    active,
+                    installing,
+                    consumed);
         };
-
         install.setOnClickListener(view -> {
             if (!active[0] || installing[0] || !canInstall) {
                 return;
             }
+
+            performClickHaptic(view);
 
             if (review.riskPolicy.decision == PluginRiskPolicy.Decision.CONFIRM
                     || review.signerReview.transition.decision
@@ -432,6 +576,70 @@ public final class PluginInstallSheet {
         }) == null) {
             review.close();
         }
+    }
+
+    private void install(
+            ExternalPlugins.Review review,
+            boolean update,
+            boolean confirmed,
+            CheckBoxCell enable,
+            TextView install,
+            InstallBottomSheet sheet,
+            InstallStateView stateView,
+            boolean[] active,
+            boolean[] installing,
+            boolean[] consumed) {
+        Context context = fragment.getParentActivity();
+        PluginManifest manifest = review.result.manifest;
+        installing[0] = true;
+        consumed[0] = true;
+        sheet.setBusy(true);
+        install.setEnabled(false);
+        enable.setEnabled(false);
+        install.setText(LocaleController.getString(R.string.FluxGramPluginInstalling));
+        stateView.showInstalling(manifest.name);
+        sheet.showState();
+
+        ExternalPlugins.install(
+                review,
+                enable.isChecked(),
+                update ? review.installedVersion : null,
+                confirmed,
+                (id, error) -> {
+                    installing[0] = false;
+                    sheet.setBusy(false);
+
+                    if (!active[0]) {
+                        return;
+                    }
+
+                    if (!isPresentationUsable()) {
+                        sheet.dismiss();
+                        return;
+                    }
+
+                    if (error != null) {
+                        sheet.setTerminal(true);
+                        stateView.showError(error.getMessage(), sheet::dismiss);
+                    } else {
+                        ExternalPlugins.changed();
+                        sheet.setTerminal(true);
+
+                        if (update) {
+                            stateView.showUpdated(
+                                    manifest.name,
+                                    () -> {
+                                        Intent intent = new Intent(
+                                                android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                                android.net.Uri.parse("package:" + context.getPackageName()));
+                                        context.startActivity(intent);
+                                    },
+                                    sheet::dismiss);
+                        } else {
+                            stateView.showInstalled(manifest.name, sheet::dismiss);
+                        }
+                    }
+                });
     }
 
     private View createRiskCard(
@@ -614,6 +822,10 @@ public final class PluginInstallSheet {
         return AndroidUtilities.displaySize.y;
     }
 
+    private static void performClickHaptic(View view) {
+        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+    }
+
     private CharSequence riskMessage(ExternalPlugins.Review review, boolean update) {
         if (review.riskPolicy.decision == PluginRiskPolicy.Decision.ALLOW) {
             return LocaleController.getString(update
@@ -759,7 +971,7 @@ public final class PluginInstallSheet {
                 Runnable onBack,
                 Runnable onConfirm) {
             reset(true, onBack, sheet::dismiss);
-            addHeroIcon(R.drawable.outline_shield_plain_24, Theme.key_avatar_nameInMessageOrange);
+            addRiskAnimation();
             addTitle(LocaleController.getString(update
                     ? R.string.FluxGramPluginRiskUpdateConfirmTitle
                     : R.string.FluxGramPluginRiskConfirmTitle));
@@ -786,7 +998,7 @@ public final class PluginInstallSheet {
 
         void showInstalled(String name, Runnable onClose) {
             reset(false, null, onClose);
-            addHeroIcon(R.drawable.msg_check_s, Theme.key_windowBackgroundWhiteGreenText);
+            addSuccessAnimation();
             addTitle(LocaleController.getString(R.string.FluxGramPluginInstalled));
             addMessage(name);
             addPrimaryButton(LocaleController.getString(R.string.Close), onClose);
@@ -794,7 +1006,7 @@ public final class PluginInstallSheet {
 
         void showUpdated(String name, Runnable onOpenSettings, Runnable onClose) {
             reset(false, null, onClose);
-            addHeroIcon(R.drawable.msg_check_s, Theme.key_windowBackgroundWhiteGreenText);
+            addSuccessAnimation();
             addTitle(LocaleController.getString(R.string.FluxGramPluginRestartRequired));
             addMessage(LocaleController.getString(R.string.FluxGramPluginRestartInfo));
             addPrimaryButton(
@@ -842,8 +1054,50 @@ public final class PluginInstallSheet {
                     fragment.getThemedColor(Theme.key_listSelector),
                     Theme.RIPPLE_MASK_CIRCLE_20DP));
             button.setContentDescription(LocaleController.getString(description));
-            button.setOnClickListener(view -> action.run());
+            button.setOnClickListener(view -> {
+                performClickHaptic(view);
+                action.run();
+            });
             return button;
+        }
+
+        private void addSuccessAnimation() {
+            RLottieImageView animation = new RLottieImageView(context);
+            animation.setAnimation(R.raw.plugin_install_success, 100, 100);
+            int primary = fragment.getThemedColor(Theme.key_windowBackgroundWhiteGreenText);
+            animation.setLayerColor("Success.Primary", primary);
+            animation.setLayerColor("Success.Secondary", Theme.multAlpha(primary, 0.35f));
+            animation.setLayerColor("Success.Particles", primary);
+
+            playAnimation(animation);
+            addView(animation, LayoutHelper.createLinear(
+                    100, 100, Gravity.CENTER_HORIZONTAL, 0, 10, 0, 4));
+        }
+
+        private void addRiskAnimation() {
+            RLottieImageView animation = new RLottieImageView(context);
+            animation.setAnimation(R.raw.risk_plugin_shield, 100, 100);
+            animation.setLayerColor(
+                    "Risk.Primary",
+                    fragment.getThemedColor(Theme.key_avatar_nameInMessageOrange));
+            animation.setLayerColor(
+                    "Risk.Accent",
+                    fragment.getThemedColor(Theme.key_text_RedBold));
+            animation.setLayerColor(
+                    "Risk.Highlight",
+                    fragment.getThemedColor(Theme.key_dialogBackground));
+
+            playAnimation(animation);
+            addView(animation, LayoutHelper.createLinear(
+                    100, 100, Gravity.CENTER_HORIZONTAL, 0, 10, 0, 4));
+        }
+
+        private void playAnimation(RLottieImageView animation) {
+            if (SharedConfig.animationsEnabled()) {
+                animation.playAnimation();
+            } else {
+                animation.setProgress(1f);
+            }
         }
 
         private void addHeroIcon(int resource, int colorKey) {
@@ -904,7 +1158,10 @@ public final class PluginInstallSheet {
                             : Theme.multAlpha(fragment.getThemedColor(
                                     Theme.key_windowBackgroundWhiteBlueText), 0.09f),
                     fragment.getThemedColor(Theme.key_listSelector)));
-            button.setOnClickListener(view -> action.run());
+            button.setOnClickListener(view -> {
+                performClickHaptic(view);
+                action.run();
+            });
             return button;
         }
     }
@@ -921,65 +1178,41 @@ public final class PluginInstallSheet {
 
     private static final class InstallBottomSheet extends BottomSheet {
         private View summary;
-        private View report;
         private View state;
-        private boolean reportVisible;
         private boolean stateVisible;
         private boolean busy;
         private boolean terminal;
-        private int transitionGeneration;
 
         InstallBottomSheet(
                 Context context, Theme.ResourcesProvider resourcesProvider) {
             super(context, false, resourcesProvider);
         }
 
-        void setPages(View summary, View report, View state) {
+        void setPages(View summary, View state) {
             this.summary = summary;
-            this.report = report;
             this.state = state;
-            report.setVisibility(View.INVISIBLE);
-            state.setVisibility(View.INVISIBLE);
-            report.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+            state.setVisibility(View.GONE);
             state.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
 
             FrameLayout pages = new FrameLayout(getContext());
             pages.addView(summary, LayoutHelper.createFrame(
-                    LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-            pages.addView(report, LayoutHelper.createFrame(
                     LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
             pages.addView(state, LayoutHelper.createFrame(
                     LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
             setCustomView(pages);
         }
 
-        void showReport() {
-            if (reportVisible || summary == null || report == null) {
-                return;
-            }
-
-            reportVisible = true;
-            stateVisible = false;
-            setAllowNestedScroll(false);
-            switchPage(summary, report, true);
-            report.announceForAccessibility(LocaleController.getString(
-                    R.string.FluxGramPluginRiskReportTitle));
-        }
-
         void showSummary() {
-            if ((!reportVisible && !stateVisible)
+            if (!stateVisible
                     || summary == null
-                    || report == null
                     || state == null
                     || busy) {
                 return;
             }
 
-            View previous = reportVisible ? report : state;
-            reportVisible = false;
             stateVisible = false;
             setAllowNestedScroll(true);
-            switchPage(previous, summary, false);
+            switchPage(state, summary, false);
         }
 
         void showState() {
@@ -987,11 +1220,9 @@ public final class PluginInstallSheet {
                 return;
             }
 
-            View previous = reportVisible ? report : summary;
-            reportVisible = false;
             stateVisible = true;
             setAllowNestedScroll(false);
-            switchPage(previous, state, true);
+            switchPage(summary, state, true);
         }
 
         void setBusy(boolean value) {
@@ -1007,20 +1238,19 @@ public final class PluginInstallSheet {
         }
 
         private void switchPage(View previous, View next, boolean forward) {
-            int generation = ++transitionGeneration;
             previous.animate().cancel();
             next.animate().cancel();
             previous.setImportantForAccessibility(
                     View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+            previous.setVisibility(View.GONE);
+            previous.setAlpha(1f);
+            previous.setTranslationX(0f);
+            previous.setScaleX(1f);
+            previous.setScaleY(1f);
             next.setVisibility(View.VISIBLE);
             next.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
 
             if (!SharedConfig.animationsEnabled()) {
-                previous.setVisibility(View.INVISIBLE);
-                previous.setAlpha(1f);
-                previous.setTranslationX(0f);
-                previous.setScaleX(1f);
-                previous.setScaleY(1f);
                 next.setAlpha(1f);
                 next.setTranslationX(0f);
                 next.setScaleX(1f);
@@ -1041,25 +1271,6 @@ public final class PluginInstallSheet {
                     .setDuration(240)
                     .setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT)
                     .start();
-            previous.animate()
-                    .alpha(0f)
-                    .translationX(-direction * dp(10))
-                    .scaleX(0.992f)
-                    .scaleY(0.992f)
-                    .setDuration(170)
-                    .setInterpolator(CubicBezierInterpolator.DEFAULT)
-                    .withEndAction(() -> {
-                        if (generation != transitionGeneration) {
-                            return;
-                        }
-
-                        previous.setVisibility(View.INVISIBLE);
-                        previous.setAlpha(1f);
-                        previous.setTranslationX(0f);
-                        previous.setScaleX(1f);
-                        previous.setScaleY(1f);
-                    })
-                    .start();
         }
 
         @Override
@@ -1069,7 +1280,7 @@ public final class PluginInstallSheet {
                 return;
             }
 
-            if ((reportVisible || stateVisible) && !busy) {
+            if (stateVisible && !busy) {
                 showSummary();
                 return;
             }
@@ -1083,12 +1294,12 @@ public final class PluginInstallSheet {
 
         @Override
         protected boolean canDismissWithSwipe() {
-            return !reportVisible && !busy && (!stateVisible || terminal);
+            return !busy && (!stateVisible || terminal);
         }
 
         @Override
         protected boolean canDismissWithTouchOutside() {
-            return !reportVisible && !busy && (!stateVisible || terminal);
+            return !busy && (!stateVisible || terminal);
         }
     }
 }

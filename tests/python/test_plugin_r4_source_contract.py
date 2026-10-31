@@ -11,15 +11,22 @@ STRINGS_RU = ROOT / "TMessagesProj/src/main/res/values-ru/strings.xml"
 
 
 class PluginR4SourceContractTest(unittest.TestCase):
-    def test_full_report_stays_inside_install_bottom_sheet(self):
+    def test_full_report_opens_in_owned_install_bottom_sheet(self):
         sheet = INSTALL_SHEET.read_text()
 
         self.assertIn("final class InstallBottomSheet extends BottomSheet", sheet)
-        self.assertIn("sheet.setPages(content, reportView, stateView);", sheet)
-        self.assertIn("reportVisible || stateVisible", sheet)
+        self.assertIn("sheet.setPages(content, stateView);", sheet)
+        self.assertIn("private void showReport(ExternalPlugins.Review review)", sheet)
+        self.assertIn("if (transferred[0])", sheet)
+        self.assertIn("showReport(review);", sheet)
+        self.assertIn("boolean[] transferred = {false};", sheet)
+        self.assertIn("new PluginRiskReportView(", sheet)
         self.assertIn("setAllowNestedScroll(false);", sheet)
         self.assertIn("setAllowNestedScroll(true);", sheet)
-        self.assertIn("return !reportVisible && !busy && (!stateVisible || terminal);", sheet)
+        self.assertIn("state.setVisibility(View.GONE);", sheet)
+        self.assertIn("previous.setVisibility(View.GONE);", sheet)
+        self.assertNotIn("previous.animate()\n                    .alpha", sheet)
+        self.assertIn("return !busy && (!stateVisible || terminal);", sheet)
         self.assertIn("canDismissWithTouchOutside()", sheet)
         self.assertNotIn("presentFragment", sheet)
 
@@ -37,6 +44,37 @@ class PluginR4SourceContractTest(unittest.TestCase):
         self.assertIn("if (stateVisible && terminal)", sheet)
         self.assertNotIn("AlertDialog confirmation", sheet)
 
+    def test_success_state_uses_theme_aware_animation(self):
+        sheet = INSTALL_SHEET.read_text()
+
+        self.assertIn("new RLottieImageView(context)", sheet)
+        self.assertIn("setAnimation(R.raw.plugin_install_success, 100, 100)", sheet)
+        self.assertIn('setLayerColor("Success.Primary", primary)', sheet)
+        self.assertIn("SharedConfig.animationsEnabled()", sheet)
+        self.assertNotIn("addHeroIcon(R.drawable.msg_check_s", sheet)
+
+    def test_risk_confirmation_uses_theme_aware_animation(self):
+        sheet = INSTALL_SHEET.read_text()
+
+        self.assertIn("setAnimation(R.raw.risk_plugin_shield, 100, 100)", sheet)
+        self.assertIn('"Risk.Primary"', sheet)
+        self.assertIn('"Risk.Accent"', sheet)
+        self.assertIn('"Risk.Highlight"', sheet)
+        self.assertNotIn(
+            "addHeroIcon(R.drawable.outline_shield_plain_24", sheet
+        )
+
+    def test_sheet_clicks_use_system_respecting_haptics(self):
+        sheet = INSTALL_SHEET.read_text()
+        report = REPORT_VIEW.read_text()
+
+        self.assertIn("performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)", sheet)
+        self.assertIn("performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)", report)
+        self.assertNotIn("FLAG_IGNORE_GLOBAL_SETTING", sheet)
+        self.assertNotIn("FLAG_IGNORE_VIEW_SETTING", sheet)
+        self.assertNotIn("FLAG_IGNORE_GLOBAL_SETTING", report)
+        self.assertNotIn("FLAG_IGNORE_VIEW_SETTING", report)
+
     def test_signer_and_risk_share_one_confirmation_page(self):
         sheet = INSTALL_SHEET.read_text()
 
@@ -44,7 +82,7 @@ class PluginR4SourceContractTest(unittest.TestCase):
         self.assertIn("PluginSignerTransition.Decision.CONFIRM", sheet)
         self.assertIn("review.signerReview.transition.reason", sheet)
         self.assertIn("confirmed[0] = true;", sheet)
-        self.assertEqual(sheet.count("stateView.showConfirmation("), 1)
+        self.assertEqual(sheet.count("stateView.showConfirmation("), 2)
 
     def test_report_contains_diff_and_only_exposes_sanitized_host_detail(self):
         report = REPORT_VIEW.read_text()

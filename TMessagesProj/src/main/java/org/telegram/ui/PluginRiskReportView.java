@@ -7,8 +7,8 @@ import android.app.Activity;
 import android.content.Context;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
-import android.text.TextUtils;
 import android.view.Gravity;
+import android.view.HapticFeedbackConstants;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
@@ -30,7 +30,6 @@ import org.telegram.messenger.plugins.risk.PluginRiskDiff;
 import org.telegram.messenger.plugins.risk.PluginRiskEvidence;
 import org.telegram.messenger.plugins.risk.PluginRiskReport;
 import org.telegram.ui.ActionBar.Theme;
-import org.telegram.ui.Components.FluxGramPluginIconView;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.RecyclerListView;
@@ -47,95 +46,15 @@ final class PluginRiskReportView extends LinearLayout {
     PluginRiskReportView(
             Context context,
             ExternalPlugins.Review review,
-            Theme.ResourcesProvider resourcesProvider,
-            Runnable onBack,
-            Runnable onClose) {
+            Theme.ResourcesProvider resourcesProvider) {
         super(context);
         this.resourcesProvider = resourcesProvider;
         setOrientation(VERTICAL);
-        setBackgroundColor(color(Theme.key_dialogBackground));
-
-        FrameLayout header = new FrameLayout(context);
-        header.setBackgroundColor(color(Theme.key_dialogBackground));
-
-        ImageView back = new ImageView(context);
-        back.setImageResource(R.drawable.ic_ab_back);
-        back.setScaleType(ImageView.ScaleType.CENTER);
-        back.setColorFilter(color(Theme.key_dialogTextBlack));
-        back.setBackground(Theme.createSelectorDrawable(
-                color(Theme.key_listSelector), Theme.RIPPLE_MASK_CIRCLE_20DP));
-        back.setContentDescription(LocaleController.getString(R.string.Back));
-        back.setOnClickListener(view -> onBack.run());
-        header.addView(back, LayoutHelper.createFrameRelatively(
-                48, 48, Gravity.START | Gravity.CENTER_VERTICAL, 4, 4, 0, 4));
-
-        TextView title = text(LocaleController.getString(R.string.FluxGramPluginRiskReportTitle), 20, false);
-        title.setTypeface(AndroidUtilities.bold());
-        title.setGravity(Gravity.CENTER_VERTICAL);
-        title.setSingleLine(true);
-        title.setEllipsize(TextUtils.TruncateAt.END);
-        ViewCompat.setAccessibilityHeading(title, true);
-        header.addView(title, LayoutHelper.createFrameRelatively(
-                LayoutHelper.MATCH_PARENT,
-                64,
-                Gravity.FILL_HORIZONTAL | Gravity.TOP,
-                64,
-                0,
-                64,
-                0));
-
-        ImageView close = new ImageView(context);
-        close.setImageResource(R.drawable.ic_ab_close);
-        close.setScaleType(ImageView.ScaleType.CENTER);
-        close.setColorFilter(color(Theme.key_dialogTextGray));
-        close.setBackground(Theme.createSelectorDrawable(
-                color(Theme.key_listSelector), Theme.RIPPLE_MASK_CIRCLE_20DP));
-        close.setContentDescription(LocaleController.getString(R.string.Close));
-        close.setOnClickListener(view -> onClose.run());
-        header.addView(close, LayoutHelper.createFrameRelatively(
-                48, 48, Gravity.END | Gravity.CENTER_VERTICAL, 0, 8, 4, 8));
-        addView(header, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 64));
-
-        LinearLayout identity = new LinearLayout(context);
-        identity.setOrientation(HORIZONTAL);
-        identity.setGravity(Gravity.CENTER_VERTICAL);
-        identity.setPadding(dp(16), dp(12), dp(16), dp(12));
-        GradientDrawable identityBackground = new GradientDrawable();
-        identityBackground.setColor(Theme.multAlpha(
-                color(Theme.key_windowBackgroundWhiteBlueHeader), 0.09f));
-        identityBackground.setCornerRadius(dp(18));
-        identity.setBackground(identityBackground);
-
-        FluxGramPluginIconView icon = new FluxGramPluginIconView(
-                context,
-                resourcesProvider,
-                review.result.manifest.id,
-                review.result.manifest.name);
-        icon.setRoundRadius(dp(12));
-
-        if (review.icon != null) {
-            icon.setImageBitmap(review.icon);
-        }
-
-        identity.addView(icon, LayoutHelper.createLinear(48, 48, Gravity.CENTER_VERTICAL));
-
-        TextView plugin = text(
-                review.result.manifest.name + "  ·  " + review.result.manifest.version,
-                17,
-                false);
-        plugin.setSingleLine(true);
-        plugin.setEllipsize(TextUtils.TruncateAt.END);
-        LinearLayout.LayoutParams pluginParams = LayoutHelper.createLinear(
-                0, LayoutHelper.WRAP_CONTENT, 1f, Gravity.CENTER_VERTICAL);
-        pluginParams.setMarginStart(dp(16));
-        identity.addView(plugin, pluginParams);
-        addView(identity, LayoutHelper.createLinear(
-                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 20, 4, 20, 12));
 
         RecyclerListView list = new RecyclerListView(context, resourcesProvider) {
             @Override
             protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-                int available = (int) (windowHeight(context) * 0.85f) - dp(130);
+                int available = (int) (windowHeight(context) * 0.55f);
                 int limit = Math.min(MeasureSpec.getSize(heightMeasureSpec), available);
 
                 if (MeasureSpec.getMode(heightMeasureSpec) == MeasureSpec.UNSPECIFIED) {
@@ -149,7 +68,7 @@ final class PluginRiskReportView extends LinearLayout {
         list.setLayoutManager(new LinearLayoutManager(context));
         list.setVerticalScrollBarEnabled(false);
         list.setClipToPadding(false);
-        list.setPadding(0, dp(4), 0, dp(24));
+        list.setPadding(0, dp(12), 0, dp(20));
         buildReport(review);
         list.setAdapter(new ReportAdapter());
         addView(list, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
@@ -219,6 +138,10 @@ final class PluginRiskReportView extends LinearLayout {
         }
 
         return 0;
+    }
+
+    private static void performClickHaptic(View view) {
+        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
     }
 
     private void buildReport(ExternalPlugins.Review review) {
@@ -808,6 +731,7 @@ final class PluginRiskReportView extends LinearLayout {
                         return;
                     }
 
+                    performClickHaptic(view);
                     Item item = items.get(position);
                     item.group.expanded = !item.group.expanded;
                     ((EvidenceGroupView) holder.itemView).setExpanded(
