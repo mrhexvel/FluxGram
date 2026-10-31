@@ -325,6 +325,17 @@ public final class PluginPackageStore {
         return readInstalled(new File(root, id), id);
     }
 
+    public synchronized Installed find(String id) throws IOException {
+        validateId(id);
+        File folder = new File(root, id);
+
+        if (!folder.isDirectory()) {
+            return null;
+        }
+
+        return readInstalled(folder, id);
+    }
+
     private Installed readInstalled(File folder, String expectedId) throws IOException {
         ByteArrayOutputStream data = new ByteArrayOutputStream();
 

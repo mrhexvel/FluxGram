@@ -356,6 +356,10 @@ public final class PluginRiskReportCheck {
         require(PluginRiskPolicy.evaluateUpdate(previous, contextChanged).decision
                 == PluginRiskPolicy.Decision.CONFIRM);
 
+        PluginRiskPolicy.Result missingBaseline = PluginRiskPolicy.evaluateUpdate(null, newRisk);
+        require(missingBaseline.decision == PluginRiskPolicy.Decision.CONFIRM);
+        require(missingBaseline.reasons.contains("update.previous_report_unavailable"));
+
         PluginRiskReport otherPlugin = new PluginRiskReport(
                 digest('d'),
                 "other.plugin",

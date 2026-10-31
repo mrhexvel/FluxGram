@@ -1392,13 +1392,41 @@ class PluginStoreTest(unittest.TestCase):
             [f'{legacy["id"]}:true:2:12'],
         )
 
-    def test_install_sheet_recognizes_incompatible_update(self):
+    def test_install_review_uses_persisted_baseline_for_updates(self):
+        sheet_source = (
+            ROOT
+            / "TMessagesProj/src/main/java/org/telegram/ui/PluginInstallSheet.java"
+        ).read_text()
+        loader_source = (
+            ROOT
+            / "TMessagesProj/src/main/java/org/telegram/messenger/plugins/ExternalPlugins.java"
+        ).read_text()
+
+        self.assertIn(
+            "boolean update = review.installedVersion != null;",
+            sheet_source,
+        )
+        self.assertIn(
+            "store.find(result.manifest.id)",
+            loader_source,
+        )
+
+    def test_install_sheet_enforces_risk_decisions(self):
         source = (
             ROOT
             / "TMessagesProj/src/main/java/org/telegram/ui/PluginInstallSheet.java"
         ).read_text()
+
         self.assertIn(
-            "installed = ExternalPlugins.getIncompatiblePlugin(manifest.id);",
+            "review.riskPolicy.decision == PluginRiskPolicy.Decision.BLOCK",
+            source,
+        )
+        self.assertIn(
+            "review.riskPolicy.decision == PluginRiskPolicy.Decision.CONFIRM",
+            source,
+        )
+        self.assertIn(
+            "if (!active[0] || installing[0] || !canInstall || !isPresentationUsable())",
             source,
         )
 

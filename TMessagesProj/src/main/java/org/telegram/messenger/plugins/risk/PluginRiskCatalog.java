@@ -118,6 +118,7 @@ public final class PluginRiskCatalog {
         add(descriptors, "update.package_schema_changed", Severity.HIGH, Disposition.CONFIRM);
         add(descriptors, "update.analyzer_version_changed", Severity.HIGH, Disposition.CONFIRM);
         add(descriptors, "update.host_fingerprint_changed", Severity.HIGH, Disposition.CONFIRM);
+        add(descriptors, "update.previous_report_unavailable", Severity.HIGH, Disposition.CONFIRM);
 
         add(descriptors, "block.archive.native_payload_forbidden", Severity.CRITICAL, Disposition.BLOCK);
         add(descriptors, "block.archive.undeclared_executable", Severity.CRITICAL, Disposition.BLOCK);

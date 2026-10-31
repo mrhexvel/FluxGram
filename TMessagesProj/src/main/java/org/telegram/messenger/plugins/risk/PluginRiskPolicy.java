@@ -45,6 +45,17 @@ public final class PluginRiskPolicy {
     public static Result evaluateUpdate(
             PluginRiskReport previous,
             PluginRiskReport current) {
+        if (current == null) {
+            throw new IllegalArgumentException("Current risk report is required");
+        }
+        if (previous == null) {
+            return evaluate(
+                    current,
+                    current.evidence,
+                    current.limitations,
+                    Collections.singletonList("update.previous_report_unavailable"));
+        }
+
         PluginRiskDiff diff = PluginRiskDiff.between(previous, current);
         ArrayList<PluginRiskEvidence> relevant = new ArrayList<>();
 

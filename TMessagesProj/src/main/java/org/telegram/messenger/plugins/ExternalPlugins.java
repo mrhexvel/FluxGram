@@ -12,6 +12,9 @@ import org.telegram.messenger.FileLog;
 import org.telegram.messenger.plugins.packages.PluginManifest;
 import org.telegram.messenger.plugins.packages.PluginPackageStore;
 import org.telegram.messenger.plugins.packages.PluginPackageValidator;
+import org.telegram.messenger.plugins.risk.PluginRiskDiff;
+import org.telegram.messenger.plugins.risk.PluginRiskPolicy;
+import org.telegram.messenger.plugins.risk.PluginRiskReport;
 
 import java.io.*;
 import java.util.ArrayList;
@@ -166,12 +169,26 @@ public final class ExternalPlugins {
         public final Bitmap icon;
         public final File archive;
         public final PluginPackageValidator.Result result;
+        public final String installedVersion;
+        public final PluginRiskReport previousRiskReport;
+        public final PluginRiskDiff riskDiff;
+        public final PluginRiskPolicy.Result riskPolicy;
 
-        Review(File archive, PluginPackageValidator.Result result) throws IOException {
+        Review(
+                File archive,
+                PluginPackageValidator.Result result,
+                PluginPackageStore.Installed installed) throws IOException {
             this.icon = result.iconBytes == null ? null
                     : PluginIcons.decode(result.iconBytes, result.manifest.icon);
             this.archive = archive;
             this.result = result;
+            this.installedVersion = installed == null ? null : installed.manifest.version;
+            this.previousRiskReport = installed == null ? null : installed.riskReport;
+            this.riskDiff = previousRiskReport == null ? null
+                    : PluginRiskDiff.between(previousRiskReport, result.riskReport);
+            this.riskPolicy = installed == null
+                    ? PluginRiskPolicy.evaluateInstall(result.riskReport)
+                    : PluginRiskPolicy.evaluateUpdate(previousRiskReport, result.riskReport);
         }
 
         @Override
@@ -422,11 +439,13 @@ public final class ExternalPlugins {
                                     in, out, PluginPackageValidator.MAX_ARCHIVE_BYTES);
                         }
 
-                        review =
-                                new Review(
-                                        snapshot,
-                                        PluginPackageValidator.inspect(
-                                                snapshot, app.getCacheDir(), RISK_SCANNER));
+                        if (store == null || startupError != null) {
+                            throw new IOException("Plugin storage unavailable: " + startupError);
+                        }
+
+                        PluginPackageValidator.Result result = PluginPackageValidator.inspect(
+                                snapshot, app.getCacheDir(), RISK_SCANNER);
+                        review = new Review(snapshot, result, store.find(result.manifest.id));
                     } catch (Exception error) {
                         failure = error;
 
