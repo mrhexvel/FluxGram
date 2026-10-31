@@ -37,6 +37,7 @@ import org.telegram.ui.Components.FluxGramPluginIconView;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.LinkSpanDrawable;
+import org.telegram.ui.Components.RadialProgressView;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -330,45 +331,62 @@ public final class PluginInstallSheet {
 
         PluginRiskReportView reportView = new PluginRiskReportView(
                 context, review, fragment.getResourceProvider(), sheet::showSummary, sheet::dismiss);
-        sheet.setPages(content, reportView);
+        InstallStateView stateView = new InstallStateView(context, sheet);
+        sheet.setPages(content, reportView, stateView);
         openReport[0].setOnClickListener(view -> sheet.showReport());
         boolean[] installing = {false};
         boolean[] active = {true};
-        boolean[] confirming = {false};
+        boolean[] consumed = {false};
         Runnable installAction = () -> {
             if (!active[0] || installing[0] || !canInstall || !isPresentationUsable()) {
                 return;
             }
 
             installing[0] = true;
+            consumed[0] = true;
+            sheet.setBusy(true);
             install.setEnabled(false);
             enable.setEnabled(false);
             install.setText(LocaleController.getString(R.string.FluxGramPluginInstalling));
+            stateView.showInstalling(manifest.name);
+            sheet.showState();
 
             ExternalPlugins.install(
                     review,
                     enable.isChecked(),
                     update ? review.installedVersion : null,
                     (id, error) -> {
-                        boolean canPresent = active[0] && isPresentationUsable();
-                        sheet.dismiss();
+                        installing[0] = false;
+                        sheet.setBusy(false);
 
-                        if (!canPresent) {
+                        if (!active[0]) {
+                            return;
+                        }
+
+                        if (!isPresentationUsable()) {
+                            sheet.dismiss();
                             return;
                         }
 
                         if (error != null) {
-                            showError(error);
+                            sheet.setTerminal(true);
+                            stateView.showError(error.getMessage(), sheet::dismiss);
                         } else {
                             ExternalPlugins.changed();
+                            sheet.setTerminal(true);
 
                             if (update) {
-                                showRestartInfo();
+                                stateView.showUpdated(
+                                        manifest.name,
+                                        () -> {
+                                            Intent intent = new Intent(
+                                                    android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                                    android.net.Uri.parse("package:" + context.getPackageName()));
+                                            context.startActivity(intent);
+                                        },
+                                        sheet::dismiss);
                             } else {
-                                android.widget.Toast.makeText(
-                                        context,
-                                        LocaleController.getString(R.string.FluxGramPluginInstalled),
-                                        android.widget.Toast.LENGTH_SHORT).show();
+                                stateView.showInstalled(manifest.name, sheet::dismiss);
                             }
                         }
                     });
@@ -380,42 +398,26 @@ public final class PluginInstallSheet {
             }
 
             if (review.riskPolicy.decision == PluginRiskPolicy.Decision.CONFIRM) {
-                confirming[0] = true;
-                AlertDialog confirmation = new AlertDialog.Builder(
-                        context, fragment.getResourceProvider())
-                        .setTitle(LocaleController.getString(update
-                                ? R.string.FluxGramPluginRiskUpdateConfirmTitle
-                                : R.string.FluxGramPluginRiskConfirmTitle))
-                        .setMessage(riskMessage(review, false))
-                        .setNegativeButton(LocaleController.getString(R.string.Cancel), null)
-                        .setPositiveButton(
-                                LocaleController.getString(R.string.FluxGramPluginRiskConfirmAction),
-                                (dialog, which) -> {
-                                    confirming[0] = false;
-                                    installAction.run();
-                                })
-                        .create();
-                if (fragment.showDialog(confirmation, dialog -> {
-                    if (!installing[0]) {
-                        active[0] = false;
-                        review.close();
-                    }
-                }) == null) {
-                    confirming[0] = false;
-                }
+                sheet.setTerminal(false);
+                stateView.showConfirmation(
+                        update,
+                        riskMessage(review, false),
+                        sheet::showSummary,
+                        () -> {
+                            if (sheet.canConfirm()) {
+                                installAction.run();
+                            }
+                        });
+                sheet.showState();
             } else {
                 installAction.run();
             }
         });
 
         if (fragment.showDialog(sheet, dialog -> {
-            if (confirming[0]) {
-                return;
-            }
-
             active[0] = false;
 
-            if (!installing[0]) {
+            if (!installing[0] && !consumed[0]) {
                 review.close();
             }
         }) == null) {
@@ -666,8 +668,173 @@ public final class PluginInstallSheet {
         return R.drawable.msg_info;
     }
 
-    private void showRestartInfo() {
-        fragment.showDialog(new AlertDialog.Builder(fragment.getParentActivity(), fragment.getResourceProvider()).setTitle(LocaleController.getString(R.string.FluxGramPluginRestartRequired)).setMessage(LocaleController.getString(R.string.FluxGramPluginRestartInfo)).setNegativeButton(LocaleController.getString(R.string.OK), null).setPositiveButton(LocaleController.getString(R.string.FluxGramOpenAndroidSettings), (dialog, which) -> fragment.getParentActivity().startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:" + fragment.getParentActivity().getPackageName())))).create());
+    private final class InstallStateView extends LinearLayout {
+        private final Context context;
+        private final InstallBottomSheet sheet;
+
+        InstallStateView(Context context, InstallBottomSheet sheet) {
+            super(context);
+            this.context = context;
+            this.sheet = sheet;
+            setOrientation(VERTICAL);
+            setPadding(dp(20), 0, dp(20), dp(20));
+            setBackgroundColor(fragment.getThemedColor(Theme.key_dialogBackground));
+        }
+
+        void showConfirmation(
+                boolean update,
+                CharSequence message,
+                Runnable onBack,
+                Runnable onConfirm) {
+            reset(true, onBack, sheet::dismiss);
+            addHeroIcon(R.drawable.outline_shield_plain_24, Theme.key_avatar_nameInMessageOrange);
+            addTitle(LocaleController.getString(update
+                    ? R.string.FluxGramPluginRiskUpdateConfirmTitle
+                    : R.string.FluxGramPluginRiskConfirmTitle));
+            addMessage(message);
+            addPrimaryButton(
+                    LocaleController.getString(R.string.FluxGramPluginRiskConfirmAction),
+                    onConfirm);
+            addSecondaryButton(LocaleController.getString(R.string.Cancel), onBack);
+        }
+
+        void showInstalling(String name) {
+            reset(false, null, null);
+
+            RadialProgressView progress = new RadialProgressView(
+                    context, fragment.getResourceProvider());
+            progress.setSize(dp(42));
+            progress.setProgressColor(fragment.getThemedColor(
+                    Theme.key_windowBackgroundWhiteBlueText));
+            addView(progress, LayoutHelper.createLinear(
+                    72, 72, Gravity.CENTER_HORIZONTAL, 0, 42, 0, 18));
+            addTitle(LocaleController.getString(R.string.FluxGramPluginInstalling));
+            addMessage(name);
+        }
+
+        void showInstalled(String name, Runnable onClose) {
+            reset(false, null, onClose);
+            addHeroIcon(R.drawable.msg_check_s, Theme.key_windowBackgroundWhiteGreenText);
+            addTitle(LocaleController.getString(R.string.FluxGramPluginInstalled));
+            addMessage(name);
+            addPrimaryButton(LocaleController.getString(R.string.Close), onClose);
+        }
+
+        void showUpdated(String name, Runnable onOpenSettings, Runnable onClose) {
+            reset(false, null, onClose);
+            addHeroIcon(R.drawable.msg_check_s, Theme.key_windowBackgroundWhiteGreenText);
+            addTitle(LocaleController.getString(R.string.FluxGramPluginRestartRequired));
+            addMessage(LocaleController.getString(R.string.FluxGramPluginRestartInfo));
+            addPrimaryButton(
+                    LocaleController.getString(R.string.FluxGramOpenAndroidSettings),
+                    onOpenSettings);
+            addSecondaryButton(LocaleController.getString(R.string.Close), onClose);
+        }
+
+        void showError(String error, Runnable onClose) {
+            reset(false, null, onClose);
+            addHeroIcon(R.drawable.msg_warning, Theme.key_text_RedRegular);
+            addTitle(LocaleController.getString(R.string.FluxGramPluginError));
+            addMessage(TextUtils.isEmpty(error)
+                    ? LocaleController.getString(R.string.ErrorOccurred)
+                    : error);
+            addPrimaryButton(LocaleController.getString(R.string.Close), onClose);
+        }
+
+        private void reset(boolean showBack, Runnable onBack, Runnable onClose) {
+            removeAllViews();
+
+            FrameLayout header = new FrameLayout(context);
+
+            if (showBack) {
+                ImageView back = headerButton(R.drawable.ic_ab_back, R.string.Back, onBack);
+                header.addView(back, LayoutHelper.createFrameRelatively(
+                        48, 48, Gravity.START | Gravity.CENTER_VERTICAL));
+            }
+
+            if (onClose != null) {
+                ImageView close = headerButton(R.drawable.ic_ab_close, R.string.Close, onClose);
+                header.addView(close, LayoutHelper.createFrameRelatively(
+                        48, 48, Gravity.END | Gravity.CENTER_VERTICAL));
+            }
+
+            addView(header, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 56));
+        }
+
+        private ImageView headerButton(int icon, int description, Runnable action) {
+            ImageView button = new ImageView(context);
+            button.setImageResource(icon);
+            button.setScaleType(ImageView.ScaleType.CENTER);
+            button.setColorFilter(fragment.getThemedColor(Theme.key_dialogTextGray));
+            button.setBackground(Theme.createSelectorDrawable(
+                    fragment.getThemedColor(Theme.key_listSelector),
+                    Theme.RIPPLE_MASK_CIRCLE_20DP));
+            button.setContentDescription(LocaleController.getString(description));
+            button.setOnClickListener(view -> action.run());
+            return button;
+        }
+
+        private void addHeroIcon(int resource, int colorKey) {
+            int tint = fragment.getThemedColor(colorKey);
+            FrameLayout container = new FrameLayout(context);
+            container.setBackground(Theme.createRoundRectDrawable(
+                    dp(28), Theme.multAlpha(tint, 0.12f)));
+
+            ImageView icon = riskIcon(context, resource, tint);
+            container.addView(icon, LayoutHelper.createFrame(
+                    32, 32, Gravity.CENTER));
+            addView(container, LayoutHelper.createLinear(
+                    72, 72, Gravity.CENTER_HORIZONTAL, 0, 24, 0, 18));
+        }
+
+        private void addTitle(CharSequence value) {
+            TextView title = sheetText(context, value, 24, false);
+            title.setTypeface(AndroidUtilities.bold());
+            title.setGravity(Gravity.CENTER);
+            title.setPadding(0, 0, 0, dp(10));
+            addView(title, LayoutHelper.createLinear(
+                    LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        }
+
+        private void addMessage(CharSequence value) {
+            TextView message = sheetText(context, value, 15, true);
+            message.setGravity(Gravity.CENTER);
+            message.setLineSpacing(dp(3), 1f);
+            message.setPadding(dp(8), 0, dp(8), dp(28));
+            addView(message, LayoutHelper.createLinear(
+                    LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        }
+
+        private void addPrimaryButton(CharSequence text, Runnable action) {
+            TextView button = stateButton(text, true, action);
+            addView(button, LayoutHelper.createLinear(
+                    LayoutHelper.MATCH_PARENT, 50, 0, 0, 0, 8));
+        }
+
+        private void addSecondaryButton(CharSequence text, Runnable action) {
+            TextView button = stateButton(text, false, action);
+            addView(button, LayoutHelper.createLinear(
+                    LayoutHelper.MATCH_PARENT, 48));
+        }
+
+        private TextView stateButton(CharSequence value, boolean primary, Runnable action) {
+            TextView button = sheetText(context, value, 16, false);
+            button.setGravity(Gravity.CENTER);
+            button.setTypeface(AndroidUtilities.bold());
+            button.setPadding(0, 0, 0, 0);
+            button.setTextColor(fragment.getThemedColor(primary
+                    ? Theme.key_featuredStickers_buttonText
+                    : Theme.key_windowBackgroundWhiteBlueText));
+            button.setBackground(Theme.createSimpleSelectorRoundRectDrawable(
+                    dp(24),
+                    primary
+                            ? fragment.getThemedColor(Theme.key_featuredStickers_addButton)
+                            : Theme.multAlpha(fragment.getThemedColor(
+                                    Theme.key_windowBackgroundWhiteBlueText), 0.09f),
+                    fragment.getThemedColor(Theme.key_listSelector)));
+            button.setOnClickListener(view -> action.run());
+            return button;
+        }
     }
 
     private static final class RiskReason {
@@ -683,7 +850,11 @@ public final class PluginInstallSheet {
     private static final class InstallBottomSheet extends BottomSheet {
         private View summary;
         private View report;
+        private View state;
         private boolean reportVisible;
+        private boolean stateVisible;
+        private boolean busy;
+        private boolean terminal;
         private int transitionGeneration;
 
         InstallBottomSheet(
@@ -691,16 +862,21 @@ public final class PluginInstallSheet {
             super(context, false, resourcesProvider);
         }
 
-        void setPages(View summary, View report) {
+        void setPages(View summary, View report, View state) {
             this.summary = summary;
             this.report = report;
+            this.state = state;
             report.setVisibility(View.INVISIBLE);
+            state.setVisibility(View.INVISIBLE);
             report.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+            state.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
 
             FrameLayout pages = new FrameLayout(getContext());
             pages.addView(summary, LayoutHelper.createFrame(
                     LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
             pages.addView(report, LayoutHelper.createFrame(
+                    LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+            pages.addView(state, LayoutHelper.createFrame(
                     LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
             setCustomView(pages);
         }
@@ -711,6 +887,7 @@ public final class PluginInstallSheet {
             }
 
             reportVisible = true;
+            stateVisible = false;
             setAllowNestedScroll(false);
             switchPage(summary, report, true);
             report.announceForAccessibility(LocaleController.getString(
@@ -718,13 +895,43 @@ public final class PluginInstallSheet {
         }
 
         void showSummary() {
-            if (!reportVisible || summary == null || report == null) {
+            if ((!reportVisible && !stateVisible)
+                    || summary == null
+                    || report == null
+                    || state == null
+                    || busy) {
                 return;
             }
 
+            View previous = reportVisible ? report : state;
             reportVisible = false;
+            stateVisible = false;
             setAllowNestedScroll(true);
-            switchPage(report, summary, false);
+            switchPage(previous, summary, false);
+        }
+
+        void showState() {
+            if (state == null || busy && stateVisible) {
+                return;
+            }
+
+            View previous = reportVisible ? report : summary;
+            reportVisible = false;
+            stateVisible = true;
+            setAllowNestedScroll(false);
+            switchPage(previous, state, true);
+        }
+
+        void setBusy(boolean value) {
+            busy = value;
+        }
+
+        void setTerminal(boolean value) {
+            terminal = value;
+        }
+
+        boolean canConfirm() {
+            return stateVisible && !busy && !terminal && !isDismissed();
         }
 
         private void switchPage(View previous, View next, boolean forward) {
@@ -785,8 +992,17 @@ public final class PluginInstallSheet {
 
         @Override
         public void onBackPressed() {
-            if (reportVisible) {
+            if (stateVisible && terminal) {
+                dismiss();
+                return;
+            }
+
+            if ((reportVisible || stateVisible) && !busy) {
                 showSummary();
+                return;
+            }
+
+            if (busy) {
                 return;
             }
 
@@ -795,12 +1011,12 @@ public final class PluginInstallSheet {
 
         @Override
         protected boolean canDismissWithSwipe() {
-            return !reportVisible;
+            return !reportVisible && !busy && (!stateVisible || terminal);
         }
 
         @Override
         protected boolean canDismissWithTouchOutside() {
-            return !reportVisible;
+            return !reportVisible && !busy && (!stateVisible || terminal);
         }
     }
 }

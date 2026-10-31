@@ -15,13 +15,27 @@ class PluginR4SourceContractTest(unittest.TestCase):
         sheet = INSTALL_SHEET.read_text()
 
         self.assertIn("final class InstallBottomSheet extends BottomSheet", sheet)
-        self.assertIn("sheet.setPages(content, reportView);", sheet)
-        self.assertIn("if (reportVisible)", sheet)
+        self.assertIn("sheet.setPages(content, reportView, stateView);", sheet)
+        self.assertIn("reportVisible || stateVisible", sheet)
         self.assertIn("setAllowNestedScroll(false);", sheet)
         self.assertIn("setAllowNestedScroll(true);", sheet)
-        self.assertIn("return !reportVisible;", sheet)
+        self.assertIn("return !reportVisible && !busy && (!stateVisible || terminal);", sheet)
         self.assertIn("canDismissWithTouchOutside()", sheet)
         self.assertNotIn("presentFragment", sheet)
+
+    def test_confirmation_and_terminal_states_stay_inside_sheet(self):
+        sheet = INSTALL_SHEET.read_text()
+
+        self.assertIn("final class InstallStateView extends LinearLayout", sheet)
+        self.assertIn("stateView.showConfirmation", sheet)
+        self.assertIn("stateView.showInstalling", sheet)
+        self.assertIn("stateView.showInstalled", sheet)
+        self.assertIn("stateView.showUpdated", sheet)
+        self.assertIn("stateView.showError", sheet)
+        self.assertIn("sheet.setBusy(true);", sheet)
+        self.assertIn("if (sheet.canConfirm())", sheet)
+        self.assertIn("if (stateVisible && terminal)", sheet)
+        self.assertNotIn("AlertDialog confirmation", sheet)
 
     def test_report_contains_diff_and_only_exposes_sanitized_host_detail(self):
         report = REPORT_VIEW.read_text()
