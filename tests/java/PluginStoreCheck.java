@@ -6,7 +6,10 @@ import java.io.IOException;
 public final class PluginStoreCheck {
     public static void main(String[] args) throws Exception {
         try {
-            PluginPackageStore store = new PluginPackageStore(new File(args[1]), new File(args[2]));
+            PluginPackageStore store = new PluginPackageStore(
+                    new File(args[1]),
+                    new File(args[2]),
+                    new FakePluginPythonRiskScanner());
 
             if (args[0].equals("install")) {
                 store.install(new File(args[3]), args[4]);

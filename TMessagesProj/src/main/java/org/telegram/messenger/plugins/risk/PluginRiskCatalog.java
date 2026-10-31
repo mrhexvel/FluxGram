@@ -69,6 +69,7 @@ public final class PluginRiskCatalog {
         add(descriptors, "access.full_process.python", Severity.INFORMATIONAL, Disposition.OBSERVE);
         add(descriptors, "access.full_process.dex", Severity.INFORMATIONAL, Disposition.OBSERVE);
         add(descriptors, "python.top_level.preflight", Severity.ELEVATED, Disposition.OBSERVE);
+        add(descriptors, "python.top_level_side_effect", Severity.HIGH, Disposition.CONFIRM);
         add(descriptors, "python.shared_interpreter", Severity.ELEVATED, Disposition.OBSERVE);
         add(descriptors, "python.internal_runtime_import", Severity.HIGH, Disposition.CONFIRM);
         add(descriptors, "bridge.java_direct", Severity.HIGH, Disposition.CONFIRM);
@@ -107,6 +108,11 @@ public final class PluginRiskCatalog {
         add(descriptors, "analysis.unsupported_python", Severity.CRITICAL, Disposition.BLOCK);
         add(descriptors, "analysis.limit_exceeded", Severity.CRITICAL, Disposition.BLOCK);
         add(descriptors, "analysis.incomplete", Severity.CRITICAL, Disposition.BLOCK);
+
+        for (String category : PluginPythonRiskScanner.CATEGORIES) {
+            add(descriptors, "declaration.missing." + category, Severity.HIGH, Disposition.CONFIRM);
+            add(descriptors, "declaration.unobserved." + category, Severity.ELEVATED, Disposition.OBSERVE);
+        }
 
         add(descriptors, "update.module_composition_changed", Severity.HIGH, Disposition.CONFIRM);
         add(descriptors, "update.package_schema_changed", Severity.HIGH, Disposition.CONFIRM);

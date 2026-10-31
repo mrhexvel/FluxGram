@@ -6,20 +6,24 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Enumeration;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 import org.telegram.messenger.plugins.risk.PluginRiskReport;
 import org.telegram.messenger.plugins.risk.PluginRiskAnalyzer;
 import org.telegram.messenger.plugins.risk.PluginRiskPolicy;
+import org.telegram.messenger.plugins.risk.PluginPythonRiskScanner;
 
 public final class PluginPackageStore {
     public static final String SOURCE_ARCHIVE = ".fluxgram-source.fgplugin";
     public static final String RISK_REPORT = ".fluxgram-risk-report";
 
     private final File root, cache;
+    private final PluginPythonRiskScanner pythonScanner;
     private Map<String, String> pendingErrors = Collections.emptyMap();
 
     public static final class Installed {
@@ -34,9 +38,17 @@ public final class PluginPackageStore {
         }
     }
 
-    public PluginPackageStore(File root, File cache) throws IOException {
+    public PluginPackageStore(
+            File root,
+            File cache,
+            PluginPythonRiskScanner pythonScanner) throws IOException {
+        if (pythonScanner == null) {
+            throw new IOException("Python risk scanner is required");
+        }
+
         this.root = root.getCanonicalFile();
         this.cache = cache.getCanonicalFile();
+        this.pythonScanner = pythonScanner;
         mkdir(root);
         mkdir(cache);
     }
@@ -121,7 +133,8 @@ public final class PluginPackageStore {
                 copy(in, out, PluginPackageValidator.MAX_ARCHIVE_BYTES);
             }
 
-            PluginPackageValidator.Result checked = PluginPackageValidator.inspect(frozen, cache);
+            PluginPackageValidator.Result checked =
+                    PluginPackageValidator.inspect(frozen, cache, pythonScanner);
 
             if (!checked.sha256.equals(expectedHash)) {
                 throw new IOException("Archive changed after review");
@@ -337,6 +350,7 @@ public final class PluginPackageStore {
         }
 
         PluginRiskReport riskReport = null;
+        recoverRiskReport(folder);
         File riskFile = new File(folder, RISK_REPORT);
 
         if (riskFile.isFile()) {
@@ -525,18 +539,52 @@ public final class PluginPackageStore {
         File replacement = new File(journal, "package");
 
         if (replacement.exists()) {
-            readInstalled(replacement, id);
+            Installed pending = readInstalled(replacement, id);
+            File source = new File(replacement, SOURCE_ARCHIVE);
+            File frozen = File.createTempFile("fgplugin-pending-", ".zip", cache);
 
-            if (current.exists()) {
-                if (backup.exists() || !current.renameTo(backup)) {
-                    throw new IOException("Cannot back up plugin");
+            try {
+                if (!source.isFile() || pending.riskReport == null) {
+                    throw new IOException("Pending plugin risk identity is unavailable");
                 }
-            } else if (!backup.exists()) {
-                throw new IOException("Missing plugin update backup");
-            }
 
-            if (!replacement.renameTo(current)) {
-                throw new IOException("Cannot activate plugin update");
+                try (InputStream in = new FileInputStream(source);
+                        FileOutputStream out = new FileOutputStream(frozen)) {
+                    copy(in, out, PluginPackageValidator.MAX_ARCHIVE_BYTES);
+                    out.getFD().sync();
+                }
+
+                PluginPackageValidator.Result checked =
+                        PluginPackageValidator.inspect(frozen, cache, pythonScanner);
+
+                if (!checked.manifest.id.equals(pending.manifest.id)
+                        || !checked.manifest.version.equals(pending.manifest.version)
+                        || !checked.sha256.equals(pending.riskReport.archiveSha256)) {
+                    throw new IOException("Pending plugin source does not match its risk report");
+                }
+                if (PluginRiskPolicy.evaluateInstall(checked.riskReport).decision
+                        == PluginRiskPolicy.Decision.BLOCK) {
+                    throw new IOException("Pending plugin is blocked by static risk analysis");
+                }
+
+                verifyExtractedArchive(frozen, replacement);
+                writeRiskReport(replacement, checked.riskReport);
+
+                if (current.exists()) {
+                    if (backup.exists() || !current.renameTo(backup)) {
+                        throw new IOException("Cannot back up plugin");
+                    }
+                } else if (!backup.exists()) {
+                    throw new IOException("Missing plugin update backup");
+                }
+
+                if (!replacement.renameTo(current)) {
+                    throw new IOException("Cannot activate plugin update");
+                }
+            } finally {
+                if (!frozen.delete() && frozen.exists()) {
+                    System.err.println("FluxGram: deferred pending plugin snapshot cleanup: " + id);
+                }
             }
         }
 
@@ -690,6 +738,144 @@ public final class PluginPackageStore {
     private static void createMarker(File directory, String name) throws IOException {
         try (FileOutputStream out = new FileOutputStream(new File(directory, name))) {
             out.getFD().sync();
+        }
+    }
+
+    private static void writeRiskReport(File directory, PluginRiskReport report)
+            throws IOException {
+        File target = new File(directory, RISK_REPORT);
+        File temporary = new File(directory, RISK_REPORT + ".temporary");
+        File previous = new File(directory, RISK_REPORT + ".previous");
+
+        try {
+            if (previous.exists()) {
+                if (!target.exists() && !previous.renameTo(target)) {
+                    throw new IOException("Cannot restore plugin risk report");
+                }
+                if (target.exists() && previous.exists() && !previous.delete()) {
+                    throw new IOException("Cannot clean previous plugin risk report");
+                }
+            }
+
+            try (FileOutputStream out = new FileOutputStream(temporary)) {
+                out.write(report.encode());
+                out.getFD().sync();
+            }
+
+            if (target.exists() && !target.renameTo(previous)) {
+                throw new IOException("Cannot preserve plugin risk report");
+            }
+            if (!temporary.renameTo(target)) {
+                if (previous.exists() && !previous.renameTo(target)) {
+                    throw new IOException("Cannot restore plugin risk report");
+                }
+                throw new IOException("Cannot publish plugin risk report");
+            }
+            if (previous.exists() && !previous.delete()) {
+                throw new IOException("Cannot clean previous plugin risk report");
+            }
+        } finally {
+            temporary.delete();
+        }
+    }
+
+    private static void recoverRiskReport(File directory) throws IOException {
+        File target = new File(directory, RISK_REPORT);
+        File temporary = new File(directory, RISK_REPORT + ".temporary");
+        File previous = new File(directory, RISK_REPORT + ".previous");
+
+        if (!target.exists() && previous.exists() && !previous.renameTo(target)) {
+            throw new IOException("Cannot restore plugin risk report");
+        }
+        if (target.exists() && previous.exists() && !previous.delete()) {
+            throw new IOException("Cannot clean previous plugin risk report");
+        }
+        if (temporary.exists() && !temporary.delete()) {
+            throw new IOException("Cannot clean temporary plugin risk report");
+        }
+    }
+
+    private static void verifyExtractedArchive(File archive, File directory) throws IOException {
+        String rootPath = directory.getCanonicalPath() + File.separator;
+        Set<String> expected = new HashSet<>();
+
+        try (ZipFile zip = new ZipFile(archive)) {
+            Enumeration<? extends ZipEntry> entries = zip.entries();
+
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
+
+                if (entry.isDirectory()) {
+                    continue;
+                }
+
+                File extracted = new File(directory, entry.getName());
+
+                if (!extracted.isFile()
+                        || !extracted.getCanonicalPath().startsWith(rootPath)) {
+                    throw new IOException("Pending plugin files do not match source archive");
+                }
+
+                expected.add(entry.getName());
+
+                try (InputStream left = zip.getInputStream(entry);
+                        InputStream right = new FileInputStream(extracted)) {
+                    if (!sameContents(left, right)) {
+                        throw new IOException("Pending plugin files do not match source archive");
+                    }
+                }
+            }
+        }
+
+        verifyExtractedFiles(directory, directory, expected);
+    }
+
+    private static void verifyExtractedFiles(
+            File root, File current, Set<String> expected) throws IOException {
+        File[] files = current.listFiles();
+
+        if (files == null) {
+            throw new IOException("Cannot read pending plugin files");
+        }
+
+        String rootPath = root.getCanonicalPath() + File.separator;
+
+        for (File file : files) {
+            String canonical = file.getCanonicalPath();
+
+            if (!canonical.startsWith(rootPath)
+                    || !file.getCanonicalFile().equals(file.getAbsoluteFile())) {
+                throw new IOException("Pending plugin files do not match source archive");
+            }
+            if (file.isDirectory()) {
+                verifyExtractedFiles(root, file, expected);
+                continue;
+            }
+
+            String relative = canonical.substring(rootPath.length()).replace(File.separatorChar, '/');
+
+            if (!relative.equals(SOURCE_ARCHIVE)
+                    && !relative.equals(RISK_REPORT)
+                    && !expected.contains(relative)) {
+                throw new IOException("Pending plugin files do not match source archive");
+            }
+        }
+    }
+
+    private static boolean sameContents(InputStream left, InputStream right) throws IOException {
+        BufferedInputStream bufferedLeft = new BufferedInputStream(left);
+        BufferedInputStream bufferedRight = new BufferedInputStream(right);
+
+        while (true) {
+            int leftValue = bufferedLeft.read();
+            int rightValue = bufferedRight.read();
+
+            if (leftValue != rightValue) {
+                return false;
+            }
+            if (leftValue == -1) {
+                return true;
+            }
         }
     }
 

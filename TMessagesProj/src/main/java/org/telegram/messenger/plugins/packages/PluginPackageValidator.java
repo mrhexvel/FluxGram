@@ -25,6 +25,7 @@ import java.util.zip.ZipFile;
 
 import org.telegram.messenger.plugins.risk.PluginRiskAnalyzer;
 import org.telegram.messenger.plugins.risk.PluginRiskReport;
+import org.telegram.messenger.plugins.risk.PluginPythonRiskScanner;
 
 public final class PluginPackageValidator {
     public static final long MAX_ARCHIVE_BYTES = 8L * 1024 * 1024;
@@ -62,17 +63,27 @@ public final class PluginPackageValidator {
 
     private PluginPackageValidator() {}
 
-    public static Result inspect(File archive, File privateCacheDirectory) throws IOException {
-        return inspect(archive, privateCacheDirectory, true);
+    public static Result inspect(
+            File archive,
+            File privateCacheDirectory,
+            PluginPythonRiskScanner pythonScanner) throws IOException {
+        if (pythonScanner == null) {
+            throw new IOException("Python risk scanner is required");
+        }
+
+        return inspect(archive, privateCacheDirectory, true, pythonScanner);
     }
 
     static Result inspectInstalledArchive(File archive, File privateCacheDirectory)
             throws IOException {
-        return inspect(archive, privateCacheDirectory, false);
+        return inspect(archive, privateCacheDirectory, false, null);
     }
 
     private static Result inspect(
-            File archive, File privateCacheDirectory, boolean requireCompatible)
+            File archive,
+            File privateCacheDirectory,
+            boolean requireCompatible,
+            PluginPythonRiskScanner pythonScanner)
             throws IOException {
         File snapshot = File.createTempFile("fgplugin-review-", ".zip", privateCacheDirectory);
 
@@ -245,7 +256,9 @@ public final class PluginPackageValidator {
                     snapshot,
                     manifest,
                     archiveSha256,
-                    dexBytes);
+                    dexBytes,
+                    pythonScanner,
+                    requireCompatible);
 
             return new Result(
                     manifest,

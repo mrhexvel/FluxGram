@@ -63,13 +63,17 @@ class PluginPackagesTest(unittest.TestCase):
                 str(folder / "PluginDexValidator.java"),
                 str(folder / "PluginPackageStore.java"),
                 str(risk / "PluginRiskEvidence.java"),
+                str(risk / "PluginPythonRiskScanner.java"),
+                str(risk / "PluginPythonRiskResponseDecoder.java"),
                 str(risk / "PluginRiskCatalog.java"),
                 str(risk / "PluginRiskReport.java"),
                 str(risk / "PluginRiskDiff.java"),
                 str(risk / "PluginRiskPolicy.java"),
                 str(risk / "PluginRiskAnalyzer.java"),
+                str(ROOT / "tests/java/FakePluginPythonRiskScanner.java"),
                 str(ROOT / "tests/java/PluginStoreCheck.java"),
                 str(ROOT / "tests/java/PluginPackageCheck.java"),
+                str(ROOT / "tests/java/PluginPythonRiskResponseCheck.java"),
             ],
             check=True,
             capture_output=True,
@@ -83,7 +87,14 @@ class PluginPackagesTest(unittest.TestCase):
         self.cache = self.root / "cache"
         self.cache.mkdir()
 
-    def archive(self, fields=None, entries=None, raw_manifest=None, include_python=True):
+    def archive(
+        self,
+        fields=None,
+        entries=None,
+        raw_manifest=None,
+        include_python=True,
+        python_source=b'raise RuntimeError("Validation must not execute this")\n',
+    ):
         data = io.BytesIO()
         manifest = MANIFEST.copy()
         if fields:
@@ -98,7 +109,7 @@ class PluginPackagesTest(unittest.TestCase):
                 if include_python:
                     z.writestr(
                         "main.py",
-                        'raise RuntimeError("Validation must not execute this")\n',
+                        python_source,
                     )
                 for name, content in entries or []:
                     z.writestr(name, content)
@@ -122,6 +133,71 @@ class PluginPackagesTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0 if accepted else 2, result.stderr)
         self.assertEqual(list(self.cache.iterdir()), [], "Temporary archive leaked")
         return result.stdout.splitlines()
+
+    def decode_python_risk_response(self, value, accepted):
+        result = subprocess.run(
+            [
+                "java",
+                "-cp",
+                self.classpath,
+                "PluginPythonRiskResponseCheck",
+                value,
+            ],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0 if accepted else 2, result.stderr)
+        return result.stdout.splitlines()
+
+    def test_python_risk_response_decoder_is_strict_and_bounded(self):
+        valid = json.dumps({
+            "version": 1,
+            "findings": [{
+                "id": "network.raw",
+                "category": "network",
+                "detail": "socket",
+                "confidence": "exact",
+            }],
+            "limitations": [],
+        }, separators=(",", ":"))
+        self.assertEqual(self.decode_python_risk_response(valid, True), ["1:0"])
+
+        invalid = [
+            '{"version":1,"version":1,"findings":[],"limitations":[]}',
+            '{"version":1,"findings":[],"limitations":[],"extra":null}',
+            '{"version":1,"findings":[{"id":"network.raw","category":"filesystem","detail":null,"confidence":"exact"}],"limitations":[]}',
+            '{"version":1,"findings":[],"limitations":["unknown"]}',
+            '{"version":1,"findings":[],"limitations":[]} trailing',
+            json.dumps({
+                "version": 1,
+                "findings": [{
+                    "id": "network.raw",
+                    "category": "network",
+                    "detail": None,
+                    "confidence": "exact",
+                }] * 65,
+                "limitations": [],
+            }, separators=(",", ":")),
+            json.dumps({
+                "version": 1,
+                "findings": [],
+                "limitations": ["analysis.incomplete"] * 9,
+            }, separators=(",", ":")),
+            json.dumps({
+                "version": 1,
+                "findings": [{
+                    "id": "network.endpoint_literal",
+                    "category": "network",
+                    "detail": "a" * 257,
+                    "confidence": "exact",
+                }],
+                "limitations": [],
+            }, separators=(",", ":")),
+            " " * (64 * 1024 + 1),
+        ]
+        for value in invalid:
+            with self.subTest(value=value):
+                self.decode_python_risk_response(value, False)
 
     def test_source_archive_path_is_reserved(self):
         self.validate(self.archive(entries=[(".fluxgram-source.fgplugin", "fake")]), False)
@@ -383,7 +459,7 @@ class PluginPackagesTest(unittest.TestCase):
             expected.update(struct.pack(">Q", len(content)))
             expected.update(content)
 
-        self.assertEqual(first_output[4], "1")
+        self.assertEqual(first_output[4], "2")
         self.assertRegex(first_output[5], r"^[0-9a-f]{64}$")
         self.assertNotEqual(
             first_output[5],
@@ -396,6 +472,67 @@ class PluginPackagesTest(unittest.TestCase):
         evidence = set(self.output_values(first_output, "evidence:"))
         self.assertIn("access.full_process.python:null", evidence)
         self.assertIn("python.top_level.preflight:main.py", evidence)
+
+    def test_python_fake_scanner_merges_hybrid_and_declarations(self):
+        data = self.dex_fixture()
+        output = self.validate(
+            self.archive(
+                fields={
+                    **self.java_fields(data),
+                    "declared_capabilities": ["network", "native_code", "opaque.future"],
+                },
+                entries=[("java/module.dex", data)],
+                python_source=b"FAKE_NETWORK\nFAKE_SIDE_EFFECT\n",
+            ),
+            True,
+        )
+        evidence = {value.split(":", 1)[0] for value in self.output_values(output, "evidence:")}
+        self.assertIn("network.raw", evidence)
+        self.assertIn("python.top_level_side_effect", evidence)
+        self.assertIn("declaration.unobserved.native_code", evidence)
+        self.assertNotIn("declaration.missing.network", evidence)
+        self.assertNotIn("declaration.missing.host_internals", evidence)
+        self.assertEqual(self.output_values(output, "scanner-calls:"), ["1"])
+
+    def test_java_only_does_not_invoke_python_scanner(self):
+        data = self.dex_fixture()
+        java_only = {
+            key: value
+            for key, value in MANIFEST.items()
+            if key not in {"sdk_version", "min_sdk_minor", "entrypoint"}
+        }
+        java_only.update({
+            "schema_version": 4,
+            "java_module": self.java_fields(data)["java_module"],
+        })
+        output = self.validate(
+            self.archive(
+                raw_manifest=json.dumps(java_only),
+                entries=[("java/module.dex", data)],
+                include_python=False,
+            ),
+            True,
+        )
+        self.assertEqual(self.output_values(output, "scanner-calls:"), ["0"])
+
+    def test_python_scanner_failure_and_source_limits_block(self):
+        for source in (b"FAKE_ERROR\n", b"FAKE_PROTOCOL\n", b"FAKE_BLOCK\n"):
+            with self.subTest(source=source):
+                output = self.validate(self.archive(python_source=source), True)
+                self.assertIn("BLOCK", self.output_values(output, "decision:"))
+
+        output = self.validate(
+            self.archive(entries=[("large.py", b"x" * (1024 * 1024 + 1))]),
+            True,
+        )
+        self.assertIn("analysis.limit_exceeded", self.output_values(output, "limitation:"))
+        self.assertIn("BLOCK", self.output_values(output, "decision:"))
+
+        output = self.validate(
+            self.archive(entries=[(f"sources/file{index}.py", b"pass\n") for index in range(128)]),
+            True,
+        )
+        self.assertIn("analysis.limit_exceeded", self.output_values(output, "limitation:"))
 
     def test_archive_executable_and_native_payload_classification(self):
         entries = [
@@ -932,6 +1069,10 @@ class PluginStoreTest(unittest.TestCase):
     archive = PluginPackagesTest.archive
 
     def test_block_report_prevents_install_update_and_debug_reload(self):
+        python_blocked = self.archive(python_source=b"FAKE_BLOCK\n")
+        self.assertEqual(self.store("installhook", python_blocked, accepted=False), [])
+        self.assertEqual(list((self.root / "installed").iterdir()), [])
+
         blocked = self.archive(entries=[("extra.dex", b"payload")])
         self.assertEqual(self.store("installhook", blocked, accepted=False), [])
         self.assertEqual(self.store("list"), [])
@@ -1119,6 +1260,104 @@ class PluginStoreTest(unittest.TestCase):
             self.store("risk", extra=(MANIFEST["id"],)),
             [hashlib.sha256(update).hexdigest()],
         )
+
+    def test_pending_update_is_rescanned_before_activation(self):
+        original = self.archive()
+        update = self.archive(fields={"version": "2.0.0"})
+        self.store("install", original)
+        self.store(
+            "update",
+            update,
+            extra=(MANIFEST["id"], MANIFEST["version"], "false"),
+        )
+        root = self.root / "installed"
+        pending = root / (".pending-" + MANIFEST["id"]) / "package"
+        changed = self.archive(
+            fields={"version": "2.0.0"},
+            python_source=b"FAKE_BLOCK\n",
+        )
+        (pending / ".fluxgram-source.fgplugin").write_bytes(changed)
+
+        self.store("activate", accepted=False, extra=(MANIFEST["id"],))
+
+        self.assertEqual(self.installed_version(), MANIFEST["version"])
+        self.assertTrue(pending.is_dir())
+        self.assertFalse((root / (".backup-" + MANIFEST["id"])).exists())
+
+    def test_pending_extracted_files_must_match_rescanned_archive(self):
+        self.store("install", self.archive())
+        update = self.archive(fields={"version": "2.0.0"})
+        self.store(
+            "update",
+            update,
+            extra=(MANIFEST["id"], MANIFEST["version"], "false"),
+        )
+        root = self.root / "installed"
+        pending = root / (".pending-" + MANIFEST["id"]) / "package"
+        (pending / "main.py").write_text("MUTATED = True\n")
+
+        self.store("activate", accepted=False, extra=(MANIFEST["id"],))
+
+        self.assertEqual(self.installed_version(), MANIFEST["version"])
+        self.assertTrue(pending.is_dir())
+        self.assertFalse((root / (".backup-" + MANIFEST["id"])).exists())
+
+    def test_pending_extracted_files_reject_injected_file(self):
+        self.store("install", self.archive())
+        update = self.archive(fields={"version": "2.0.0"})
+        self.store(
+            "update",
+            update,
+            extra=(MANIFEST["id"], MANIFEST["version"], "false"),
+        )
+        root = self.root / "installed"
+        pending = root / (".pending-" + MANIFEST["id"]) / "package"
+        (pending / "injected.py").write_text("INJECTED = True\n")
+
+        self.store("activate", accepted=False, extra=(MANIFEST["id"],))
+
+        self.assertEqual(self.installed_version(), MANIFEST["version"])
+        self.assertTrue(pending.is_dir())
+        self.assertFalse((root / (".backup-" + MANIFEST["id"])).exists())
+
+    def test_pending_extracted_files_reject_symlink(self):
+        self.store("install", self.archive())
+        update = self.archive(fields={"version": "2.0.0"})
+        self.store(
+            "update",
+            update,
+            extra=(MANIFEST["id"], MANIFEST["version"], "false"),
+        )
+        root = self.root / "installed"
+        pending = root / (".pending-" + MANIFEST["id"]) / "package"
+        outside = self.root / "outside.py"
+        outside.write_text("OUTSIDE = True\n")
+        (pending / "main.py").unlink()
+        (pending / "main.py").symlink_to(outside)
+
+        self.store("activate", accepted=False, extra=(MANIFEST["id"],))
+
+        self.assertEqual(self.installed_version(), MANIFEST["version"])
+        self.assertTrue(pending.is_dir())
+        self.assertFalse((root / (".backup-" + MANIFEST["id"])).exists())
+
+    def test_interrupted_risk_report_publish_is_recovered(self):
+        package = self.archive()
+        self.store("install", package)
+        installed = self.root / "installed" / MANIFEST["id"]
+        report = installed / ".fluxgram-risk-report"
+        previous = installed / ".fluxgram-risk-report.previous"
+        temporary = installed / ".fluxgram-risk-report.temporary"
+        report.rename(previous)
+        temporary.write_bytes(b"incomplete")
+
+        self.assertEqual(
+            self.store("risk", extra=(MANIFEST["id"],)),
+            [hashlib.sha256(package).hexdigest()],
+        )
+        self.assertTrue(report.is_file())
+        self.assertFalse(previous.exists())
+        self.assertFalse(temporary.exists())
 
     def test_legacy_installation_remains_visible_and_exportable(self):
         legacy = MANIFEST.copy()

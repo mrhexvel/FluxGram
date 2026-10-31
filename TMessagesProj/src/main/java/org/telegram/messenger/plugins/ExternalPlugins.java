@@ -27,6 +27,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 public final class ExternalPlugins {
+    private static final ChaquopyPluginPythonRiskScanner RISK_SCANNER =
+            new ChaquopyPluginPythonRiskScanner();
     private static final ExecutorService worker =
             Executors.newSingleThreadExecutor(r -> new Thread(r, "FluxGramInstaller"));
     private static final CopyOnWriteArrayList<Runnable> listeners = new CopyOnWriteArrayList<>();
@@ -193,7 +195,8 @@ public final class ExternalPlugins {
                         store =
                                 new PluginPackageStore(
                                         new File(app.getFilesDir(), "plugins/installed"),
-                                        app.getCacheDir());
+                                        app.getCacheDir(),
+                                        RISK_SCANNER);
 
                         Map<String, PluginPackageStore.Pending> operations = store.pending();
                         Set<String> recoveryFailed = ConcurrentHashMap.newKeySet();
@@ -423,7 +426,7 @@ public final class ExternalPlugins {
                                 new Review(
                                         snapshot,
                                         PluginPackageValidator.inspect(
-                                                snapshot, app.getCacheDir()));
+                                                snapshot, app.getCacheDir(), RISK_SCANNER));
                     } catch (Exception error) {
                         failure = error;
 
@@ -541,7 +544,8 @@ public final class ExternalPlugins {
                 }
 
                 PluginPackageValidator.Result checked =
-                        PluginPackageValidator.inspect(archive, archive.getParentFile());
+                        PluginPackageValidator.inspect(
+                                archive, archive.getParentFile(), RISK_SCANNER);
 
                 if (!checked.sha256.equals(expectedHash)) {
                     throw new IOException("Uploaded plugin hash does not match the request");

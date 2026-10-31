@@ -20,6 +20,7 @@ class PluginRiskReportTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="plugin-risk-") as output:
             sources = [
                 RISK / "PluginRiskEvidence.java",
+                RISK / "PluginPythonRiskScanner.java",
                 RISK / "PluginRiskCatalog.java",
                 RISK / "PluginRiskReport.java",
                 RISK / "PluginRiskDiff.java",

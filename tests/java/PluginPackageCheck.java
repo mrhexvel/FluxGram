@@ -7,13 +7,17 @@ public final class PluginPackageCheck {
     public static void main(String[] args) throws Exception {
         try {
             PluginPackageValidator.Result result =
-                    PluginPackageValidator.inspect(new File(args[0]), new File(args[1]));
+                    PluginPackageValidator.inspect(
+                            new File(args[0]),
+                            new File(args[1]),
+                            new FakePluginPythonRiskScanner());
             System.out.println(result.manifest.id);
             System.out.println(result.sha256);
             System.out.println(result.fileCount);
             System.out.println(result.unpackedBytes);
             System.out.println(result.riskReport.analyzerVersion);
             System.out.println(result.riskReport.hostFingerprint);
+            System.out.println("scanner-calls:" + FakePluginPythonRiskScanner.calls);
             System.out.println(
                     "decision:"
                             + org.telegram.messenger.plugins.risk.PluginRiskPolicy

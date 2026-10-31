@@ -2,6 +2,7 @@ package org.telegram.messenger.plugins.risk;
 
 import org.telegram.messenger.plugins.packages.PluginManifest;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -27,9 +28,9 @@ import java.util.zip.ZipFile;
 import java.util.zip.Adler32;
 
 public final class PluginRiskAnalyzer {
-    public static final int ANALYZER_VERSION = 1;
+    public static final int ANALYZER_VERSION = 2;
     public static final String ANALYSIS_CONTEXT_FINGERPRINT =
-            "211b71417406e1bd92de9082d77b2cca33dade32e5394a7bb388c7e0c3077010";
+            "000b712a79f6afd9e3f9a142875ded4ea58257f66d49f2b28fd9e091b2d6c5b0";
 
     private static final int MAX_DEX_STRINGS = 65536;
     private static final int MAX_DEX_TYPES = 32768;
@@ -52,11 +53,13 @@ public final class PluginRiskAnalyzer {
             File archive,
             PluginManifest manifest,
             String archiveSha256,
-            byte[] declaredDex) throws IOException {
+            byte[] declaredDex,
+            PluginPythonRiskScanner pythonScanner,
+            boolean enrichPython) throws IOException {
         Collector collector = new Collector();
         ArrayList<PluginRiskReport.ModuleDigest> modules = new ArrayList<>();
 
-        if (manifest.hasPythonModule()) {
+        if (manifest.hasPythonModule() && enrichPython) {
             collector.add(
                     "access.full_process.python",
                     null,
@@ -78,10 +81,11 @@ public final class PluginRiskAnalyzer {
             modules.add(new PluginRiskReport.ModuleDigest("java", manifest.javaModule.sha256));
         }
 
-        String pythonDigest = classifyArchive(archive, manifest, collector);
+        ArchiveAnalysis archiveAnalysis =
+                classifyArchive(archive, manifest, collector, enrichPython);
 
-        if (pythonDigest != null) {
-            modules.add(new PluginRiskReport.ModuleDigest("python", pythonDigest));
+        if (archiveAnalysis.pythonDigest != null) {
+            modules.add(new PluginRiskReport.ModuleDigest("python", archiveAnalysis.pythonDigest));
         }
 
         if (declaredDex != null) {
@@ -93,6 +97,38 @@ public final class PluginRiskAnalyzer {
                 collector.limit("analysis.incomplete");
             }
         }
+
+        if (manifest.hasPythonModule()) {
+            if (archiveAnalysis.pythonLimitExceeded) {
+                collector.limit("analysis.limit_exceeded");
+            } else if (pythonScanner == null) {
+                collector.limit("analysis.incomplete");
+            } else {
+                try {
+                    PluginPythonRiskScanner.Result result =
+                            pythonScanner.scan(archiveAnalysis.pythonSources);
+
+                    for (PluginPythonRiskScanner.Finding finding : result.findings) {
+                        collector.add(
+                                finding.id,
+                                finding.detail,
+                                PluginRiskEvidence.Source.PYTHON,
+                                finding.confidence);
+                        if (finding.category != null) {
+                            collector.observe(finding.category);
+                        }
+                    }
+
+                    for (String limitation : result.limitations) {
+                        collector.limit(limitation);
+                    }
+                } catch (IOException | RuntimeException error) {
+                    collector.limit("analysis.incomplete");
+                }
+            }
+        }
+
+        compareDeclarations(manifest, collector);
 
         return new PluginRiskReport(
                 archiveSha256,
@@ -107,10 +143,11 @@ public final class PluginRiskAnalyzer {
                 collector.limitations());
     }
 
-    private static String classifyArchive(
+    private static ArchiveAnalysis classifyArchive(
             File archive,
             PluginManifest manifest,
-            Collector collector) throws IOException {
+            Collector collector,
+            boolean collectPythonSources) throws IOException {
         ArrayList<ZipEntry> entries = new ArrayList<>();
 
         try (ZipFile zip = new ZipFile(archive)) {
@@ -128,6 +165,9 @@ public final class PluginRiskAnalyzer {
 
             MessageDigest python = digest();
             boolean hasPython = false;
+            boolean pythonLimitExceeded = false;
+            int pythonBytes = 0;
+            ArrayList<PluginPythonRiskScanner.Source> pythonSources = new ArrayList<>();
 
             for (ZipEntry entry : entries) {
                 String path = entry.getName();
@@ -170,8 +210,29 @@ public final class PluginRiskAnalyzer {
                         updateInt(python, pathBytes.length);
                         python.update(pathBytes);
                         updateLong(python, entry.getSize());
+                        ByteArrayOutputStream source = null;
+
+                        if (!collectPythonSources) {
+                            source = null;
+                        } else if (entry.getSize() <= PluginPythonRiskScanner.MAX_SOURCE_BYTES
+                                && pythonSources.size() < PluginPythonRiskScanner.MAX_SOURCES
+                                && pythonBytes + entry.getSize()
+                                        <= PluginPythonRiskScanner.MAX_TOTAL_SOURCE_BYTES) {
+                            source = new ByteArrayOutputStream((int) entry.getSize());
+                            source.write(prefix, 0, prefixLength);
+                        } else {
+                            pythonLimitExceeded = true;
+                        }
+
                         python.update(prefix, 0, prefixLength);
-                        copyDigest(input, python);
+                        copyPython(input, python, source);
+
+                        if (source != null) {
+                            byte[] bytes = source.toByteArray();
+                            pythonSources.add(new PluginPythonRiskScanner.Source(path, bytes));
+                            pythonBytes += bytes.length;
+                        }
+
                         hasPython = true;
                     }
                 }
@@ -204,16 +265,107 @@ public final class PluginRiskAnalyzer {
                 }
             }
 
-            return hasPython ? hex(python.digest()) : null;
+            return new ArchiveAnalysis(
+                    hasPython ? hex(python.digest()) : null,
+                    pythonSources,
+                    pythonLimitExceeded);
         }
     }
 
-    private static void copyDigest(InputStream input, MessageDigest digest) throws IOException {
+    private static void copyPython(
+            InputStream input, MessageDigest digest, ByteArrayOutputStream source)
+            throws IOException {
         byte[] buffer = new byte[8192];
         int count;
 
         while ((count = input.read(buffer)) != -1) {
             digest.update(buffer, 0, count);
+
+            if (source != null) {
+                source.write(buffer, 0, count);
+            }
+        }
+    }
+
+    private static void compareDeclarations(PluginManifest manifest, Collector collector) {
+        Set<String> declared = new HashSet<>();
+
+        for (String capability : manifest.declaredCapabilities) {
+            if (PluginPythonRiskScanner.CATEGORIES.contains(capability)) {
+                declared.add(capability);
+            }
+        }
+
+        for (String category : PluginPythonRiskScanner.CATEGORIES) {
+            if (collector.observedCategories.contains(category) && !declared.contains(category)) {
+                collector.add(
+                        "declaration.missing." + category,
+                        null,
+                        PluginRiskEvidence.Source.MANIFEST,
+                        PluginRiskEvidence.Confidence.EXACT);
+            } else if (declared.contains(category)
+                    && !collector.observedCategories.contains(category)) {
+                collector.add(
+                        "declaration.unobserved." + category,
+                        null,
+                        PluginRiskEvidence.Source.MANIFEST,
+                        PluginRiskEvidence.Confidence.EXACT);
+            }
+        }
+    }
+
+    private static String categoryForEvidence(String id) {
+        if (id.startsWith("network.")) {
+            return "network";
+        }
+        if (id.startsWith("filesystem.") || id.startsWith("storage.cross_plugin")) {
+            return "filesystem";
+        }
+        if (id.startsWith("process.")) {
+            return "process";
+        }
+        if (id.startsWith("bridge.")) {
+            return "java_bridge";
+        }
+        if (id.startsWith("python.dynamic_")
+                || id.startsWith("code.dynamic_")
+                || id.startsWith("reflection.")) {
+            return "dynamic_execution";
+        }
+        if (id.startsWith("host.")
+                || id.equals("python.internal_runtime_import")
+                || id.equals("lifecycle.private_override")) {
+            return "host_internals";
+        }
+        if (id.startsWith("hook.")) {
+            return "hooks";
+        }
+        if (id.startsWith("ui.direct_") || id.startsWith("android.")) {
+            return "android_ui";
+        }
+        if (id.startsWith("thread.") || id.equals("lifecycle.unmanaged_resource")) {
+            return "unmanaged_threads";
+        }
+        if (id.equals("code.native_loading")
+                || id.equals("block.archive.native_payload_forbidden")) {
+            return "native_code";
+        }
+
+        return null;
+    }
+
+    private static final class ArchiveAnalysis {
+        final String pythonDigest;
+        final List<PluginPythonRiskScanner.Source> pythonSources;
+        final boolean pythonLimitExceeded;
+
+        ArchiveAnalysis(
+                String pythonDigest,
+                List<PluginPythonRiskScanner.Source> pythonSources,
+                boolean pythonLimitExceeded) {
+            this.pythonDigest = pythonDigest;
+            this.pythonSources = pythonSources;
+            this.pythonLimitExceeded = pythonLimitExceeded;
         }
     }
 
@@ -284,6 +436,7 @@ public final class PluginRiskAnalyzer {
     private static final class Collector {
         private final Map<String, PluginRiskEvidence> evidence = new LinkedHashMap<>();
         private final Set<String> limitations = new HashSet<>();
+        private final Set<String> observedCategories = new HashSet<>();
 
         void add(
                 String id,
@@ -293,10 +446,20 @@ public final class PluginRiskAnalyzer {
             if (!evidence.containsKey(id)) {
                 evidence.put(id, new PluginRiskEvidence(id, bounded(detail), source, confidence));
             }
+
+            String category = categoryForEvidence(id);
+
+            if (category != null) {
+                observe(category);
+            }
         }
 
         void limit(String id) {
             limitations.add(id);
+        }
+
+        void observe(String category) {
+            observedCategories.add(category);
         }
 
         List<PluginRiskEvidence> evidence() {
