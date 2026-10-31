@@ -201,7 +201,7 @@ public final class ExternalPlugins {
                     result.sha256,
                     installed == null ? null : installed.signerState,
                     result.signatureVerification,
-                    null);
+                    result.rotationProof);
         }
 
         @Override
@@ -610,7 +610,7 @@ public final class ExternalPlugins {
                             checked.sha256,
                             null,
                             checked.signatureVerification,
-                            null);
+                            checked.rotationProof);
                     PluginPackageStore.Installed installed = store.install(
                             archive,
                             expectedHash,
@@ -655,7 +655,7 @@ public final class ExternalPlugins {
                             checked.sha256,
                             current.signerState,
                             checked.signatureVerification,
-                            null);
+                            checked.rotationProof);
                     store.scheduleDebugReload(
                             archive,
                             expectedHash,

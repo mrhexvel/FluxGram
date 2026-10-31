@@ -213,7 +213,7 @@ public final class PluginPackageStore {
                     checked.sha256,
                     beforeSigner,
                     checked.signatureVerification,
-                    approvedSigner == null ? null : approvedSigner.rotationProof);
+                    checked.rotationProof);
 
             if (!signerReview.matches(approvedSigner)) {
                 throw new IOException("Plugin signer approval changed after review");
@@ -1091,7 +1091,7 @@ public final class PluginPackageStore {
                 checked.sha256,
                 before,
                 checked.signatureVerification,
-                approved.rotationProof);
+                checked.rotationProof);
 
         if (!review.matches(approved)) {
             throw new IOException("Pending plugin signer transition is stale or invalid");

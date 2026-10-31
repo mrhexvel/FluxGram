@@ -14,11 +14,12 @@ import java.nio.charset.StandardCharsets;
 
 public final class PluginKeyRotationProof {
     public static final int FORMAT_VERSION = 1;
+    public static final String ENTRY = ".fluxgram-key-rotation";
+    public static final int MAX_ENCODED_BYTES = 2048;
 
     private static final int MESSAGE_MAGIC = 0x4647524b;
     private static final int PROOF_MAGIC = 0x46475250;
     private static final String DOMAIN = "fluxgram.plugin.key-rotation";
-    private static final int MAX_ENCODED_BYTES = 2048;
     private static final int MAX_ENVELOPE_BYTES = 512;
 
     public enum Status {

@@ -14,6 +14,9 @@ public final class PluginInstalledPackageCheck {
             System.out.println("plugin:" + result.signatureVerification.pluginId);
             System.out.println("key:" + result.signatureVerification.keyId);
             System.out.println("payload:" + result.signatureVerification.payloadSha256);
+            System.out.println("rotation:" + (result.rotationProof == null
+                    ? "none"
+                    : result.rotationProof.fromGeneration + "->" + result.rotationProof.toGeneration));
         } catch (IOException expected) {
             System.err.println(expected.getMessage());
             System.exit(2);

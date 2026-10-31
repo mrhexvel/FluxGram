@@ -157,10 +157,15 @@ class PluginDevkitContractTest(unittest.TestCase):
                 SIGNED_SCHEMA_VERSION,
                 Envelope,
                 canonical_public_key,
+                create_rotation_proof,
                 decode_envelope,
+                decode_rotation_proof,
                 encode_envelope,
+                encode_rotation_proof,
+                rotation_message,
                 sign_payload,
                 verify_payload,
+                verify_rotation_proof,
             )
         except ImportError:
             self.skipTest("Requires devkit cryptography dependency")
@@ -202,6 +207,7 @@ class PluginDevkitContractTest(unittest.TestCase):
             signing / "PluginSignatureVerifier.java",
             signing / "PluginSignedPayload.java",
             signing / "PluginSignerIdentity.java",
+            signing / "PluginKeyRotationProof.java",
             ROOT / "tests/java/PluginDevkitSigningInteropCheck.java",
         ]
 
@@ -247,6 +253,67 @@ class PluginDevkitContractTest(unittest.TestCase):
             ).stdout.strip()
             result = verify_payload(payload, decode_envelope(base64.b64decode(java_envelope)))
             self.assertRegex(result.key_id, r"p256:[a-f0-9]{64}")
+            second_key = ec.generate_private_key(ec.SECP256R1())
+            old_key_id = "p256:" + hashlib.sha256(public_key).hexdigest()
+            new_key_id = "p256:" + hashlib.sha256(
+                canonical_public_key(second_key.public_key())
+            ).hexdigest()
+            python_message = rotation_message(
+                "example.plugin", old_key_id, new_key_id, 3, 4
+            )
+            java_message = subprocess.run(
+                [
+                    "java",
+                    "-cp",
+                    output,
+                    "org.telegram.messenger.plugins.signing.PluginDevkitSigningInteropCheck",
+                    "rotation-message",
+                    "example.plugin",
+                    old_key_id,
+                    new_key_id,
+                    "3",
+                    "4",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            self.assertEqual(base64.b64decode(java_message), python_message)
+            python_proof = encode_rotation_proof(create_rotation_proof(
+                "example.plugin", private_key, second_key, 3
+            ))
+            java_verified = subprocess.run(
+                [
+                    "java",
+                    "-cp",
+                    output,
+                    "org.telegram.messenger.plugins.signing.PluginDevkitSigningInteropCheck",
+                    "verify-rotation",
+                    base64.b64encode(python_proof).decode(),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            self.assertEqual(java_verified, "VERIFIED")
+            java_proof = subprocess.run(
+                [
+                    "java",
+                    "-cp",
+                    output,
+                    "org.telegram.messenger.plugins.signing.PluginDevkitSigningInteropCheck",
+                    "rotation-proof",
+                    "example.plugin",
+                    "3",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            verified_proof = verify_rotation_proof(
+                decode_rotation_proof(base64.b64decode(java_proof))
+            )
+            self.assertEqual((verified_proof.from_generation, verified_proof.to_generation), (3, 4))
 
 
 if __name__ == "__main__":

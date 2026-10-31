@@ -200,6 +200,10 @@ public final class PluginSignedPayload {
             }
         }
 
+        if (parts[0].equalsIgnoreCase(PluginKeyRotationProof.ENTRY)) {
+            return path.equals(PluginKeyRotationProof.ENTRY);
+        }
+
         if (parts[0].equalsIgnoreCase("fluxgram")
                 || parts[0].equalsIgnoreCase("fluxgram.py")
                 || parts[0].equalsIgnoreCase(SIGNATURE_ENTRY)

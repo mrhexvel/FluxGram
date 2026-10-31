@@ -214,6 +214,37 @@ public final class PluginPackageSigningCheck {
         require(decodedProof.verify().status == PluginKeyRotationProof.Status.VERIFIED);
         require(decodedProof.fromKeyId.equals(proof.fromKeyId));
         require(decodedProof.toKeyId.equals(proof.toKeyId));
+
+        PluginSignerReview firstReview = PluginSignerReview.prepare(
+                "example.plugin",
+                digest('1'),
+                null,
+                newIdentity,
+                proof);
+        require(firstReview.transition.reason == PluginSignerTransition.Reason.PIN_FIRST_IDENTITY);
+        require(firstReview.approve(true).rotationProof == null);
+        PluginSignerState oldState = new PluginSignerState(
+                digest('0'),
+                PluginSignerIdentity.signed("example.plugin", oldIdentity.keyId, 3));
+        PluginSignerReview rotationReview = PluginSignerReview.prepare(
+                "example.plugin",
+                digest('1'),
+                oldState,
+                newIdentity,
+                proof);
+        require(rotationReview.transition.reason == PluginSignerTransition.Reason.VERIFIED_ROTATION);
+        require(rotationReview.approve(false).rotationProof == proof);
+        PluginSignerState newState = new PluginSignerState(
+                digest('1'),
+                PluginSignerIdentity.signed("example.plugin", newIdentity.keyId, 4));
+        PluginSignerReview sameKeyReview = PluginSignerReview.prepare(
+                "example.plugin",
+                digest('2'),
+                newState,
+                newIdentity,
+                proof);
+        require(sameKeyReview.transition.reason == PluginSignerTransition.Reason.SAME_IDENTITY);
+        require(sameKeyReview.approve(false).rotationProof == null);
         byte[] futureProof = proof.encode();
         futureProof[7] = 2;
         expectIo(() -> PluginKeyRotationProof.decode(futureProof));

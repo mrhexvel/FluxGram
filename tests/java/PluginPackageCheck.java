@@ -18,6 +18,9 @@ public final class PluginPackageCheck {
             System.out.println(result.riskReport.analyzerVersion);
             System.out.println(result.riskReport.hostFingerprint);
             System.out.println("signature:" + result.signatureVerification.status);
+            System.out.println("rotation:" + (result.rotationProof == null
+                    ? "none"
+                    : result.rotationProof.fromGeneration + "->" + result.rotationProof.toGeneration));
             System.out.println("scanner-calls:" + FakePluginPythonRiskScanner.calls);
             System.out.println(
                     "decision:"

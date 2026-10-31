@@ -1,4 +1,5 @@
 import org.telegram.messenger.plugins.packages.PluginManifest;
+import org.telegram.messenger.plugins.signing.PluginKeyRotationProof;
 import org.telegram.messenger.plugins.signing.PluginSignatureEnvelope;
 import org.telegram.messenger.plugins.signing.PluginSignedPayload;
 
@@ -7,9 +8,16 @@ import java.io.InputStream;
 import java.math.BigInteger;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
+import java.security.KeyFactory;
 import java.security.MessageDigest;
+import java.security.PrivateKey;
+import java.security.PublicKey;
 import java.security.Signature;
 import java.security.spec.ECGenParameterSpec;
+import java.security.spec.PKCS8EncodedKeySpec;
+import java.security.spec.X509EncodedKeySpec;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
@@ -24,6 +32,11 @@ public final class PluginArchiveSignerCheck {
             16);
 
     public static void main(String[] args) throws Exception {
+        if (args.length == 5 && args[0].equals("rotation")) {
+            createRotationProof(args[1], Long.parseLong(args[2]), args[3], args[4]);
+            return;
+        }
+
         List<PluginSignedPayload.Entry> entries = new ArrayList<>();
         byte[] manifestBytes = null;
 
@@ -67,9 +80,9 @@ public final class PluginArchiveSignerCheck {
                 manifest.version,
                 manifest.schemaVersion,
                 entries);
-        KeyPairGenerator generator = KeyPairGenerator.getInstance("EC");
-        generator.initialize(new ECGenParameterSpec("secp256r1"));
-        KeyPair key = generator.generateKeyPair();
+        KeyPair key = args.length == 3
+                ? readKeyPair(args[1], args[2])
+                : keyPair();
         byte[] publicKey = key.getPublic().getEncoded();
         byte[] message = payload.encode(
                 PluginSignatureEnvelope.ALGORITHM_ECDSA_P256_SHA256,
@@ -83,6 +96,63 @@ public final class PluginArchiveSignerCheck {
                 publicKey,
                 signature);
         System.out.println(Base64.getEncoder().encodeToString(envelope.encode()));
+    }
+
+    private static void createRotationProof(
+            String pluginId,
+            long fromGeneration,
+            String privatePath,
+            String publicPath) throws Exception {
+        KeyPair oldKey = keyPair();
+        KeyPair newKey = keyPair();
+        String fromKeyId = keyId(oldKey.getPublic().getEncoded());
+        String toKeyId = keyId(newKey.getPublic().getEncoded());
+        byte[] message = PluginKeyRotationProof.message(
+                pluginId,
+                fromKeyId,
+                toKeyId,
+                fromGeneration,
+                fromGeneration + 1);
+        PluginKeyRotationProof proof = new PluginKeyRotationProof(
+                pluginId,
+                fromKeyId,
+                toKeyId,
+                fromGeneration,
+                fromGeneration + 1,
+                envelope(oldKey, message),
+                envelope(newKey, message));
+        Files.write(Paths.get(privatePath), newKey.getPrivate().getEncoded());
+        Files.write(Paths.get(publicPath), newKey.getPublic().getEncoded());
+        System.out.println(Base64.getEncoder().encodeToString(proof.encode()));
+    }
+
+    private static KeyPair keyPair() throws Exception {
+        KeyPairGenerator generator = KeyPairGenerator.getInstance("EC");
+        generator.initialize(new ECGenParameterSpec("secp256r1"));
+        return generator.generateKeyPair();
+    }
+
+    private static KeyPair readKeyPair(String privatePath, String publicPath) throws Exception {
+        KeyFactory factory = KeyFactory.getInstance("EC");
+        PrivateKey privateKey = factory.generatePrivate(
+                new PKCS8EncodedKeySpec(Files.readAllBytes(Paths.get(privatePath))));
+        PublicKey publicKey = factory.generatePublic(
+                new X509EncodedKeySpec(Files.readAllBytes(Paths.get(publicPath))));
+        return new KeyPair(publicKey, privateKey);
+    }
+
+    private static PluginSignatureEnvelope envelope(KeyPair key, byte[] message) throws Exception {
+        Signature signer = Signature.getInstance("SHA256withECDSA");
+        signer.initSign(key.getPrivate());
+        signer.update(message);
+        return new PluginSignatureEnvelope(
+                PluginSignatureEnvelope.ALGORITHM_ECDSA_P256_SHA256,
+                key.getPublic().getEncoded(),
+                lowS(signer.sign()));
+    }
+
+    private static String keyId(byte[] publicKey) throws Exception {
+        return "p256:" + hex(MessageDigest.getInstance("SHA-256").digest(publicKey));
     }
 
     private static byte[] read(InputStream input) throws Exception {

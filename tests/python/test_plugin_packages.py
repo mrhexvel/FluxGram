@@ -129,7 +129,7 @@ class PluginPackagesTest(unittest.TestCase):
                     z.writestr(name, content)
         return data.getvalue()
 
-    def signed_archive(self, fields=None, entries=None, python_source=None):
+    def signed_archive(self, fields=None, entries=None, python_source=None, rotation=False):
         signed_fields = {"schema_version": 6}
 
         if fields:
@@ -144,10 +144,47 @@ class PluginPackagesTest(unittest.TestCase):
                 else b'raise RuntimeError("Validation must not execute this")\n'
             ),
         )
+        key_arguments = []
+
+        if rotation:
+            private_key = self.root / "rotation-private.pk8"
+            public_key = self.root / "rotation-public.spki"
+            proof = subprocess.run(
+                [
+                    "java",
+                    "-cp",
+                    self.classpath,
+                    "PluginArchiveSignerCheck",
+                    "rotation",
+                    signed_fields.get("id", MANIFEST["id"]),
+                    "0",
+                    str(private_key),
+                    str(public_key),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(proof.returncode, 0, proof.stderr)
+            unsigned = self.mutate_archive(
+                unsigned,
+                additions=[(
+                    ".fluxgram-key-rotation",
+                    base64.b64decode(proof.stdout.strip(), validate=True),
+                )],
+            )
+            key_arguments = [str(private_key), str(public_key)]
+
         source = self.root / "unsigned.fgplugin"
         source.write_bytes(unsigned)
         result = subprocess.run(
-            ["java", "-cp", self.classpath, "PluginArchiveSignerCheck", str(source)],
+            [
+                "java",
+                "-cp",
+                self.classpath,
+                "PluginArchiveSignerCheck",
+                str(source),
+                *key_arguments,
+            ],
             capture_output=True,
             text=True,
         )
@@ -926,6 +963,52 @@ class PluginPackagesTest(unittest.TestCase):
         payload = next(value for value in installed if value.startswith("payload:"))
         self.assertRegex(key, r"key:p256:[a-f0-9]{64}")
         self.assertRegex(payload, r"payload:[a-f0-9]{64}")
+        self.assertIn("rotation:none", installed)
+
+    def test_schema_six_rotation_proof_is_verified_and_signed(self):
+        signed = self.signed_archive(rotation=True)
+        installed = self.validate_installed(signed)
+        self.assertIn("signature:VERIFIED", installed)
+        self.assertIn("rotation:0->1", installed)
+
+        for changed in (
+                self.mutate_archive(
+                    signed,
+                    replacements={".fluxgram-key-rotation": b"changed"},
+                ),
+                self.mutate_archive(signed, removals={".fluxgram-key-rotation"}),
+        ):
+            with self.subTest(digest=hashlib.sha256(changed).hexdigest()):
+                self.assertIn(
+                    "Plugin signature verification failed",
+                    self.validate_installed(changed, accepted=False),
+                )
+
+    def test_schema_six_rejects_invalid_or_mismatched_rotation_proof(self):
+        malformed = self.signed_archive(entries=[(".fluxgram-key-rotation", b"invalid")])
+        self.assertIn(
+            "Invalid key rotation proof header",
+            self.validate_installed(malformed, accepted=False),
+        )
+
+        matching = self.signed_archive(rotation=True)
+
+        with zipfile.ZipFile(io.BytesIO(matching)) as archive:
+            proof = archive.read(".fluxgram-key-rotation")
+
+        wrong_key = self.signed_archive(entries=[(".fluxgram-key-rotation", proof)])
+        self.assertIn(
+            "target does not match package signer",
+            self.validate_installed(wrong_key, accepted=False),
+        )
+        wrong_plugin = self.signed_archive(
+            fields={"id": "test.other_plugin"},
+            entries=[(".fluxgram-key-rotation", proof)],
+        )
+        self.assertIn(
+            "belongs to another plugin",
+            self.validate_installed(wrong_plugin, accepted=False),
+        )
 
     def test_legacy_package_reports_missing_signature(self):
         output = self.validate(self.archive(), True)
@@ -953,6 +1036,20 @@ class PluginPackagesTest(unittest.TestCase):
             "Reserved package path",
             self.validate_error(self.archive(entries=[(".FLUXGRAM-SIGNATURE", b"x")])),
         )
+        self.assertIn(
+            "Key rotation proof requires manifest schema 6",
+            self.validate_error(self.archive(entries=[(".fluxgram-key-rotation", b"x")])),
+        )
+        for path in (
+                ".fluxgram-key-rotation/data",
+                ".FLUXGRAM-KEY-ROTATION",
+                ".fluxgram-key-rotation/",
+        ):
+            with self.subTest(path=path):
+                self.assertIn(
+                    "Reserved package path",
+                    self.validate_error(self.archive(entries=[(path, b"x")])),
+                )
 
     def test_signed_archive_detects_payload_mutations(self):
         source = b"value = 1\n"
@@ -1664,6 +1761,22 @@ class PluginStoreTest(unittest.TestCase):
         self.assertEqual(self.store("pending"), [])
         self.assertFalse((self.root / "installed" / MANIFEST["id"]).exists())
         self.assertEqual(self.store("install", data), [MANIFEST["id"]])
+
+    def test_store_revalidates_rotation_proof_from_frozen_archive(self):
+        store = (
+            ROOT
+            / "TMessagesProj/src/main/java/org/telegram/messenger/plugins/packages/PluginPackageStore.java"
+        ).read_text()
+        external = (
+            ROOT
+            / "TMessagesProj/src/main/java/org/telegram/messenger/plugins/ExternalPlugins.java"
+        ).read_text()
+
+        self.assertGreaterEqual(store.count("checked.rotationProof"), 2)
+        self.assertNotIn("approved.rotationProof", store)
+        self.assertNotIn("approvedSigner.rotationProof", store)
+        self.assertGreaterEqual(external.count("checked.rotationProof"), 2)
+        self.assertIn("result.rotationProof", external)
 
     def test_remove_plugin_with_damaged_manifest(self):
         self.store("install", self.archive())

@@ -28,6 +28,7 @@ import java.util.zip.ZipFile;
 import org.telegram.messenger.plugins.risk.PluginRiskAnalyzer;
 import org.telegram.messenger.plugins.risk.PluginRiskReport;
 import org.telegram.messenger.plugins.risk.PluginPythonRiskScanner;
+import org.telegram.messenger.plugins.signing.PluginKeyRotationProof;
 import org.telegram.messenger.plugins.signing.PluginSignatureVerification;
 import org.telegram.messenger.plugins.signing.PluginSignatureVerifier;
 import org.telegram.messenger.plugins.signing.PluginSignedPayload;
@@ -46,6 +47,7 @@ public final class PluginPackageValidator {
         public final byte[] iconBytes;
         public final PluginRiskReport riskReport;
         public final PluginSignatureVerification signatureVerification;
+        public final PluginKeyRotationProof rotationProof;
         public final long archiveBytes, unpackedBytes;
         public final int fileCount;
 
@@ -57,7 +59,8 @@ public final class PluginPackageValidator {
                 int fileCount,
                 byte[] iconBytes,
                 PluginRiskReport riskReport,
-                PluginSignatureVerification signatureVerification) {
+                PluginSignatureVerification signatureVerification,
+                PluginKeyRotationProof rotationProof) {
             this.manifest = manifest;
             this.iconBytes = iconBytes;
             this.sha256 = hash;
@@ -66,6 +69,7 @@ public final class PluginPackageValidator {
             this.fileCount = fileCount;
             this.riskReport = riskReport;
             this.signatureVerification = signatureVerification;
+            this.rotationProof = rotationProof;
         }
     }
 
@@ -128,6 +132,7 @@ public final class PluginPackageValidator {
 
             byte[] manifestBytes = null;
             byte[] signatureBytes = null;
+            byte[] rotationBytes = null;
             List<PluginSignedPayload.Entry> signedEntries = new ArrayList<>();
             int entries = 0, files = 0;
             long total = 0;
@@ -142,9 +147,13 @@ public final class PluginPackageValidator {
 
                     boolean isSignature = entry.getName().equals(PluginSignedPayload.SIGNATURE_ENTRY)
                             && !entry.isDirectory();
+                    boolean isRotation = entry.getName().equals(PluginKeyRotationProof.ENTRY)
+                            && !entry.isDirectory();
                     String path = isSignature
                             ? PluginSignedPayload.SIGNATURE_ENTRY
-                            : validatePath(entry.getName(), entry.isDirectory());
+                            : isRotation
+                                    ? PluginKeyRotationProof.ENTRY
+                                    : validatePath(entry.getName(), entry.isDirectory());
 
                     require(
                             paths.put(path, entry.isDirectory()) == null,
@@ -165,6 +174,7 @@ public final class PluginPackageValidator {
                     boolean isManifest = path.equals("manifest.json") && !entry.isDirectory();
                     long limit = isSignature
                             ? 512
+                            : isRotation ? PluginKeyRotationProof.MAX_ENCODED_BYTES
                             : isManifest ? MAX_MANIFEST_BYTES : MAX_FILE_BYTES;
 
                     require(
@@ -174,7 +184,7 @@ public final class PluginPackageValidator {
                             !entry.isDirectory() || entry.getSize() == 0,
                             "Directory contains file data");
 
-                    ByteArrayOutputStream metadata = isManifest || isSignature
+                    ByteArrayOutputStream metadata = isManifest || isSignature || isRotation
                             ? new ByteArrayOutputStream()
                             : null;
                     MessageDigest entryDigest;
@@ -219,6 +229,8 @@ public final class PluginPackageValidator {
                         manifestBytes = metadata.toByteArray();
                     } else if (isSignature) {
                         signatureBytes = metadata.toByteArray();
+                    } else if (isRotation) {
+                        rotationBytes = metadata.toByteArray();
                     }
 
                     if (!isSignature) {
@@ -246,6 +258,7 @@ public final class PluginPackageValidator {
 
             PluginManifest manifest = PluginManifest.parse(decodeUtf8(manifestBytes));
             PluginSignatureVerification signatureVerification;
+            PluginKeyRotationProof rotationProof = null;
 
             if (manifest.schemaVersion == 6) {
                 require(signatureBytes != null, "Manifest schema 6 requires a signature envelope");
@@ -265,8 +278,19 @@ public final class PluginPackageValidator {
                         signatureVerification.isVerified(),
                         "Plugin signature verification failed: "
                                 + signatureVerification.status.name());
+
+                if (rotationBytes != null) {
+                    rotationProof = PluginKeyRotationProof.decode(rotationBytes);
+                    PluginKeyRotationProof.Verification rotationVerification = rotationProof.verify();
+                    require(rotationVerification.isVerified(), "Plugin key rotation proof is invalid");
+                    require(rotationProof.pluginId.equals(manifest.id),
+                            "Plugin key rotation proof belongs to another plugin");
+                    require(rotationProof.toKeyId.equals(signatureVerification.keyId),
+                            "Plugin key rotation target does not match package signer");
+                }
             } else {
                 require(signatureBytes == null, "Signature envelope requires manifest schema 6");
+                require(rotationBytes == null, "Key rotation proof requires manifest schema 6");
                 signatureVerification = PluginSignatureVerifier.missing(manifest.id);
             }
 
@@ -327,7 +351,8 @@ public final class PluginPackageValidator {
                     files,
                     iconBytes,
                     riskReport,
-                    signatureVerification);
+                    signatureVerification,
+                    rotationProof);
         } finally {
             if (!snapshot.delete() && snapshot.exists()) {
                 throw new IOException("Could not remove temporary plugin archive");
@@ -471,6 +496,7 @@ public final class PluginPackageValidator {
                         && !parts[0].equalsIgnoreCase(".fluxgram-risk-report")
                         && !parts[0].equalsIgnoreCase(".fluxgram-signer-state")
                         && !parts[0].equalsIgnoreCase(".fluxgram-signer-journal")
+                        && !parts[0].equalsIgnoreCase(PluginKeyRotationProof.ENTRY)
                         && !parts[0].equalsIgnoreCase(PluginSignedPayload.SIGNATURE_ENTRY),
                 "Reserved package path");
 

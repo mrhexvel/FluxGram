@@ -45,12 +45,16 @@ public final class PluginSignerReview {
         PluginSignerState after = new PluginSignerState(
                 archiveSha256,
                 transition.nextIdentity);
+        PluginKeyRotationProof appliedRotation =
+                transition.reason == PluginSignerTransition.Reason.VERIFIED_ROTATION
+                        ? rotationProof
+                        : null;
         PluginSignerJournal journal = new PluginSignerJournal(
                 pluginId,
                 before,
                 after,
                 transition.reason,
-                rotationProof);
+                appliedRotation);
 
         return new PluginSignerReview(transition, before, after, rotationProof, journal);
     }
