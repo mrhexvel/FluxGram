@@ -469,6 +469,8 @@ public final class PluginPackageValidator {
 
         require(!parts[0].equalsIgnoreCase(".fluxgram-source.fgplugin")
                         && !parts[0].equalsIgnoreCase(".fluxgram-risk-report")
+                        && !parts[0].equalsIgnoreCase(".fluxgram-signer-state")
+                        && !parts[0].equalsIgnoreCase(".fluxgram-signer-journal")
                         && !parts[0].equalsIgnoreCase(PluginSignedPayload.SIGNATURE_ENTRY),
                 "Reserved package path");
 

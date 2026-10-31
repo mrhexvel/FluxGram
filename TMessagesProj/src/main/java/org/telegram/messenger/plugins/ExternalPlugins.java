@@ -15,6 +15,8 @@ import org.telegram.messenger.plugins.packages.PluginPackageValidator;
 import org.telegram.messenger.plugins.risk.PluginRiskDiff;
 import org.telegram.messenger.plugins.risk.PluginRiskPolicy;
 import org.telegram.messenger.plugins.risk.PluginRiskReport;
+import org.telegram.messenger.plugins.signing.PluginSignerJournal;
+import org.telegram.messenger.plugins.signing.PluginSignerReview;
 
 import java.io.*;
 import java.util.ArrayList;
@@ -173,11 +175,16 @@ public final class ExternalPlugins {
         public final PluginRiskReport previousRiskReport;
         public final PluginRiskDiff riskDiff;
         public final PluginRiskPolicy.Result riskPolicy;
+        public final PluginSignerReview signerReview;
 
         Review(
                 File archive,
                 PluginPackageValidator.Result result,
                 PluginPackageStore.Installed installed) throws IOException {
+            if (installed != null && installed.signerStateError != null) {
+                throw new IOException(installed.signerStateError);
+            }
+
             this.icon = result.iconBytes == null ? null
                     : PluginIcons.decode(result.iconBytes, result.manifest.icon);
             this.archive = archive;
@@ -189,6 +196,12 @@ public final class ExternalPlugins {
             this.riskPolicy = installed == null
                     ? PluginRiskPolicy.evaluateInstall(result.riskReport)
                     : PluginRiskPolicy.evaluateUpdate(previousRiskReport, result.riskReport);
+            this.signerReview = PluginSignerReview.prepare(
+                    result.manifest.id,
+                    result.sha256,
+                    installed == null ? null : installed.signerState,
+                    result.signatureVerification,
+                    null);
         }
 
         @Override
@@ -246,7 +259,8 @@ public final class ExternalPlugins {
                                 new LinkedHashMap<>();
 
                         for (PluginPackageStore.Installed installed : store.list()) {
-                            if (installed.manifest.isCompatible()) {
+                            if (installed.manifest.isCompatible()
+                                    && installed.signerStateError == null) {
                                 PythonPluginAdapter adapter = new PythonPluginAdapter(installed);
 
                                 if (recoveryFailed.contains(installed.manifest.id)) {
@@ -462,7 +476,11 @@ public final class ExternalPlugins {
     }
 
     public static void install(
-            Review review, boolean enable, String expectedVersion, Callback<String> callback) {
+            Review review,
+            boolean enable,
+            String expectedVersion,
+            boolean confirmed,
+            Callback<String> callback) {
         worker.execute(
                 () -> {
                     String id = null;
@@ -474,6 +492,17 @@ public final class ExternalPlugins {
                         }
 
                         id = review.result.manifest.id;
+
+                        if (review.riskPolicy.decision == PluginRiskPolicy.Decision.BLOCK) {
+                            throw new IOException("Plugin package is blocked by static risk analysis");
+                        }
+                        if (review.riskPolicy.decision == PluginRiskPolicy.Decision.CONFIRM
+                                && !confirmed) {
+                            throw new IOException("Plugin risk changes require confirmation");
+                        }
+
+                        PluginSignerJournal approvedSigner =
+                                review.signerReview.approve(confirmed);
 
                         PluginManager manager = PluginManager.getInstance();
 
@@ -490,7 +519,8 @@ public final class ExternalPlugins {
                                     id,
                                     expectedVersion,
                                     enable,
-                                    enabledBefore);
+                                    enabledBefore,
+                                    approvedSigner);
                             manager.blockUntilRestart(id);
                             pending = Collections.unmodifiableMap(store.pending());
                         } else {
@@ -499,6 +529,7 @@ public final class ExternalPlugins {
                                     store.install(
                                             review.archive,
                                             review.result.sha256,
+                                            approvedSigner,
                                             () -> PluginStorage.clearPlugin(installedId));
                             PythonPluginAdapter adapter = new PythonPluginAdapter(installed);
                             boolean migrated = true;
@@ -574,7 +605,17 @@ public final class ExternalPlugins {
                 version = checked.manifest.version;
 
                 if (!reload) {
-                    PluginPackageStore.Installed installed = store.install(archive, expectedHash);
+                    PluginSignerReview signerReview = PluginSignerReview.prepare(
+                            id,
+                            checked.sha256,
+                            null,
+                            checked.signatureVerification,
+                            null);
+                    PluginPackageStore.Installed installed = store.install(
+                            archive,
+                            expectedHash,
+                            signerReview.approve(true),
+                            null);
                     PythonPluginAdapter adapter = new PythonPluginAdapter(installed);
                     Exception migrationFailure = migrateForDebug(installed);
 
@@ -608,8 +649,20 @@ public final class ExternalPlugins {
 
                     PythonPluginAdapter previous = (PythonPluginAdapter) plugin;
                     boolean enabledBefore = manager.isEnabled(id);
+                    PluginPackageStore.Installed current = store.get(id);
+                    PluginSignerReview signerReview = PluginSignerReview.prepare(
+                            id,
+                            checked.sha256,
+                            current.signerState,
+                            checked.signatureVerification,
+                            null);
                     store.scheduleDebugReload(
-                            archive, expectedHash, id, previous.getVersion(), enable);
+                            archive,
+                            expectedHash,
+                            id,
+                            previous.getVersion(),
+                            enable,
+                            signerReview.approve(true));
                     pending = Collections.unmodifiableMap(store.pending());
 
                     try {

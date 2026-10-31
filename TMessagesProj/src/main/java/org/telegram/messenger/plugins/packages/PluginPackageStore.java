@@ -17,10 +17,15 @@ import org.telegram.messenger.plugins.risk.PluginRiskReport;
 import org.telegram.messenger.plugins.risk.PluginRiskAnalyzer;
 import org.telegram.messenger.plugins.risk.PluginRiskPolicy;
 import org.telegram.messenger.plugins.risk.PluginPythonRiskScanner;
+import org.telegram.messenger.plugins.signing.PluginSignerJournal;
+import org.telegram.messenger.plugins.signing.PluginSignerReview;
+import org.telegram.messenger.plugins.signing.PluginSignerState;
 
 public final class PluginPackageStore {
     public static final String SOURCE_ARCHIVE = ".fluxgram-source.fgplugin";
     public static final String RISK_REPORT = ".fluxgram-risk-report";
+    public static final String SIGNER_STATE = ".fluxgram-signer-state";
+    public static final String SIGNER_JOURNAL = ".fluxgram-signer-journal";
 
     private final File root, cache;
     private final PluginPythonRiskScanner pythonScanner;
@@ -30,11 +35,20 @@ public final class PluginPackageStore {
         public final PluginManifest manifest;
         public final File directory;
         public final PluginRiskReport riskReport;
+        public final PluginSignerState signerState;
+        public final String signerStateError;
 
-        Installed(PluginManifest manifest, File directory, PluginRiskReport riskReport) {
+        Installed(
+                PluginManifest manifest,
+                File directory,
+                PluginRiskReport riskReport,
+                PluginSignerState signerState,
+                String signerStateError) {
             this.manifest = manifest;
             this.directory = directory;
             this.riskReport = riskReport;
+            this.signerState = signerState;
+            this.signerStateError = signerStateError;
         }
     }
 
@@ -73,22 +87,14 @@ public final class PluginPackageStore {
         }
     }
 
-    public synchronized Installed install(File reviewedArchive, String expectedHash)
-            throws IOException {
-        return install(reviewedArchive, expectedHash, null);
-    }
-
     public synchronized Installed install(
-            File reviewedArchive, String expectedHash, Runnable beforePublish)
+            File reviewedArchive,
+            String expectedHash,
+            PluginSignerJournal approvedSigner,
+            Runnable beforePublish)
             throws IOException {
         return prepare(reviewedArchive, expectedHash, null, null,
-                false, false, false, beforePublish);
-    }
-
-    public synchronized void scheduleUpdate(
-            File archive, String hash, String expectedId, String expectedVersion, boolean enable)
-            throws IOException {
-        scheduleUpdate(archive, hash, expectedId, expectedVersion, enable, false);
+                false, false, false, approvedSigner, beforePublish);
     }
 
     public synchronized void scheduleUpdate(
@@ -97,10 +103,29 @@ public final class PluginPackageStore {
             String expectedId,
             String expectedVersion,
             boolean enable,
-            boolean enabledBefore)
+            PluginSignerJournal approvedSigner)
+            throws IOException {
+        scheduleUpdate(
+                archive,
+                hash,
+                expectedId,
+                expectedVersion,
+                enable,
+                false,
+                approvedSigner);
+    }
+
+    public synchronized void scheduleUpdate(
+            File archive,
+            String hash,
+            String expectedId,
+            String expectedVersion,
+            boolean enable,
+            boolean enabledBefore,
+            PluginSignerJournal approvedSigner)
             throws IOException {
         prepare(archive, hash, expectedId, expectedVersion,
-                enable, enabledBefore, false, null);
+                enable, enabledBefore, false, approvedSigner, null);
     }
 
     public synchronized void scheduleDebugReload(
@@ -108,10 +133,11 @@ public final class PluginPackageStore {
             String hash,
             String expectedId,
             String expectedVersion,
-            boolean enabledBefore)
+            boolean enabledBefore,
+            PluginSignerJournal approvedSigner)
             throws IOException {
         prepare(archive, hash, expectedId, expectedVersion,
-                enabledBefore, enabledBefore, true, null);
+                enabledBefore, enabledBefore, true, approvedSigner, null);
     }
 
     private Installed prepare(
@@ -122,6 +148,7 @@ public final class PluginPackageStore {
             boolean enable,
             boolean enabledBefore,
             boolean exactVersion,
+            PluginSignerJournal approvedSigner,
             Runnable beforePublish)
             throws IOException {
         File frozen = File.createTempFile("fgplugin-install-", ".zip", cache);
@@ -151,6 +178,7 @@ public final class PluginPackageStore {
             requireNoPending(id);
 
             boolean update = expectedId != null;
+            PluginSignerState beforeSigner = null;
 
             if (update) {
                 if (!id.equals(expectedId)) {
@@ -158,6 +186,8 @@ public final class PluginPackageStore {
                 }
 
                 Installed previous = readInstalled(destination, id);
+                requireSignerStateValid(previous);
+                beforeSigner = previous.signerState;
 
                 if (!previous.manifest.version.equals(expectedVersion)) {
                     throw new IOException("Installed version changed after review");
@@ -176,6 +206,17 @@ public final class PluginPackageStore {
                 destination = new File(root, ".pending-" + id);
             } else if (destination.exists()) {
                 throw new IOException("Plugin already installed; review it as an update");
+            }
+
+            PluginSignerReview signerReview = PluginSignerReview.prepare(
+                    id,
+                    checked.sha256,
+                    beforeSigner,
+                    checked.signatureVerification,
+                    approvedSigner == null ? null : approvedSigner.rotationProof);
+
+            if (!signerReview.matches(approvedSigner)) {
+                throw new IOException("Plugin signer approval changed after review");
             }
 
             staging = File.createTempFile(".install-", "", root);
@@ -232,6 +273,12 @@ public final class PluginPackageStore {
                 out.getFD().sync();
             }
 
+            writeSynced(new File(payload, SIGNER_STATE), approvedSigner.after.encode());
+
+            if (update) {
+                writeSynced(new File(staging, SIGNER_JOURNAL), approvedSigner.encode());
+            }
+
             if (beforePublish != null) {
                 beforePublish.run();
             }
@@ -242,7 +289,12 @@ public final class PluginPackageStore {
 
             staging = null;
 
-            return new Installed(checked.manifest, destination, checked.riskReport);
+            return new Installed(
+                    checked.manifest,
+                    destination,
+                    checked.riskReport,
+                    approvedSigner.after,
+                    null);
         } finally {
             frozen.delete();
 
@@ -387,7 +439,23 @@ public final class PluginPackageStore {
             }
         }
 
-        return new Installed(manifest, folder, riskReport);
+        PluginSignerState signerState = null;
+        String signerStateError = null;
+
+        try {
+            signerState = readSignerState(folder, manifest.id);
+
+            if (signerState != null
+                    && riskReport != null
+                    && !signerState.archiveSha256.equals(riskReport.archiveSha256)) {
+                throw new IOException("Plugin signer state does not match its risk report");
+            }
+        } catch (IOException error) {
+            signerState = null;
+            signerStateError = error.getMessage();
+        }
+
+        return new Installed(manifest, folder, riskReport, signerState, signerStateError);
     }
 
     private static void validateId(String id) throws IOException {
@@ -442,7 +510,29 @@ public final class PluginPackageStore {
     }
 
     public synchronized void scheduleDelete(String id) throws IOException {
-        requireNoPending(id);
+        validateId(id);
+        pending();
+
+        File existingJournal = new File(root, ".pending-" + id);
+        File backup = new File(root, ".backup-" + id);
+
+        if (backup.exists()) {
+            throw new IOException("Restart FluxGram to finish the pending operation first");
+        }
+
+        if (existingJournal.exists()) {
+            if (!pendingErrors.containsKey(id)) {
+                throw new IOException("Restart FluxGram to finish the pending operation first");
+            }
+
+            File failed = new File(root, ".install-failed-" + java.util.UUID.randomUUID());
+
+            if (!existingJournal.renameTo(failed)) {
+                throw new IOException("Cannot isolate invalid plugin operation");
+            }
+
+            deleteTree(failed);
+        }
 
         if (!new File(root, id).isDirectory()) {
             throw new IOException("Plugin is not installed");
@@ -490,11 +580,17 @@ public final class PluginPackageStore {
                     throw new IOException("Invalid pending operation");
                 }
 
+                boolean delete = new File(file, "delete").isFile();
+
+                if (!delete) {
+                    readSignerJournal(file, id);
+                }
+
                 result.put(
                         id,
                         new Pending(
                                 id,
-                                new File(file, "delete").isFile(),
+                                delete,
                                 new File(file, "enable").isFile(),
                                 new File(file, "enabled-before").isFile(),
                                 new File(file, "rollback").isFile(),
@@ -548,9 +644,13 @@ public final class PluginPackageStore {
         File current = new File(root, id);
         File backup = new File(root, ".backup-" + id);
         File replacement = new File(journal, "package");
+        PluginSignerJournal signerJournal = readSignerJournal(journal, id);
 
         if (replacement.exists()) {
             Installed pending = readInstalled(replacement, id);
+            Installed baseline = readInstalled(current.exists() ? current : backup, id);
+            requireSignerStateValid(pending);
+            requireSignerStateValid(baseline);
             File source = new File(replacement, SOURCE_ARCHIVE);
             File frozen = File.createTempFile("fgplugin-pending-", ".zip", cache);
 
@@ -573,9 +673,18 @@ public final class PluginPackageStore {
                         || !checked.sha256.equals(pending.riskReport.archiveSha256)) {
                     throw new IOException("Pending plugin source does not match its risk report");
                 }
+                if (compareVersions(pending.manifest.version, baseline.manifest.version) < 0) {
+                    throw new IOException("Pending plugin version is older than its baseline");
+                }
                 if (PluginRiskPolicy.evaluateInstall(checked.riskReport).decision
                         == PluginRiskPolicy.Decision.BLOCK) {
                     throw new IOException("Pending plugin is blocked by static risk analysis");
+                }
+
+                verifySignerTransition(checked, baseline.signerState, signerJournal);
+
+                if (!signerJournal.after.equals(pending.signerState)) {
+                    throw new IOException("Pending plugin signer state does not match its archive");
                 }
 
                 verifyExtractedArchive(frozen, replacement);
@@ -603,7 +712,14 @@ public final class PluginPackageStore {
             throw new IOException("Missing plugin update backup");
         }
 
-        return readInstalled(current, id);
+        Installed active = readInstalled(current, id);
+        Installed previous = readInstalled(backup, id);
+        requireSignerStateValid(active);
+        requireSignerStateValid(previous);
+        requireSignerState(previous.signerState, signerJournal.before, "backup");
+        requireSignerState(active.signerState, signerJournal.after, "active package");
+
+        return active;
     }
 
     public synchronized void rollbackPending(String id) throws IOException {
@@ -619,6 +735,13 @@ public final class PluginPackageStore {
 
         if (!backup.exists()) {
             if (current.exists()) {
+                PluginSignerJournal signerJournal = readSignerJournal(journal, id);
+                Installed restored = readInstalled(current, id);
+                requireSignerStateValid(restored);
+                requireSignerState(
+                        restored.signerState,
+                        signerJournal.before,
+                        "restored package");
                 return;
             }
 
@@ -640,6 +763,10 @@ public final class PluginPackageStore {
         }
 
         deleteTree(failed);
+        PluginSignerJournal signerJournal = readSignerJournal(journal, id);
+        Installed restored = readInstalled(current, id);
+        requireSignerStateValid(restored);
+        requireSignerState(restored.signerState, signerJournal.before, "restored package");
     }
 
     public synchronized void cancelPendingUpdate(String id) throws IOException {
@@ -662,9 +789,13 @@ public final class PluginPackageStore {
             throw new IOException("Plugin update is not rolling back");
         }
 
+        File journal = new File(root, ".pending-" + id);
         File current = new File(root, id);
         File backup = new File(root, ".backup-" + id);
-        readInstalled(current, id);
+        PluginSignerJournal signerJournal = readSignerJournal(journal, id);
+        Installed restored = readInstalled(current, id);
+        requireSignerStateValid(restored);
+        requireSignerState(restored.signerState, signerJournal.before, "restored package");
 
         if (backup.exists()) {
             throw new IOException("Plugin update rollback is incomplete");
@@ -678,6 +809,7 @@ public final class PluginPackageStore {
         File journal = new File(root, ".pending-" + id);
         File current = new File(root, id);
         File backup = new File(root, ".backup-" + id);
+        PluginSignerJournal signerJournal = readSignerJournal(journal, id);
 
         if (operation.rollback
                 || new File(journal, "package").exists()
@@ -685,7 +817,12 @@ public final class PluginPackageStore {
             throw new IOException("Plugin update is not active");
         }
 
-        readInstalled(current, id);
+        Installed active = readInstalled(current, id);
+        Installed previous = readInstalled(backup, id);
+        requireSignerStateValid(active);
+        requireSignerStateValid(previous);
+        requireSignerState(previous.signerState, signerJournal.before, "backup");
+        requireSignerState(active.signerState, signerJournal.after, "active package");
 
         if (!new File(journal, "migrated").isFile()) {
             createMarker(journal, "migrated");
@@ -697,7 +834,10 @@ public final class PluginPackageStore {
         File journal = new File(root, ".pending-" + id);
         File current = new File(root, id);
         File backup = new File(root, ".backup-" + id);
-        readInstalled(current, id);
+        PluginSignerJournal signerJournal = readSignerJournal(journal, id);
+        Installed active = readInstalled(current, id);
+        requireSignerStateValid(active);
+        requireSignerState(active.signerState, signerJournal.after, "active package");
 
         if (operation.rollback || !new File(journal, "migrated").isFile()) {
             throw new IOException("Plugin update migration is incomplete");
@@ -867,6 +1007,7 @@ public final class PluginPackageStore {
 
             if (!relative.equals(SOURCE_ARCHIVE)
                     && !relative.equals(RISK_REPORT)
+                    && !relative.equals(SIGNER_STATE)
                     && !expected.contains(relative)) {
                 throw new IOException("Pending plugin files do not match source archive");
             }
@@ -887,6 +1028,105 @@ public final class PluginPackageStore {
             if (leftValue == -1) {
                 return true;
             }
+        }
+    }
+
+    private static PluginSignerState readSignerState(File directory, String expectedId)
+            throws IOException {
+        File file = new File(directory, SIGNER_STATE);
+
+        if (!file.exists()) {
+            return null;
+        }
+        if (!isCanonicalFile(file, directory)) {
+            throw new IOException("Invalid persisted plugin signer state");
+        }
+
+        ByteArrayOutputStream encoded = new ByteArrayOutputStream();
+
+        try (InputStream in = new FileInputStream(file)) {
+            copy(in, encoded, 256);
+        }
+
+        PluginSignerState state = PluginSignerState.decode(encoded.toByteArray());
+
+        if (!state.identity.pluginId.equals(expectedId)) {
+            throw new IOException("Persisted plugin signer state belongs to another plugin");
+        }
+
+        return state;
+    }
+
+    private static PluginSignerJournal readSignerJournal(File directory, String expectedId)
+            throws IOException {
+        File file = new File(directory, SIGNER_JOURNAL);
+
+        if (!isCanonicalFile(file, directory)) {
+            throw new IOException("Pending plugin signer journal is unavailable");
+        }
+
+        ByteArrayOutputStream encoded = new ByteArrayOutputStream();
+
+        try (InputStream in = new FileInputStream(file)) {
+            copy(in, encoded, 4096);
+        }
+
+        PluginSignerJournal journal = PluginSignerJournal.decode(encoded.toByteArray());
+
+        if (!journal.pluginId.equals(expectedId)) {
+            throw new IOException("Pending plugin signer journal belongs to another plugin");
+        }
+
+        return journal;
+    }
+
+    private static void verifySignerTransition(
+            PluginPackageValidator.Result checked,
+            PluginSignerState before,
+            PluginSignerJournal approved) throws IOException {
+        requireSignerState(before, approved.before, "transition baseline");
+
+        PluginSignerReview review = PluginSignerReview.prepare(
+                checked.manifest.id,
+                checked.sha256,
+                before,
+                checked.signatureVerification,
+                approved.rotationProof);
+
+        if (!review.matches(approved)) {
+            throw new IOException("Pending plugin signer transition is stale or invalid");
+        }
+    }
+
+    private static void requireSignerState(
+            PluginSignerState actual,
+            PluginSignerState expected,
+            String role) throws IOException {
+        if (actual == null ? expected != null : !actual.equals(expected)) {
+            throw new IOException("Plugin signer state does not match " + role);
+        }
+    }
+
+    private static void requireSignerStateValid(Installed installed) throws IOException {
+        if (installed.signerStateError != null) {
+            throw new IOException(installed.signerStateError);
+        }
+    }
+
+    private static boolean isCanonicalFile(File file, File parent) throws IOException {
+        return file.isFile()
+                && file.getCanonicalFile().equals(file.getAbsoluteFile())
+                && file.getParentFile().getCanonicalFile().equals(parent.getCanonicalFile());
+    }
+
+    private static void writeSynced(File file, byte[] data) throws IOException {
+        if (file.exists() && !isCanonicalFile(file, file.getParentFile())) {
+            throw new IOException("Cannot replace plugin metadata file");
+        }
+
+        try (FileOutputStream out = new FileOutputStream(file)) {
+            out.write(data);
+            out.getFD().sync();
         }
     }
 

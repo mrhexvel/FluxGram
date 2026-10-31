@@ -331,6 +331,12 @@
     <string name="FluxGramPluginRiskConfirm">Нужно дополнительное подтверждение</string>
     <string name="FluxGramPluginRiskIssues">Есть замечания к плагину</string>
     <string name="FluxGramPluginRiskConfirmInfo">Локальная проверка обнаружила возможности или изменения, на которые нужно обратить внимание:</string>
+    <string name="FluxGramPluginSignerConfirmInfo">Подтвердите изменение источника плагина:</string>
+    <string name="FluxGramPluginSignerFirstIdentity">FluxGram запомнит этот пакет как текущий источник для будущих обновлений.</string>
+    <string name="FluxGramPluginSignerUnsignedChanged">Этот неподписанный пакет отличается от ранее запомненного пакета.</string>
+    <string name="FluxGramPluginSignerSignedUpgrade">Это обновление начинает использовать подпись разработчика.</string>
+    <string name="FluxGramPluginSignerRotated">Ключ разработчика изменён с действительным доказательством ротации.</string>
+    <string name="FluxGramPluginSignerBlocked">Источник пакета не совпадает с запомненной личностью разработчика.</string>
     <string name="FluxGramPluginRiskBlocked">Установка заблокирована</string>
     <string name="FluxGramPluginRiskBlockedInfo">Локальная проверка пакета обнаружила блокирующую проблему:</string>
     <string name="FluxGramPluginRiskConfirmTitle">Установить плагин высокого риска?</string>

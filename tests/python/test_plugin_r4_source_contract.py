@@ -37,6 +37,15 @@ class PluginR4SourceContractTest(unittest.TestCase):
         self.assertIn("if (stateVisible && terminal)", sheet)
         self.assertNotIn("AlertDialog confirmation", sheet)
 
+    def test_signer_and_risk_share_one_confirmation_page(self):
+        sheet = INSTALL_SHEET.read_text()
+
+        self.assertIn("confirmationMessage(review)", sheet)
+        self.assertIn("PluginSignerTransition.Decision.CONFIRM", sheet)
+        self.assertIn("review.signerReview.transition.reason", sheet)
+        self.assertIn("confirmed[0] = true;", sheet)
+        self.assertEqual(sheet.count("stateView.showConfirmation("), 1)
+
     def test_report_contains_diff_and_only_exposes_sanitized_host_detail(self):
         report = REPORT_VIEW.read_text()
 

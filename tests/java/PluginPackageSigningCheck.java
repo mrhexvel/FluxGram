@@ -5,6 +5,7 @@ import org.telegram.messenger.plugins.signing.PluginSignedPayload;
 import org.telegram.messenger.plugins.signing.PluginKeyRotationProof;
 import org.telegram.messenger.plugins.signing.PluginSignerIdentity;
 import org.telegram.messenger.plugins.signing.PluginSignerJournal;
+import org.telegram.messenger.plugins.signing.PluginSignerReview;
 import org.telegram.messenger.plugins.signing.PluginSignerState;
 import org.telegram.messenger.plugins.signing.PluginSignerTransition;
 
@@ -476,6 +477,16 @@ public final class PluginPackageSigningCheck {
         require(PluginSignerJournal.decode(first.encode()).after.equals(unsignedA));
         require(hex(sha256(first.encode())).equals(
                 "404d5f6d16062e21a5b8797ee8a6e67e20e8af26c456b2a922323478795bf9af"));
+
+        PluginSignerReview firstReview = PluginSignerReview.prepare(
+                "example.plugin",
+                digest('a'),
+                null,
+                PluginSignatureVerifier.missing("example.plugin"),
+                null);
+        require(firstReview.transition.decision == PluginSignerTransition.Decision.CONFIRM);
+        expectIo(() -> firstReview.approve(false));
+        require(firstReview.matches(firstReview.approve(true)));
 
         PluginSignerJournal changedUnsigned = journal(
                 unsignedA,

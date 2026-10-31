@@ -28,6 +28,7 @@ import org.telegram.messenger.plugins.PluginManager;
 import org.telegram.messenger.plugins.packages.PluginManifest;
 import org.telegram.messenger.plugins.packages.PluginPackageStore;
 import org.telegram.messenger.plugins.risk.PluginRiskPolicy;
+import org.telegram.messenger.plugins.signing.PluginSignerTransition;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.BottomSheet;
@@ -168,7 +169,10 @@ public final class PluginInstallSheet {
         boolean sameVersion = update && manifest.version.equals(review.installedVersion);
         boolean newer = !update || PluginPackageStore.compareVersions(
                 manifest.version, review.installedVersion) > 0;
-        boolean blocked = review.riskPolicy.decision == PluginRiskPolicy.Decision.BLOCK;
+        boolean signerBlocked = review.signerReview.transition.decision
+                == PluginSignerTransition.Decision.BLOCK;
+        boolean blocked = review.riskPolicy.decision == PluginRiskPolicy.Decision.BLOCK
+                || signerBlocked;
         boolean canInstall = pending == null && newer && !blocked;
         InstallBottomSheet sheet = new InstallBottomSheet(
                 context, fragment.getResourceProvider());
@@ -337,6 +341,7 @@ public final class PluginInstallSheet {
         boolean[] installing = {false};
         boolean[] active = {true};
         boolean[] consumed = {false};
+        boolean[] confirmed = {false};
         Runnable installAction = () -> {
             if (!active[0] || installing[0] || !canInstall || !isPresentationUsable()) {
                 return;
@@ -355,6 +360,7 @@ public final class PluginInstallSheet {
                     review,
                     enable.isChecked(),
                     update ? review.installedVersion : null,
+                    confirmed[0],
                     (id, error) -> {
                         installing[0] = false;
                         sheet.setBusy(false);
@@ -397,14 +403,17 @@ public final class PluginInstallSheet {
                 return;
             }
 
-            if (review.riskPolicy.decision == PluginRiskPolicy.Decision.CONFIRM) {
+            if (review.riskPolicy.decision == PluginRiskPolicy.Decision.CONFIRM
+                    || review.signerReview.transition.decision
+                            == PluginSignerTransition.Decision.CONFIRM) {
                 sheet.setTerminal(false);
                 stateView.showConfirmation(
                         update,
-                        riskMessage(review, false),
+                        confirmationMessage(review),
                         sheet::showSummary,
                         () -> {
                             if (sheet.canConfirm()) {
+                                confirmed[0] = true;
                                 installAction.run();
                             }
                         });
@@ -437,10 +446,14 @@ public final class PluginInstallSheet {
         int color;
         int titleId;
 
-        if (review.riskPolicy.decision == PluginRiskPolicy.Decision.BLOCK) {
+        if (review.riskPolicy.decision == PluginRiskPolicy.Decision.BLOCK
+                || review.signerReview.transition.decision
+                        == PluginSignerTransition.Decision.BLOCK) {
             color = fragment.getThemedColor(Theme.key_text_RedBold);
             titleId = R.string.FluxGramPluginRiskBlocked;
-        } else if (review.riskPolicy.decision == PluginRiskPolicy.Decision.CONFIRM) {
+        } else if (review.riskPolicy.decision == PluginRiskPolicy.Decision.CONFIRM
+                || review.signerReview.transition.decision
+                        == PluginSignerTransition.Decision.CONFIRM) {
             color = fragment.getThemedColor(Theme.key_avatar_nameInMessageOrange);
             titleId = R.string.FluxGramPluginRiskIssues;
         } else {
@@ -471,6 +484,11 @@ public final class PluginInstallSheet {
                 LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 0, 0, 12));
 
         List<RiskReason> reasons = riskReasonItems(review.riskPolicy.reasons);
+        RiskReason signerReason = signerReason(review.signerReview.transition.reason);
+
+        if (signerReason != null) {
+            reasons.add(signerReason);
+        }
 
         if (reasons.isEmpty()) {
             reasons = Collections.singletonList(new RiskReason(
@@ -614,6 +632,60 @@ public final class PluginInstallSheet {
         }
 
         return message;
+    }
+
+    private CharSequence confirmationMessage(ExternalPlugins.Review review) {
+        StringBuilder message = new StringBuilder();
+
+        if (review.riskPolicy.decision == PluginRiskPolicy.Decision.CONFIRM) {
+            message.append(riskMessage(review, false));
+        }
+
+        if (review.signerReview.transition.decision
+                == PluginSignerTransition.Decision.CONFIRM) {
+            if (message.length() > 0) {
+                message.append("\n\n");
+            }
+
+            message.append(LocaleController.getString(R.string.FluxGramPluginSignerConfirmInfo));
+            RiskReason reason = signerReason(review.signerReview.transition.reason);
+
+            if (reason != null) {
+                message.append("\n\u2022 ").append(reason.text);
+            }
+        }
+
+        return message;
+    }
+
+    private RiskReason signerReason(PluginSignerTransition.Reason reason) {
+        int stringId;
+
+        switch (reason) {
+            case PIN_FIRST_IDENTITY:
+                stringId = R.string.FluxGramPluginSignerFirstIdentity;
+                break;
+            case UNSIGNED_PACKAGE_CHANGED:
+                stringId = R.string.FluxGramPluginSignerUnsignedChanged;
+                break;
+            case UPGRADE_UNSIGNED_TO_SIGNED:
+                stringId = R.string.FluxGramPluginSignerSignedUpgrade;
+                break;
+            case VERIFIED_ROTATION:
+                stringId = R.string.FluxGramPluginSignerRotated;
+                break;
+            case INVALID_SIGNATURE:
+            case UNSIGNED_DOWNGRADE:
+            case KEY_CHANGED:
+            case INVALID_ROTATION:
+            case PLUGIN_ID_MISMATCH:
+                stringId = R.string.FluxGramPluginSignerBlocked;
+                break;
+            default:
+                return null;
+        }
+
+        return new RiskReason(LocaleController.getString(stringId), R.drawable.wallet_key);
     }
 
     private List<CharSequence> riskReasons(List<String> reasonIds) {

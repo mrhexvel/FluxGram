@@ -204,7 +204,9 @@ public final class PluginSignedPayload {
                 || parts[0].equalsIgnoreCase("fluxgram.py")
                 || parts[0].equalsIgnoreCase(SIGNATURE_ENTRY)
                 || parts[0].equalsIgnoreCase(".fluxgram-source.fgplugin")
-                || parts[0].equalsIgnoreCase(".fluxgram-risk-report")) {
+                || parts[0].equalsIgnoreCase(".fluxgram-risk-report")
+                || parts[0].equalsIgnoreCase(".fluxgram-signer-state")
+                || parts[0].equalsIgnoreCase(".fluxgram-signer-journal")) {
             return false;
         }
 

@@ -77,6 +77,11 @@ class PluginPackagesTest(unittest.TestCase):
                 str(signing / "PluginSignatureVerification.java"),
                 str(signing / "PluginSignatureVerifier.java"),
                 str(signing / "PluginSignerIdentity.java"),
+                str(signing / "PluginKeyRotationProof.java"),
+                str(signing / "PluginSignerTransition.java"),
+                str(signing / "PluginSignerState.java"),
+                str(signing / "PluginSignerJournal.java"),
+                str(signing / "PluginSignerReview.java"),
                 str(ROOT / "tests/java/FakePluginPythonRiskScanner.java"),
                 str(ROOT / "tests/java/PluginStoreCheck.java"),
                 str(ROOT / "tests/java/PluginPackageCheck.java"),
@@ -319,6 +324,9 @@ class PluginPackagesTest(unittest.TestCase):
         self.validate(self.archive(entries=[(".FLUXGRAM-SOURCE.fgplugin/payload", "fake")]), False)
         self.validate(self.archive(entries=[(".fluxgram-risk-report", "fake")]), False)
         self.validate(self.archive(entries=[(".FLUXGRAM-RISK-REPORT/payload", "fake")]), False)
+        self.validate(self.archive(entries=[(".fluxgram-signer-state", "fake")]), False)
+        self.validate(self.archive(entries=[(".FLUXGRAM-SIGNER-STATE/payload", "fake")]), False)
+        self.validate(self.archive(entries=[(".fluxgram-signer-journal", "fake")]), False)
 
     @staticmethod
     def finalize_dex(data, data_offset, map_entries):
@@ -1715,6 +1723,112 @@ class PluginStoreTest(unittest.TestCase):
         self.assertEqual(self.store("list"), [])
         self.assertEqual(list((self.root / "installed").iterdir()), [])
 
+    def test_install_persists_signer_state_for_exact_archive(self):
+        archive = self.archive()
+        expected_hash = hashlib.sha256(archive).hexdigest()
+
+        self.store("install", archive)
+
+        self.assertEqual(self.store("signer", extra=(MANIFEST["id"],)), [expected_hash])
+        state = self.root / "installed" / MANIFEST["id"] / ".fluxgram-signer-state"
+        self.assertTrue(state.is_file())
+
+    def test_legacy_installation_remains_visible_and_can_be_pinned_by_update(self):
+        self.store("install", self.archive())
+        state = self.root / "installed" / MANIFEST["id"] / ".fluxgram-signer-state"
+        state.unlink()
+        update = self.archive(fields={"version": "2.0.0"})
+
+        self.assertEqual(self.store("list"), [MANIFEST["id"]])
+        self.store(
+            "update",
+            update,
+            extra=(MANIFEST["id"], MANIFEST["version"], "false"),
+        )
+        self.store("apply")
+
+        self.assertEqual(
+            self.store("signer", extra=(MANIFEST["id"],)),
+            [hashlib.sha256(update).hexdigest()],
+        )
+
+    def test_pending_update_moves_signer_state_with_package_and_rollback(self):
+        original = self.archive()
+        update = self.archive(fields={"version": "2.0.0"})
+        original_hash = hashlib.sha256(original).hexdigest()
+        update_hash = hashlib.sha256(update).hexdigest()
+        self.store("install", original)
+        self.store(
+            "update",
+            update,
+            extra=(MANIFEST["id"], MANIFEST["version"], "false"),
+        )
+        root = self.root / "installed"
+        pending = root / (".pending-" + MANIFEST["id"])
+
+        self.assertTrue((pending / ".fluxgram-signer-journal").is_file())
+        self.assertTrue((pending / "package/.fluxgram-signer-state").is_file())
+        self.store("activate", extra=(MANIFEST["id"],))
+        self.assertEqual(self.store("signer", extra=(MANIFEST["id"],)), [update_hash])
+
+        self.store("rollbackprepare", extra=(MANIFEST["id"],))
+        self.assertEqual(self.store("signer", extra=(MANIFEST["id"],)), [original_hash])
+        self.store("rollbackfinish", extra=(MANIFEST["id"],))
+
+    def test_tampered_pending_signer_state_is_rejected_before_backup(self):
+        self.store("install", self.archive())
+        current_state = (
+            self.root / "installed" / MANIFEST["id"] / ".fluxgram-signer-state"
+        ).read_bytes()
+        self.update(version="2.0.0")
+        root = self.root / "installed"
+        pending_state = (
+            root
+            / (".pending-" + MANIFEST["id"])
+            / "package/.fluxgram-signer-state"
+        )
+        pending_state.write_bytes(current_state)
+
+        self.store("activate", accepted=False, extra=(MANIFEST["id"],))
+
+        self.assertEqual(self.installed_version(), MANIFEST["version"])
+        self.assertFalse((root / (".backup-" + MANIFEST["id"])).exists())
+
+    def test_cross_plugin_signer_journal_is_rejected_per_operation(self):
+        second_id = "test.second_fixture"
+        self.store("install", self.archive())
+        self.store("install", self.archive(fields={"id": second_id, "name": "Second"}))
+        self.update(version="2.0.0")
+        self.store(
+            "update",
+            self.archive(fields={"id": second_id, "name": "Second", "version": "2.0.0"}),
+            extra=(second_id, MANIFEST["version"], "false"),
+        )
+        root = self.root / "installed"
+        first = root / (".pending-" + MANIFEST["id"]) / ".fluxgram-signer-journal"
+        second = root / (".pending-" + second_id) / ".fluxgram-signer-journal"
+        first.write_bytes(second.read_bytes())
+
+        errors = self.store("applyerrors")
+
+        self.assertEqual(
+            errors,
+            [MANIFEST["id"] + ":Pending plugin signer journal belongs to another plugin"],
+        )
+        self.assertEqual(
+            json.loads((root / second_id / "manifest.json").read_text())["version"],
+            "2.0.0",
+        )
+
+    def test_malformed_signer_state_does_not_hide_other_plugins(self):
+        second_id = "test.second_fixture"
+        self.store("install", self.archive())
+        self.store("install", self.archive(fields={"id": second_id, "name": "Second"}))
+        state = self.root / "installed" / MANIFEST["id"] / ".fluxgram-signer-state"
+        state.write_bytes(b"partial")
+
+        self.assertCountEqual(self.store("list"), [MANIFEST["id"], second_id])
+
     def test_duplicate_does_not_replace_existing_files(self):
         self.store("install", self.archive())
         before = (
@@ -1788,7 +1902,7 @@ class PluginStoreTest(unittest.TestCase):
 
         self.assertEqual(
             self.store("applyerrors"),
-            [MANIFEST["id"] + ":Missing plugin update backup"],
+            [MANIFEST["id"] + ":Pending plugin signer journal is unavailable"],
         )
 
         self.assertEqual(
@@ -1796,7 +1910,11 @@ class PluginStoreTest(unittest.TestCase):
             "2.0.0",
         )
         self.assertTrue(corrupt.is_dir())
-        self.assertEqual(self.store("pending"), [MANIFEST["id"] + ":false:false"])
+        self.assertEqual(self.store("pending"), [])
+
+        self.store("delete", extra=(MANIFEST["id"],))
+        self.store("apply")
+        self.assertFalse((installed / MANIFEST["id"]).exists())
 
     def test_update_keeps_backup_until_migration_finishes(self):
         self.store("install", self.archive())
@@ -1896,6 +2014,35 @@ class PluginStoreTest(unittest.TestCase):
 
         self.assertEqual(self.installed_version(), "2.0.0")
         self.assertEqual(self.store("pending"), [])
+
+    def test_migrated_update_cleans_partially_deleted_backup(self):
+        self.store("install", self.archive())
+        self.update(version="2.0.0")
+        root = self.root / "installed"
+        self.store("activate", extra=(MANIFEST["id"],))
+        self.store("markmigrated", extra=(MANIFEST["id"],))
+        backup = root / (".backup-" + MANIFEST["id"])
+        (backup / "manifest.json").unlink()
+
+        self.store("finish", extra=(MANIFEST["id"],))
+
+        self.assertEqual(self.installed_version(), "2.0.0")
+        self.assertFalse(backup.exists())
+        self.assertEqual(self.store("pending"), [])
+
+    def test_delete_does_not_discard_invalid_active_update_journal(self):
+        self.store("install", self.archive())
+        self.update(version="2.0.0")
+        self.store("activate", extra=(MANIFEST["id"],))
+        root = self.root / "installed"
+        pending = root / (".pending-" + MANIFEST["id"])
+        journal = pending / ".fluxgram-signer-journal"
+        journal.write_bytes(b"partial")
+
+        self.store("delete", accepted=False, extra=(MANIFEST["id"],))
+
+        self.assertTrue(pending.is_dir())
+        self.assertTrue((root / (".backup-" + MANIFEST["id"])).is_dir())
 
     def test_update_cannot_reuse_or_downgrade_version(self):
         self.store("install", self.archive())

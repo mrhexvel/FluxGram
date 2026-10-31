@@ -1,4 +1,7 @@
 import org.telegram.messenger.plugins.packages.PluginPackageStore;
+import org.telegram.messenger.plugins.packages.PluginPackageValidator;
+import org.telegram.messenger.plugins.signing.PluginSignerJournal;
+import org.telegram.messenger.plugins.signing.PluginSignerReview;
 
 import java.io.File;
 import java.io.IOException;
@@ -6,19 +9,25 @@ import java.io.IOException;
 public final class PluginStoreCheck {
     public static void main(String[] args) throws Exception {
         try {
+            FakePluginPythonRiskScanner scanner = new FakePluginPythonRiskScanner();
             PluginPackageStore store = new PluginPackageStore(
                     new File(args[1]),
                     new File(args[2]),
-                    new FakePluginPythonRiskScanner());
+                    scanner);
 
             if (args[0].equals("install")) {
-                store.install(new File(args[3]), args[4]);
+                store.install(
+                        new File(args[3]),
+                        args[4],
+                        approve(store, scanner, new File(args[3]), new File(args[2])),
+                        null);
             }
 
             if (args[0].equals("installhook")) {
                 store.install(
                         new File(args[3]),
                         args[4],
+                        approve(store, scanner, new File(args[3]), new File(args[2])),
                         () -> System.out.println("hook"));
             }
 
@@ -29,7 +38,8 @@ public final class PluginStoreCheck {
                         args[5],
                         args[6],
                         Boolean.parseBoolean(args[7]),
-                        args.length > 8 && Boolean.parseBoolean(args[8]));
+                        args.length > 8 && Boolean.parseBoolean(args[8]),
+                        approve(store, scanner, new File(args[3]), new File(args[2])));
             }
 
             if (args[0].equals("debugreload")) {
@@ -38,7 +48,8 @@ public final class PluginStoreCheck {
                         args[4],
                         args[5],
                         args[6],
-                        Boolean.parseBoolean(args[7]));
+                        Boolean.parseBoolean(args[7]),
+                        approve(store, scanner, new File(args[3]), new File(args[2])));
             }
 
             if (args[0].equals("cancel")) {
@@ -106,6 +117,14 @@ public final class PluginStoreCheck {
                 return;
             }
 
+            if (args[0].equals("signer")) {
+                PluginPackageStore.Installed installed = store.get(args[3]);
+                System.out.println(installed.signerState == null
+                        ? "legacy"
+                        : installed.signerState.archiveSha256);
+                return;
+            }
+
             if (args[0].equals("pending")) {
                 for (PluginPackageStore.Pending operation : store.pending().values()) {
                     System.out.println(
@@ -163,5 +182,24 @@ public final class PluginStoreCheck {
             System.err.println(error.getMessage());
             System.exit(2);
         }
+    }
+
+    private static PluginSignerJournal approve(
+            PluginPackageStore store,
+            FakePluginPythonRiskScanner scanner,
+            File archive,
+            File cache) throws Exception {
+        PluginPackageValidator.Result checked = PluginPackageValidator.inspect(
+                archive,
+                cache,
+                scanner);
+        PluginPackageStore.Installed installed = store.find(checked.manifest.id);
+        PluginSignerReview review = PluginSignerReview.prepare(
+                checked.manifest.id,
+                checked.sha256,
+                installed == null ? null : installed.signerState,
+                checked.signatureVerification,
+                null);
+        return review.approve(true);
     }
 }

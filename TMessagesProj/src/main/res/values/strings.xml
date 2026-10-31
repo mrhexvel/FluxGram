@@ -11368,6 +11368,12 @@
     <string name="FluxGramPluginRiskConfirm">Additional confirmation required</string>
     <string name="FluxGramPluginRiskIssues">This plugin needs your attention</string>
     <string name="FluxGramPluginRiskConfirmInfo">The local check found capabilities or changes that require your attention:</string>
+    <string name="FluxGramPluginSignerConfirmInfo">Confirm the plugin source change:</string>
+    <string name="FluxGramPluginSignerFirstIdentity">FluxGram will remember this package as the current source for future updates.</string>
+    <string name="FluxGramPluginSignerUnsignedChanged">This unsigned package differs from the previously remembered package.</string>
+    <string name="FluxGramPluginSignerSignedUpgrade">This update starts using a developer signature.</string>
+    <string name="FluxGramPluginSignerRotated">The developer key was changed with a valid rotation proof.</string>
+    <string name="FluxGramPluginSignerBlocked">The package source does not match the remembered developer identity.</string>
     <string name="FluxGramPluginRiskBlocked">Installation blocked</string>
     <string name="FluxGramPluginRiskBlockedInfo">The local package check found a blocking problem:</string>
     <string name="FluxGramPluginRiskConfirmTitle">Install a high-risk plugin?</string>
