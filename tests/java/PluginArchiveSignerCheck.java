@@ -32,8 +32,14 @@ public final class PluginArchiveSignerCheck {
             16);
 
     public static void main(String[] args) throws Exception {
-        if (args.length == 5 && args[0].equals("rotation")) {
-            createRotationProof(args[1], Long.parseLong(args[2]), args[3], args[4]);
+        if ((args.length == 5 || args.length == 7) && args[0].equals("rotation")) {
+            createRotationProof(
+                    args[1],
+                    Long.parseLong(args[2]),
+                    args.length == 7 ? args[3] : null,
+                    args.length == 7 ? args[4] : null,
+                    args[args.length - 2],
+                    args[args.length - 1]);
             return;
         }
 
@@ -101,8 +107,10 @@ public final class PluginArchiveSignerCheck {
     private static void createRotationProof(
             String pluginId,
             long fromGeneration,
-            String privatePath,
-            String publicPath) throws Exception {
+            String oldPrivatePath,
+            String oldPublicPath,
+            String newPrivatePath,
+            String newPublicPath) throws Exception {
         KeyPair oldKey = keyPair();
         KeyPair newKey = keyPair();
         String fromKeyId = keyId(oldKey.getPublic().getEncoded());
@@ -121,8 +129,13 @@ public final class PluginArchiveSignerCheck {
                 fromGeneration + 1,
                 envelope(oldKey, message),
                 envelope(newKey, message));
-        Files.write(Paths.get(privatePath), newKey.getPrivate().getEncoded());
-        Files.write(Paths.get(publicPath), newKey.getPublic().getEncoded());
+        if (oldPrivatePath != null) {
+            Files.write(Paths.get(oldPrivatePath), oldKey.getPrivate().getEncoded());
+            Files.write(Paths.get(oldPublicPath), oldKey.getPublic().getEncoded());
+        }
+
+        Files.write(Paths.get(newPrivatePath), newKey.getPrivate().getEncoded());
+        Files.write(Paths.get(newPublicPath), newKey.getPublic().getEncoded());
         System.out.println(Base64.getEncoder().encodeToString(proof.encode()));
     }
 

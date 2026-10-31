@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Set;
 
 public final class PluginManifest {
-    public static final int SCHEMA_VERSION = 5;
+    public static final int SCHEMA_VERSION = 6;
     public static final int PARSED_SCHEMA_VERSION = 6;
     public static final int SDK_VERSION = 2;
     public static final int SDK_MINOR_VERSION = 12;

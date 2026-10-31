@@ -17,6 +17,7 @@ import org.telegram.messenger.plugins.risk.PluginRiskReport;
 import org.telegram.messenger.plugins.risk.PluginRiskAnalyzer;
 import org.telegram.messenger.plugins.risk.PluginRiskPolicy;
 import org.telegram.messenger.plugins.risk.PluginPythonRiskScanner;
+import org.telegram.messenger.plugins.signing.PluginSignerIdentity;
 import org.telegram.messenger.plugins.signing.PluginSignerJournal;
 import org.telegram.messenger.plugins.signing.PluginSignerReview;
 import org.telegram.messenger.plugins.signing.PluginSignerState;
@@ -453,6 +454,17 @@ public final class PluginPackageStore {
         } catch (IOException error) {
             signerState = null;
             signerStateError = error.getMessage();
+        }
+
+        if (manifest.schemaVersion == 6 && signerStateError == null) {
+            if (riskReport == null) {
+                signerState = null;
+                signerStateError = "Signed plugin risk report is unavailable";
+            } else if (signerState == null
+                    || signerState.identity.kind != PluginSignerIdentity.Kind.SIGNED) {
+                signerState = null;
+                signerStateError = "Signed plugin signer state is unavailable";
+            }
         }
 
         return new Installed(manifest, folder, riskReport, signerState, signerStateError);

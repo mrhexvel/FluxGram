@@ -11387,7 +11387,7 @@
     <string name="FluxGramPluginRiskReasonDynamicCode">Uses reflection or dynamic code execution</string>
     <string name="FluxGramPluginRiskReasonLifecycle">Can create resources outside the managed plugin lifecycle</string>
     <string name="FluxGramPluginRiskReasonUi">Can directly modify or replace application interface drawing</string>
-    <string name="FluxGramPluginRiskReasonAnalysis">The package analysis is incomplete or unsupported</string>
+    <string name="FluxGramPluginRiskReasonAnalysis">The package analysis has uncertainty or limitations</string>
     <string name="FluxGramPluginRiskReasonForbiddenStructure">The package contains forbidden or inconsistent executable files</string>
     <string name="FluxGramPluginRiskReasonIntegrity">The package identity or executable file digest does not match</string>
     <string name="FluxGramPluginRiskReasonBaseline">The installed version has no compatible risk report, so changes cannot be compared</string>

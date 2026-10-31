@@ -350,7 +350,7 @@
     <string name="FluxGramPluginRiskReasonDynamicCode">Использует reflection или динамическое выполнение кода</string>
     <string name="FluxGramPluginRiskReasonLifecycle">Может создавать ресурсы вне управляемого жизненного цикла плагина</string>
     <string name="FluxGramPluginRiskReasonUi">Может напрямую изменять интерфейс или заменять его отрисовку</string>
-    <string name="FluxGramPluginRiskReasonAnalysis">Анализ пакета неполон или не поддерживается</string>
+    <string name="FluxGramPluginRiskReasonAnalysis">Анализ пакета содержит неопределённость или ограничения</string>
     <string name="FluxGramPluginRiskReasonForbiddenStructure">Пакет содержит запрещённые или несогласованные исполняемые файлы</string>
     <string name="FluxGramPluginRiskReasonIntegrity">Идентичность пакета или хеш исполняемого файла не совпадает</string>
     <string name="FluxGramPluginRiskReasonBaseline">У установленной версии нет совместимого отчёта, поэтому сравнить изменения невозможно</string>

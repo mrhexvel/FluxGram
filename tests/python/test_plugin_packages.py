@@ -129,7 +129,14 @@ class PluginPackagesTest(unittest.TestCase):
                     z.writestr(name, content)
         return data.getvalue()
 
-    def signed_archive(self, fields=None, entries=None, python_source=None, rotation=False):
+    def signed_archive(
+        self,
+        fields=None,
+        entries=None,
+        python_source=None,
+        rotation=False,
+        key_paths=None,
+    ):
         signed_fields = {"schema_version": 6}
 
         if fields:
@@ -147,6 +154,8 @@ class PluginPackagesTest(unittest.TestCase):
         key_arguments = []
 
         if rotation:
+            old_private_key = self.root / "rotation-old-private.pk8"
+            old_public_key = self.root / "rotation-old-public.spki"
             private_key = self.root / "rotation-private.pk8"
             public_key = self.root / "rotation-public.spki"
             proof = subprocess.run(
@@ -158,6 +167,8 @@ class PluginPackagesTest(unittest.TestCase):
                     "rotation",
                     signed_fields.get("id", MANIFEST["id"]),
                     "0",
+                    str(old_private_key),
+                    str(old_public_key),
                     str(private_key),
                     str(public_key),
                 ],
@@ -173,6 +184,8 @@ class PluginPackagesTest(unittest.TestCase):
                 )],
             )
             key_arguments = [str(private_key), str(public_key)]
+        elif key_paths is not None:
+            key_arguments = [str(path) for path in key_paths]
 
         source = self.root / "unsigned.fgplugin"
         source.write_bytes(unsigned)
@@ -619,7 +632,7 @@ class PluginPackagesTest(unittest.TestCase):
             expected.update(struct.pack(">Q", len(content)))
             expected.update(content)
 
-        self.assertEqual(first_output[4], "2")
+        self.assertEqual(first_output[4], "3")
         self.assertRegex(first_output[5], r"^[0-9a-f]{64}$")
         self.assertNotEqual(
             first_output[5],
@@ -758,6 +771,69 @@ class PluginPackagesTest(unittest.TestCase):
         self.assertIn("reflection.general", ids)
         self.assertIn("analysis.dynamic_target", ids)
         self.assertIn("host.telegram_internal_direct", ids)
+
+    def test_dex_class_name_is_not_mistaken_for_network_endpoint(self):
+        for literal in (
+            "org.telegram.ui.ProfileActivity",
+            "org/telegram/ui/ProfileActivity",
+            "com.google.gson.Gson",
+        ):
+            with self.subTest(class_name=literal):
+                class_name = self.risk_dex(
+                    "Ljava/lang/Class;",
+                    "forName",
+                    literal,
+                )
+                output = self.validate(
+                    self.archive(
+                        fields=self.java_fields(class_name),
+                        entries=[("java/module.dex", class_name)],
+                    ),
+                    True,
+                )
+                ids = {
+                    value.split(":", 1)[0]
+                    for value in self.output_values(output, "evidence:")
+                }
+                self.assertNotIn("network.endpoint_literal", ids)
+                self.assertNotIn("declaration.missing.network", ids)
+
+        for literal in (
+            "API.Example.COM:8443/v1",
+            "HTTPS://API.Example.COM/v1",
+            "java.com",
+            "org.telegram.org",
+        ):
+            with self.subTest(literal=literal):
+                endpoint = self.risk_dex(
+                    "Ljava/lang/String;" if literal.startswith("HTTPS://") else "Ljava/net/URL;",
+                    "valueOf" if literal.startswith("HTTPS://") else "openConnection",
+                    literal,
+                )
+                output = self.validate(
+                    self.archive(
+                        fields=self.java_fields(endpoint),
+                        entries=[("java/module.dex", endpoint)],
+                    ),
+                    True,
+                )
+                ids = {
+                    value.split(":", 1)[0]
+                    for value in self.output_values(output, "evidence:")
+                }
+                self.assertIn("network.endpoint_literal", ids)
+
+        embedded = self.risk_dex(
+            "Ljava/net/URL;",
+            "openConnection",
+            "Жapi.example.comЯ",
+        )
+        output = self.validate(
+            self.archive(fields=self.java_fields(embedded), entries=[("java/module.dex", embedded)]),
+            True,
+        )
+        ids = {value.split(":", 1)[0] for value in self.output_values(output, "evidence:")}
+        self.assertNotIn("network.endpoint_literal", ids)
 
     def test_dex_native_declaration_malformed_and_code_budget(self):
         native = self.risk_dex("Lexample/Module;", "nativeEntry", native=True)
@@ -952,9 +1028,10 @@ class PluginPackagesTest(unittest.TestCase):
         fields["schema_version"] = 4
         self.validate(self.archive(fields=fields, entries=[("java/module.dex", data)]), False)
 
-    def test_schema_six_signature_is_verified_before_compatibility(self):
+    def test_schema_six_signature_is_verified_and_compatible(self):
         signed = self.signed_archive()
-        self.assertIn("incompatible with schema 5", self.validate_error(signed))
+        checked = self.validate(signed, True)
+        self.assertIn("signature:VERIFIED", checked)
 
         installed = self.validate_installed(signed)
         self.assertIn("signature:VERIFIED", installed)
@@ -1385,12 +1462,105 @@ class PluginStoreTest(unittest.TestCase):
     setUp = PluginPackagesTest.setUp
     archive = PluginPackagesTest.archive
     signed_archive = PluginPackagesTest.signed_archive
+    mutate_archive = PluginPackagesTest.mutate_archive
 
-    def test_schema_six_cannot_publish_before_signer_state_is_durable(self):
+    def test_schema_six_install_persists_signed_state(self):
         signed = self.signed_archive()
-        self.assertEqual(self.store("install", signed, accepted=False), [])
-        self.assertEqual(self.store("list"), [])
-        self.assertEqual(list((self.root / "installed").iterdir()), [])
+        digest = hashlib.sha256(signed).hexdigest()
+
+        self.assertEqual(self.store("install", signed), [MANIFEST["id"]])
+        self.assertEqual(self.store("signer", extra=(MANIFEST["id"],)), [digest])
+        self.assertEqual(self.store("signererror", extra=(MANIFEST["id"],)), ["ok"])
+
+    def test_schema_six_without_signed_state_is_runtime_blocked(self):
+        signed = self.signed_archive()
+        digest = hashlib.sha256(signed).hexdigest()
+        self.store("install", signed)
+        installed = self.root / "installed" / MANIFEST["id"]
+
+        (installed / ".fluxgram-signer-state").unlink()
+        self.assertEqual(
+            self.store("signererror", extra=(MANIFEST["id"],)),
+            ["Signed plugin signer state is unavailable"],
+        )
+
+        self.store("unsignedstate", extra=(MANIFEST["id"], digest))
+        self.assertEqual(
+            self.store("signererror", extra=(MANIFEST["id"],)),
+            ["Signed plugin signer state is unavailable"],
+        )
+
+    def test_schema_six_without_risk_report_is_runtime_blocked(self):
+        self.store("install", self.signed_archive())
+        installed = self.root / "installed" / MANIFEST["id"]
+        (installed / ".fluxgram-risk-report").unlink()
+
+        self.assertEqual(
+            self.store("signererror", extra=(MANIFEST["id"],)),
+            ["Signed plugin risk report is unavailable"],
+        )
+
+    def test_schema_six_signed_update_and_rotation_survive_reopen(self):
+        rotated = self.signed_archive(fields={"version": "2.0.0"}, rotation=True)
+        old_key = (
+            self.root / "rotation-old-private.pk8",
+            self.root / "rotation-old-public.spki",
+        )
+        original = self.signed_archive(key_paths=old_key)
+        same_key = self.signed_archive(fields={"version": "1.1.0"}, key_paths=old_key)
+
+        self.store("install", original)
+        self.store(
+            "update",
+            same_key,
+            extra=(MANIFEST["id"], MANIFEST["version"], "false"),
+        )
+        self.store("apply")
+        self.assertEqual(self.store("signererror", extra=(MANIFEST["id"],)), ["ok"])
+
+        self.store(
+            "update",
+            rotated,
+            extra=(MANIFEST["id"], "1.1.0", "false"),
+        )
+        self.store("activate", extra=(MANIFEST["id"],))
+
+        self.assertEqual(self.installed_version(), "2.0.0")
+        self.store("rollbackprepare", extra=(MANIFEST["id"],))
+        self.assertEqual(self.installed_version(), "1.1.0")
+        self.assertEqual(self.store("signererror", extra=(MANIFEST["id"],)), ["ok"])
+        self.store("rollbackfinish", extra=(MANIFEST["id"],))
+
+        self.store(
+            "update",
+            rotated,
+            extra=(MANIFEST["id"], "1.1.0", "false"),
+        )
+        self.store("apply")
+
+        self.assertEqual(self.installed_version(), "2.0.0")
+        self.assertEqual(
+            self.store("signer", extra=(MANIFEST["id"],)),
+            [hashlib.sha256(rotated).hexdigest()],
+        )
+        self.assertEqual(self.store("signererror", extra=(MANIFEST["id"],)), ["ok"])
+
+    def test_schema_six_unsigned_to_signed_update_survives_reopen(self):
+        signed = self.signed_archive(fields={"version": "2.0.0"})
+        self.store("install", self.archive())
+        self.store(
+            "update",
+            signed,
+            extra=(MANIFEST["id"], MANIFEST["version"], "false"),
+        )
+        self.store("apply")
+
+        self.assertEqual(self.installed_version(), "2.0.0")
+        self.assertEqual(
+            self.store("signer", extra=(MANIFEST["id"],)),
+            [hashlib.sha256(signed).hexdigest()],
+        )
+        self.assertEqual(self.store("signererror", extra=(MANIFEST["id"],)), ["ok"])
 
     def test_block_report_prevents_install_update_and_debug_reload(self):
         python_blocked = self.archive(python_source=b"FAKE_BLOCK\n")

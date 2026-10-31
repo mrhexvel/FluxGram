@@ -28,9 +28,9 @@ import java.util.zip.ZipFile;
 import java.util.zip.Adler32;
 
 public final class PluginRiskAnalyzer {
-    public static final int ANALYZER_VERSION = 2;
+    public static final int ANALYZER_VERSION = 3;
     public static final String ANALYSIS_CONTEXT_FINGERPRINT =
-            "000b712a79f6afd9e3f9a142875ded4ea58257f66d49f2b28fd9e091b2d6c5b0";
+            "b7cdb86e9f1e136ca55d3a89334ce66bf4f3618b545a7b9e27d2f57a3bc6d380";
 
     private static final int MAX_DEX_STRINGS = 65536;
     private static final int MAX_DEX_TYPES = 32768;
@@ -41,8 +41,10 @@ public final class PluginRiskAnalyzer {
     private static final int MAX_DEX_CODE_UNITS = 262144;
     private static final long MAX_ANALYSIS_NANOS = 2_000_000_000L;
 
-    private static final Pattern ENDPOINT = Pattern.compile(
-            "(?i)(?:https?://[^\\s]+|(?:[a-z0-9-]+\\.)+[a-z]{2,}(?::[0-9]{1,5})?(?:/[^\\s]*)?)");
+    private static final Pattern HTTP_ENDPOINT = Pattern.compile("(?i:https?://[^\\s]+)");
+    private static final Pattern BARE_ENDPOINT = Pattern.compile(
+            "(?i:(?<![\\p{L}\\p{N}_$.-])(?:[a-z0-9-]+\\.)+[a-z]{2,}"
+                    + "(?::[0-9]{1,5})?(?:/[^\\s]*)?(?![\\p{L}\\p{N}_$.-]))");
     private static final Pattern CLASS_NAME = Pattern.compile(
             "(?:[A-Za-z_$][A-Za-z0-9_$]*[./])+[A-Za-z_$][A-Za-z0-9_$]*");
 
@@ -542,6 +544,7 @@ public final class PluginRiskAnalyzer {
             readCallSites();
             readMethodHandles();
             readClasses(classCount, classOffset);
+            classifyNetworkStrings();
             classifyDynamicStrings();
         }
 
@@ -1149,15 +1152,21 @@ public final class PluginRiskAnalyzer {
 
         private void classifyString(int index) throws FormatException {
             requireIndex(index, strings.length);
-            String value = strings[index];
-            referencedStrings.add(value);
+            referencedStrings.add(strings[index]);
+        }
 
-            if (ENDPOINT.matcher(value).find()) {
-                collector.add(
-                        "network.endpoint_literal",
-                        null,
-                        PluginRiskEvidence.Source.DEX,
-                        PluginRiskEvidence.Confidence.EXACT);
+        private void classifyNetworkStrings() {
+            boolean networkApi = collector.observedCategories.contains("network");
+
+            for (String value : referencedStrings) {
+                if (HTTP_ENDPOINT.matcher(value).find()
+                        || networkApi && BARE_ENDPOINT.matcher(value).find()) {
+                    collector.add(
+                            "network.endpoint_literal",
+                            null,
+                            PluginRiskEvidence.Source.DEX,
+                            PluginRiskEvidence.Confidence.EXACT);
+                }
             }
         }
 

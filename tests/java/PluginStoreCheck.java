@@ -1,9 +1,12 @@
 import org.telegram.messenger.plugins.packages.PluginPackageStore;
 import org.telegram.messenger.plugins.packages.PluginPackageValidator;
+import org.telegram.messenger.plugins.signing.PluginSignerIdentity;
 import org.telegram.messenger.plugins.signing.PluginSignerJournal;
 import org.telegram.messenger.plugins.signing.PluginSignerReview;
+import org.telegram.messenger.plugins.signing.PluginSignerState;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 
 public final class PluginStoreCheck {
@@ -125,6 +128,30 @@ public final class PluginStoreCheck {
                 return;
             }
 
+            if (args[0].equals("signererror")) {
+                PluginPackageStore.Installed installed = store.get(args[3]);
+                System.out.println(installed.signerStateError == null
+                        ? "ok"
+                        : installed.signerStateError);
+                return;
+            }
+
+            if (args[0].equals("unsignedstate")) {
+                PluginSignerState state = new PluginSignerState(
+                        args[4],
+                        PluginSignerIdentity.unsigned(args[3], args[4]));
+                File file = new File(
+                        new File(new File(args[1]), args[3]),
+                        PluginPackageStore.SIGNER_STATE);
+
+                try (FileOutputStream output = new FileOutputStream(file)) {
+                    output.write(state.encode());
+                    output.getFD().sync();
+                }
+
+                return;
+            }
+
             if (args[0].equals("pending")) {
                 for (PluginPackageStore.Pending operation : store.pending().values()) {
                     System.out.println(
@@ -199,7 +226,7 @@ public final class PluginStoreCheck {
                 checked.sha256,
                 installed == null ? null : installed.signerState,
                 checked.signatureVerification,
-                null);
+                checked.rotationProof);
         return review.approve(true);
     }
 }

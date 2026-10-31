@@ -189,7 +189,10 @@ class PluginDevkitContractTest(unittest.TestCase):
             SIGNED_SCHEMA_VERSION,
             int(re.search(r"PARSED_SCHEMA_VERSION = (\d+)", manifest_source).group(1)),
         )
-        self.assertEqual(5, int(re.search(r"SCHEMA_VERSION = (\d+)", manifest_source).group(1)))
+        self.assertEqual(
+            SIGNED_SCHEMA_VERSION,
+            int(re.search(r"SCHEMA_VERSION = (\d+)", manifest_source).group(1)),
+        )
         self.assertEqual(
             PAYLOAD_FORMAT_VERSION,
             int(re.search(r"FORMAT_VERSION = (\d+)", payload_source).group(1)),
