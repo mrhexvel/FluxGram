@@ -44,6 +44,7 @@ import org.fluxgram.ComposerTextLayoutSnapshot;
 import org.fluxgram.ComposerTextPresentation;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.Components.EditTextCaption;
+import org.telegram.messenger.plugins.packages.PluginSigningApi24Check;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -55,6 +56,7 @@ public final class ComposerTextInstrumentation extends Instrumentation {
     private ProbeField field;
     private AlertDialog dialog;
     private int cases;
+    private boolean pluginSigningApi24;
 
     private static final class ProbeField extends EditTextCaption {
         ComposerNativeTextCapture capture;
@@ -82,11 +84,18 @@ public final class ComposerTextInstrumentation extends Instrumentation {
     @Override
     public void onCreate(Bundle arguments) {
         super.onCreate(arguments);
+        pluginSigningApi24 = arguments != null
+                && "plugin-signing-api24".equals(arguments.getString("fluxgramCheck"));
         start();
     }
 
     @Override
     public void onStart() {
+        if (pluginSigningApi24) {
+            runPluginSigningApi24();
+            return;
+        }
+
         Bundle result = new Bundle();
         int resultCode = Activity.RESULT_OK;
         String hardwareStatus = "";
@@ -162,6 +171,22 @@ public final class ComposerTextInstrumentation extends Instrumentation {
                     dialog.dismiss();
                 }
             });
+        }
+
+        finish(resultCode, result);
+    }
+
+    private void runPluginSigningApi24() {
+        Bundle result = new Bundle();
+        int resultCode = Activity.RESULT_OK;
+
+        try {
+            String providers = PluginSigningApi24Check.run(getTargetContext());
+            result.putString("stream", "Plugin signing API 24 PASS: " + providers + "\n");
+        } catch (Throwable error) {
+            result.putString("stream", "Plugin signing API 24 FAIL: "
+                    + Log.getStackTraceString(error));
+            resultCode = Activity.RESULT_CANCELED;
         }
 
         finish(resultCode, result);
