@@ -2,6 +2,9 @@ import org.telegram.messenger.plugins.signing.PluginSignatureEnvelope;
 import org.telegram.messenger.plugins.signing.PluginSignatureVerification;
 import org.telegram.messenger.plugins.signing.PluginSignatureVerifier;
 import org.telegram.messenger.plugins.signing.PluginSignedPayload;
+import org.telegram.messenger.plugins.signing.PluginKeyRotationProof;
+import org.telegram.messenger.plugins.signing.PluginSignerIdentity;
+import org.telegram.messenger.plugins.signing.PluginSignerTransition;
 
 import java.math.BigInteger;
 import java.security.KeyPair;
@@ -24,6 +27,8 @@ public final class PluginPackageSigningCheck {
         envelopeFormat();
         verification();
         malformedInput();
+        rotationProof();
+        signerTransition();
     }
 
     private static void canonicalPayload() {
@@ -168,6 +173,263 @@ public final class PluginPackageSigningCheck {
         expectInvalid(() -> PluginSignatureVerifier.verify(null, null));
     }
 
+    private static void rotationProof() throws Exception {
+        require(hex(sha256(PluginKeyRotationProof.message(
+                "example.plugin",
+                "p256:" + digest('a'),
+                "p256:" + digest('b'),
+                3,
+                4))).equals(
+                "8c3580ec4d6292a7b98a85f31b408688998c21311e693543d62d5efab8311c89"));
+
+        KeyPair oldKey = keyPair();
+        KeyPair newKey = keyPair();
+        PluginSignatureVerification oldIdentity = verified(oldKey);
+        PluginSignatureVerification newIdentity = verified(newKey);
+        byte[] message = PluginKeyRotationProof.message(
+                "example.plugin",
+                oldIdentity.keyId,
+                newIdentity.keyId,
+                3,
+                4);
+        PluginSignatureEnvelope oldEnvelope = envelope(oldKey, sign(oldKey, message));
+        PluginSignatureEnvelope newEnvelope = envelope(newKey, sign(newKey, message));
+        PluginKeyRotationProof proof = new PluginKeyRotationProof(
+                "example.plugin",
+                oldIdentity.keyId,
+                newIdentity.keyId,
+                3,
+                4,
+                oldEnvelope,
+                newEnvelope);
+
+        require(proof.verify().status == PluginKeyRotationProof.Status.VERIFIED);
+        require(Arrays.equals(message, proof.message()));
+
+        PluginKeyRotationProof wrongOld = new PluginKeyRotationProof(
+                "example.plugin",
+                oldIdentity.keyId,
+                newIdentity.keyId,
+                3,
+                4,
+                newEnvelope,
+                newEnvelope);
+        require(wrongOld.verify().status == PluginKeyRotationProof.Status.KEY_ID_MISMATCH);
+
+        PluginKeyRotationProof wrongNewSignature = new PluginKeyRotationProof(
+                "example.plugin",
+                oldIdentity.keyId,
+                newIdentity.keyId,
+                3,
+                4,
+                oldEnvelope,
+                envelope(newKey, sign(oldKey, message)));
+        require(wrongNewSignature.verify().status
+                == PluginKeyRotationProof.Status.NEW_SIGNATURE_INVALID);
+
+        byte[] wrongMessage = PluginKeyRotationProof.message(
+                "example.plugin",
+                oldIdentity.keyId,
+                newIdentity.keyId,
+                4,
+                5);
+        PluginKeyRotationProof staleSignatures = new PluginKeyRotationProof(
+                "example.plugin",
+                oldIdentity.keyId,
+                newIdentity.keyId,
+                4,
+                5,
+                oldEnvelope,
+                newEnvelope);
+        require(!Arrays.equals(message, wrongMessage));
+        require(staleSignatures.verify().status
+                == PluginKeyRotationProof.Status.OLD_SIGNATURE_INVALID);
+
+        expectInvalid(() -> PluginKeyRotationProof.message(
+                "example.plugin",
+                oldIdentity.keyId,
+                newIdentity.keyId,
+                3,
+                5));
+        expectInvalid(() -> PluginKeyRotationProof.message(
+                "example.plugin",
+                oldIdentity.keyId,
+                oldIdentity.keyId,
+                3,
+                4));
+        expectInvalid(() -> PluginKeyRotationProof.message(
+                "example.plugin",
+                oldIdentity.keyId,
+                newIdentity.keyId,
+                Long.MAX_VALUE,
+                Long.MIN_VALUE));
+    }
+
+    private static void signerTransition() throws Exception {
+        KeyPair oldKey = keyPair();
+        KeyPair newKey = keyPair();
+        KeyPair thirdKey = keyPair();
+        PluginSignatureVerification unsigned = PluginSignatureVerifier.verify(basePayload(), null);
+        PluginSignatureVerification oldVerification = verified(oldKey);
+        PluginSignatureVerification newVerification = verified(newKey);
+        PluginSignatureVerification thirdVerification = verified(thirdKey);
+        String firstDigest = digest('1');
+        String secondDigest = digest('2');
+
+        PluginSignerTransition.Result firstUnsigned = PluginSignerTransition.evaluate(
+                "example.plugin", firstDigest, null, unsigned, null);
+        require(firstUnsigned.decision == PluginSignerTransition.Decision.CONFIRM);
+        require(firstUnsigned.nextIdentity.kind == PluginSignerIdentity.Kind.UNSIGNED);
+        require(PluginSignerTransition.evaluate(
+                "example.plugin",
+                firstDigest,
+                firstUnsigned.nextIdentity,
+                unsigned,
+                null).decision
+                == PluginSignerTransition.Decision.ACCEPT);
+        PluginSignerTransition.Result changedUnsigned = PluginSignerTransition.evaluate(
+                "example.plugin",
+                secondDigest,
+                firstUnsigned.nextIdentity,
+                unsigned,
+                null);
+        require(changedUnsigned.decision == PluginSignerTransition.Decision.CONFIRM);
+        require(changedUnsigned.reason == PluginSignerTransition.Reason.UNSIGNED_PACKAGE_CHANGED);
+        require(changedUnsigned.nextIdentity.packageSha256.equals(secondDigest));
+
+        PluginSignerTransition.Result signedUpgrade = PluginSignerTransition.evaluate(
+                "example.plugin",
+                secondDigest,
+                firstUnsigned.nextIdentity,
+                oldVerification,
+                null);
+        require(signedUpgrade.decision == PluginSignerTransition.Decision.CONFIRM);
+        require(signedUpgrade.reason == PluginSignerTransition.Reason.UPGRADE_UNSIGNED_TO_SIGNED);
+
+        PluginSignerTransition.Result firstSigned = PluginSignerTransition.evaluate(
+                "example.plugin", firstDigest, null, oldVerification, null);
+        PluginSignerIdentity pinned = firstSigned.nextIdentity;
+        require(firstSigned.decision == PluginSignerTransition.Decision.CONFIRM);
+        require(pinned.kind == PluginSignerIdentity.Kind.SIGNED);
+        require(PluginSignerTransition.evaluate(
+                "example.plugin", firstDigest, pinned, oldVerification, null).decision
+                == PluginSignerTransition.Decision.ACCEPT);
+        PluginSignerTransition.Result downgrade = PluginSignerTransition.evaluate(
+                "example.plugin", secondDigest, pinned, unsigned, null);
+        require(downgrade.decision == PluginSignerTransition.Decision.BLOCK);
+        require(downgrade.reason == PluginSignerTransition.Reason.UNSIGNED_DOWNGRADE);
+        require(downgrade.nextIdentity.equals(pinned));
+        PluginSignerTransition.Result keyChanged = PluginSignerTransition.evaluate(
+                "example.plugin", secondDigest, pinned, newVerification, null);
+        require(keyChanged.decision == PluginSignerTransition.Decision.BLOCK);
+        require(keyChanged.reason == PluginSignerTransition.Reason.KEY_CHANGED);
+        require(keyChanged.nextIdentity.equals(pinned));
+
+        byte[] message = PluginKeyRotationProof.message(
+                "example.plugin",
+                oldVerification.keyId,
+                newVerification.keyId,
+                0,
+                1);
+        PluginKeyRotationProof proof = new PluginKeyRotationProof(
+                "example.plugin",
+                oldVerification.keyId,
+                newVerification.keyId,
+                0,
+                1,
+                envelope(oldKey, sign(oldKey, message)),
+                envelope(newKey, sign(newKey, message)));
+        PluginSignerTransition.Result rotated = PluginSignerTransition.evaluate(
+                "example.plugin", secondDigest, pinned, newVerification, proof);
+
+        require(rotated.decision == PluginSignerTransition.Decision.ACCEPT);
+        require(rotated.reason == PluginSignerTransition.Reason.VERIFIED_ROTATION);
+        require(rotated.nextIdentity.generation == 1);
+        require(rotated.nextIdentity.keyId.equals(newVerification.keyId));
+
+        byte[] secondMessage = PluginKeyRotationProof.message(
+                "example.plugin",
+                newVerification.keyId,
+                thirdVerification.keyId,
+                1,
+                2);
+        PluginKeyRotationProof secondProof = new PluginKeyRotationProof(
+                "example.plugin",
+                newVerification.keyId,
+                thirdVerification.keyId,
+                1,
+                2,
+                envelope(newKey, sign(newKey, secondMessage)),
+                envelope(thirdKey, sign(thirdKey, secondMessage)));
+        PluginSignerTransition.Result secondRotation = PluginSignerTransition.evaluate(
+                "example.plugin",
+                digest('3'),
+                rotated.nextIdentity,
+                thirdVerification,
+                secondProof);
+        require(secondRotation.decision == PluginSignerTransition.Decision.ACCEPT);
+        require(secondRotation.nextIdentity.generation == 2);
+        assertBlocked(PluginSignerTransition.evaluate(
+                "example.plugin",
+                firstDigest,
+                rotated.nextIdentity,
+                oldVerification,
+                proof), PluginSignerTransition.Reason.INVALID_ROTATION, rotated.nextIdentity);
+        assertBlocked(PluginSignerTransition.evaluate(
+                "different.plugin",
+                firstDigest,
+                pinned,
+                oldVerification,
+                null), PluginSignerTransition.Reason.PLUGIN_ID_MISMATCH, pinned);
+
+        PluginSignatureVerification otherPlugin = verified(oldKey, "different.plugin");
+        assertBlocked(PluginSignerTransition.evaluate(
+                "example.plugin",
+                firstDigest,
+                pinned,
+                otherPlugin,
+                null), PluginSignerTransition.Reason.PLUGIN_ID_MISMATCH, pinned);
+
+        PluginSignatureEnvelope invalidEnvelope = envelope(newKey, sign(newKey, basePayload().encode(
+                PluginSignatureEnvelope.ALGORITHM_ECDSA_P256_SHA256,
+                newKey.getPublic().getEncoded())));
+        byte[] invalidSignature = invalidEnvelope.signature();
+        invalidSignature[invalidSignature.length - 1] ^= 1;
+        PluginSignatureVerification invalid = PluginSignatureVerifier.verify(
+                basePayload(),
+                new PluginSignatureEnvelope(
+                        PluginSignatureEnvelope.ALGORITHM_ECDSA_P256_SHA256,
+                        newKey.getPublic().getEncoded(),
+                        invalidSignature));
+        assertBlocked(PluginSignerTransition.evaluate(
+                "example.plugin",
+                firstDigest,
+                pinned,
+                invalid,
+                null), PluginSignerTransition.Reason.INVALID_SIGNATURE, pinned);
+    }
+
+    private static PluginSignatureVerification verified(KeyPair key) throws Exception {
+        return verified(key, "example.plugin");
+    }
+
+    private static PluginSignatureVerification verified(KeyPair key, String pluginId)
+            throws Exception {
+        PluginSignedPayload payload = new PluginSignedPayload(
+                pluginId,
+                "1.2.3",
+                5,
+                entries(file("manifest.json", 11, 'a')));
+        byte[] message = payload.encode(
+                PluginSignatureEnvelope.ALGORITHM_ECDSA_P256_SHA256,
+                key.getPublic().getEncoded());
+        return PluginSignatureVerifier.verify(payload, envelope(key, sign(key, message)));
+    }
+
+    private static PluginSignedPayload basePayload() {
+        return payload(entries(file("manifest.json", 11, 'a')));
+    }
+
     private static KeyPair keyPair() throws Exception {
         KeyPairGenerator generator = KeyPairGenerator.getInstance("EC");
         generator.initialize(new ECGenParameterSpec("secp256r1"));
@@ -297,6 +559,15 @@ public final class PluginPackageSigningCheck {
         } catch (Exception error) {
             throw new AssertionError(error);
         }
+    }
+
+    private static void assertBlocked(
+            PluginSignerTransition.Result result,
+            PluginSignerTransition.Reason reason,
+            PluginSignerIdentity identity) {
+        require(result.decision == PluginSignerTransition.Decision.BLOCK);
+        require(result.reason == reason);
+        require(result.nextIdentity.equals(identity));
     }
 
     private static void expectUnsupported(CheckedRunnable action) {

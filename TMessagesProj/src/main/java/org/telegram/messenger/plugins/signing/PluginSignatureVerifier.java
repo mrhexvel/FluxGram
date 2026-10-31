@@ -40,12 +40,38 @@ public final class PluginSignatureVerifier {
         if (envelope == null) {
             return result(
                     PluginSignatureVerification.Status.MISSING_SIGNATURE,
+                    payload.pluginId,
                     null,
                     null);
         }
 
         byte[] publicKeyBytes = envelope.publicKey();
         byte[] encodedPayload = payload.encode(envelope.algorithm, publicKeyBytes);
+
+        PluginSignatureVerification verification =
+                verifyCanonicalMessage(encodedPayload, envelope);
+        return result(
+                verification.status,
+                payload.pluginId,
+                verification.keyId,
+                verification.payloadSha256);
+    }
+
+    static PluginSignatureVerification verifyCanonicalMessage(
+            byte[] encodedPayload,
+            PluginSignatureEnvelope envelope) {
+        if (encodedPayload == null) {
+            throw new IllegalArgumentException("Missing canonical signed message");
+        }
+        if (envelope == null) {
+            return result(
+                    PluginSignatureVerification.Status.MISSING_SIGNATURE,
+                    null,
+                    null,
+                    null);
+        }
+
+        byte[] publicKeyBytes = envelope.publicKey();
         String payloadSha256;
 
         try {
@@ -138,6 +164,7 @@ public final class PluginSignatureVerifier {
         } catch (java.io.IOException error) {
             return result(
                     PluginSignatureVerification.Status.MALFORMED_ENVELOPE,
+                    payload == null ? null : payload.pluginId,
                     null,
                     null);
         }
@@ -231,7 +258,15 @@ public final class PluginSignatureVerifier {
             PluginSignatureVerification.Status status,
             String keyId,
             String payloadSha256) {
-        return new PluginSignatureVerification(status, keyId, payloadSha256);
+        return result(status, null, keyId, payloadSha256);
+    }
+
+    private static PluginSignatureVerification result(
+            PluginSignatureVerification.Status status,
+            String pluginId,
+            String keyId,
+            String payloadSha256) {
+        return new PluginSignatureVerification(status, pluginId, keyId, payloadSha256);
     }
 
     private static boolean startsWith(byte[] value, byte[] prefix) {

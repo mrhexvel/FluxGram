@@ -23,6 +23,9 @@ class PluginPackageSigningTest(unittest.TestCase):
                 SIGNING / "PluginSignatureEnvelope.java",
                 SIGNING / "PluginSignatureVerification.java",
                 SIGNING / "PluginSignatureVerifier.java",
+                SIGNING / "PluginSignerIdentity.java",
+                SIGNING / "PluginKeyRotationProof.java",
+                SIGNING / "PluginSignerTransition.java",
                 ROOT / "tests/java/PluginPackageSigningCheck.java",
             ]
             subprocess.run(
