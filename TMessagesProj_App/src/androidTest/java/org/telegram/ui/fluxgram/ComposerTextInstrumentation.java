@@ -42,6 +42,7 @@ import org.fluxgram.ComposerSelectionPresentation;
 import org.fluxgram.ComposerTextInsertion;
 import org.fluxgram.ComposerTextLayoutSnapshot;
 import org.fluxgram.ComposerTextPresentation;
+import org.telegram.messenger.plugins.reputation.PluginReputationStoreApi24Check;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.Components.EditTextCaption;
 import org.telegram.messenger.plugins.packages.PluginSigningApi24Check;
@@ -57,6 +58,7 @@ public final class ComposerTextInstrumentation extends Instrumentation {
     private AlertDialog dialog;
     private int cases;
     private boolean pluginSigningApi24;
+    private boolean pluginReputationStoreApi24;
 
     private static final class ProbeField extends EditTextCaption {
         ComposerNativeTextCapture capture;
@@ -86,6 +88,9 @@ public final class ComposerTextInstrumentation extends Instrumentation {
         super.onCreate(arguments);
         pluginSigningApi24 = arguments != null
                 && "plugin-signing-api24".equals(arguments.getString("fluxgramCheck"));
+        pluginReputationStoreApi24 = arguments != null
+                && "plugin-reputation-store-api24".equals(
+                        arguments.getString("fluxgramCheck"));
         start();
     }
 
@@ -93,6 +98,10 @@ public final class ComposerTextInstrumentation extends Instrumentation {
     public void onStart() {
         if (pluginSigningApi24) {
             runPluginSigningApi24();
+            return;
+        }
+        if (pluginReputationStoreApi24) {
+            runPluginReputationStoreApi24();
             return;
         }
 
@@ -185,6 +194,22 @@ public final class ComposerTextInstrumentation extends Instrumentation {
             result.putString("stream", "Plugin signing API 24 PASS: " + providers + "\n");
         } catch (Throwable error) {
             result.putString("stream", "Plugin signing API 24 FAIL: "
+                    + Log.getStackTraceString(error));
+            resultCode = Activity.RESULT_CANCELED;
+        }
+
+        finish(resultCode, result);
+    }
+
+    private void runPluginReputationStoreApi24() {
+        Bundle result = new Bundle();
+        int resultCode = Activity.RESULT_OK;
+
+        try {
+            String summary = PluginReputationStoreApi24Check.run(getTargetContext());
+            result.putString("stream", "Plugin reputation store API 24 PASS: " + summary + "\n");
+        } catch (Throwable error) {
+            result.putString("stream", "Plugin reputation store API 24 FAIL: "
                     + Log.getStackTraceString(error));
             resultCode = Activity.RESULT_CANCELED;
         }

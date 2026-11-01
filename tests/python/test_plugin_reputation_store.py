@@ -8,9 +8,28 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SIGNING = ROOT / "TMessagesProj/src/main/java/org/telegram/messenger/plugins/signing"
 REPUTATION = ROOT / "TMessagesProj/src/main/java/org/telegram/messenger/plugins/reputation"
+API24_CHECK = ROOT / (
+    "TMessagesProj_App/src/androidTest/java/org/telegram/messenger/plugins/reputation/"
+    "PluginReputationStoreApi24Check.java"
+)
+INSTRUMENTATION = ROOT / (
+    "TMessagesProj_App/src/androidTest/java/org/telegram/ui/fluxgram/"
+    "ComposerTextInstrumentation.java"
+)
 
 
 class PluginReputationStoreTest(unittest.TestCase):
+    def test_api24_instrumentation_contract(self):
+        check = API24_CHECK.read_text(encoding="utf-8")
+        instrumentation = INSTRUMENTATION.read_text(encoding="utf-8")
+
+        self.assertIn("new PluginReputationStore(stable, AUTHORITY_KEY_ID)", check)
+        self.assertIn("PluginReputationStore.BASELINE_FILE", check)
+        self.assertIn("PluginReputationStore.CURRENT_FILE", check)
+        self.assertIn("PluginReputationStore.LOCK_FILE", check)
+        self.assertIn('"plugin-reputation-store-api24"', instrumentation)
+        self.assertIn("PluginReputationStoreApi24Check.run(getTargetContext())", instrumentation)
+
     def test_java_harness(self):
         if not shutil.which("javac") or not shutil.which("java"):
             self.skipTest("Requires JDK")
