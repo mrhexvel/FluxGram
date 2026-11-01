@@ -1,3 +1,5 @@
 telegram.api_id=
 telegram.api_hash=
 fluxgram.appearance_api_base_url=
+fluxgram.plugin_reputation_api_base_url=
+fluxgram.plugin_reputation_authority_key_id=

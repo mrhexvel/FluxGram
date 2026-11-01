@@ -13,6 +13,10 @@ def apiHash = providers.environmentVariable('TELEGRAM_API_HASH')
         .orElse(credentials.getProperty('telegram.api_hash', '')).get().trim()
 def appearanceApiBaseUrl = providers.environmentVariable('FLUXGRAM_APPEARANCE_API_BASE_URL')
         .orElse(credentials.getProperty('fluxgram.appearance_api_base_url', '')).get().trim()
+def pluginReputationApiBaseUrl = providers.environmentVariable('FLUXGRAM_PLUGIN_REPUTATION_API_BASE_URL')
+        .orElse(credentials.getProperty('fluxgram.plugin_reputation_api_base_url', '')).get().trim()
+def pluginReputationAuthorityKeyId = providers.environmentVariable('FLUXGRAM_PLUGIN_REPUTATION_AUTHORITY_KEY_ID')
+        .orElse(credentials.getProperty('fluxgram.plugin_reputation_authority_key_id', '')).get().trim()
 
 def validApiId = apiId ==~ /[1-9][0-9]{0,9}/
 
@@ -32,6 +36,73 @@ if (!validAppearanceApiBaseUrl) {
     }
 }
 
+def validPluginReputationAuthorityKeyId = pluginReputationAuthorityKeyId.isEmpty()
+
+if (!validPluginReputationAuthorityKeyId) {
+    validPluginReputationAuthorityKeyId = pluginReputationAuthorityKeyId.length() == 69
+            && pluginReputationAuthorityKeyId.startsWith('p256:')
+            && pluginReputationAuthorityKeyId.substring(5).toCharArray().every { character ->
+                (character >= ('0' as char) && character <= ('9' as char))
+                        || (character >= ('a' as char) && character <= ('f' as char))
+            }
+}
+
+def validPluginReputationApiBaseUrl = pluginReputationApiBaseUrl.isEmpty()
+
+if (!validPluginReputationApiBaseUrl) {
+    try {
+        def uri = new URI(pluginReputationApiBaseUrl)
+        def host = uri.host
+        def path = uri.rawPath
+        def labels = host == null ? [] : host.tokenize('.')
+        def allNumeric = !labels.isEmpty() && labels.every { label ->
+            label.toCharArray().every { character ->
+                character >= ('0' as char) && character <= ('9' as char)
+            }
+        }
+        def validLabels = labels.size() >= 2 && labels.every { label ->
+            label.length() >= 1
+                    && label.length() <= 63
+                    && !label.startsWith('xn--')
+                    && label.charAt(0) != '-'
+                    && label.charAt(label.length() - 1) != '-'
+                    && label.toCharArray().every { character ->
+                        (character >= ('a' as char) && character <= ('z' as char))
+                                || (character >= ('0' as char) && character <= ('9' as char))
+                                || character == '-'
+                    }
+        }
+        def expectedAuthority = uri.port == 443 ? host + ':443' : host
+
+        validPluginReputationApiBaseUrl = uri.scheme == 'https'
+                && host != null
+                && host.length() <= 253
+                && host == host.toLowerCase(Locale.US)
+                && host != 'localhost'
+                && !host.endsWith('.')
+                && !host.contains('..')
+                && validLabels
+                && !allNumeric
+                && uri.rawUserInfo == null
+                && uri.rawQuery == null
+                && uri.rawFragment == null
+                && (uri.port == -1 || uri.port == 443)
+                && (path == null || path.isEmpty() || path == '/')
+                && uri.rawAuthority == expectedAuthority
+    } catch (Exception ignore) {
+        validPluginReputationApiBaseUrl = false
+    }
+}
+
+if (pluginReputationApiBaseUrl.isEmpty() != pluginReputationAuthorityKeyId.isEmpty()
+        || !validPluginReputationApiBaseUrl
+        || !validPluginReputationAuthorityKeyId) {
+    throw new GradleException(
+            'Plugin reputation base URL and authority key ID must both be empty or contain a strict HTTPS origin '
+                    + 'and a lowercase p256 key ID.'
+    )
+}
+
 if (!validAppearanceApiBaseUrl) {
     throw new GradleException(
             'FLUXGRAM_APPEARANCE_API_BASE_URL or fluxgram.appearance_api_base_url must be empty or an HTTPS URL.'
@@ -41,11 +112,19 @@ if (!validAppearanceApiBaseUrl) {
 def escapedAppearanceApiBaseUrl = appearanceApiBaseUrl
         .replace('\\', '\\\\')
         .replace('"', '\\"')
+def escapedPluginReputationApiBaseUrl = pluginReputationApiBaseUrl
+        .replace('\\', '\\\\')
+        .replace('"', '\\"')
+def escapedPluginReputationAuthorityKeyId = pluginReputationAuthorityKeyId
+        .replace('\\', '\\\\')
+        .replace('"', '\\"')
 
 android.defaultConfig {
     buildConfigField 'int', 'TELEGRAM_API_ID', validApiId ? apiId : '0'
     buildConfigField 'String', 'TELEGRAM_API_HASH', validApiHash ? '"' + apiHash + '"' : '""'
     buildConfigField 'String', 'FLUXGRAM_APPEARANCE_API_BASE_URL', '"' + escapedAppearanceApiBaseUrl + '"'
+    buildConfigField 'String', 'FLUXGRAM_PLUGIN_REPUTATION_API_BASE_URL', '"' + escapedPluginReputationApiBaseUrl + '"'
+    buildConfigField 'String', 'FLUXGRAM_PLUGIN_REPUTATION_AUTHORITY_KEY_ID', '"' + escapedPluginReputationAuthorityKeyId + '"'
 }
 
 def validateCredentials = tasks.register('validateFluxGramCredentials') {
