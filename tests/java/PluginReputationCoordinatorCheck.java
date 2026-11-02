@@ -24,6 +24,7 @@ public final class PluginReputationCoordinatorCheck {
         closeSuppressesQueuedNetwork();
         storeLoadRetriesAndCallbackErrorsReleaseSlots();
         publicLimitsAreExactAndCancellationReleasesCapacity();
+        installPolicyWaitsAndBlocksOnlyAuthenticatedEvidence();
     }
 
     private static void disabledDoesNotAllocate() {
@@ -309,6 +310,59 @@ public final class PluginReputationCoordinatorCheck {
         require(waiterOverload.size() == 2);
         require(waiterOverload.get(1).outcome
                 == PluginReputationCoordinator.Outcome.OVERLOADED);
+    }
+
+    private static void installPolicyWaitsAndBlocksOnlyAuthenticatedEvidence() {
+        PluginReputationCache.LookupResult authenticatedBlock =
+                new PluginReputationCache.LookupResult(
+                        PluginReputationPolicy.Decision.BLOCK,
+                        true,
+                        false,
+                        true,
+                        false,
+                        java.util.Collections.singletonList(
+                                PluginReputationPolicy.BLOCK_ARCHIVE));
+        PluginReputationCoordinator.Result cached = new PluginReputationCoordinator.Result(
+                QUERY,
+                authenticatedBlock,
+                PluginReputationCoordinator.Stage.CACHE,
+                PluginReputationCoordinator.Outcome.CACHE_STALE,
+                false);
+        PluginReputationCoordinator.Result terminalBlock = new PluginReputationCoordinator.Result(
+                QUERY,
+                authenticatedBlock,
+                PluginReputationCoordinator.Stage.REFRESH,
+                PluginReputationCoordinator.Outcome.NETWORK_TIMEOUT,
+                true);
+        PluginReputationCoordinator.Result unavailable = new PluginReputationCoordinator.Result(
+                QUERY,
+                PluginReputationCache.unavailable(),
+                PluginReputationCoordinator.Stage.REFRESH,
+                PluginReputationCoordinator.Outcome.NETWORK_UNAVAILABLE,
+                true);
+        PluginReputationCoordinator.Result unauthenticatedBlock =
+                new PluginReputationCoordinator.Result(
+                        QUERY,
+                        new PluginReputationCache.LookupResult(
+                                PluginReputationPolicy.Decision.BLOCK,
+                                false,
+                                false,
+                                false,
+                                false,
+                                java.util.Collections.singletonList(
+                                        PluginReputationPolicy.RECORD_UNAVAILABLE)),
+                        PluginReputationCoordinator.Stage.REFRESH,
+                        PluginReputationCoordinator.Outcome.REMOTE_EVIDENCE_REJECTED,
+                        true);
+
+        require(PluginReputationInstallPolicy.evaluate(cached)
+                == PluginReputationInstallPolicy.Decision.WAIT);
+        require(PluginReputationInstallPolicy.evaluate(terminalBlock)
+                == PluginReputationInstallPolicy.Decision.BLOCK);
+        require(PluginReputationInstallPolicy.evaluate(unavailable)
+                == PluginReputationInstallPolicy.Decision.ALLOW);
+        require(PluginReputationInstallPolicy.evaluate(unauthenticatedBlock)
+                == PluginReputationInstallPolicy.Decision.ALLOW);
     }
 
     private static PluginReputationCoordinator coordinator(

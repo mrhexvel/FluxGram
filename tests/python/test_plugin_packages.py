@@ -1905,6 +1905,29 @@ class PluginStoreTest(unittest.TestCase):
             loader_source,
         )
 
+    def test_install_reputation_gate_precedes_package_publication(self):
+        source = (
+            ROOT
+            / "TMessagesProj/src/main/java/org/telegram/messenger/plugins/ExternalPlugins.java"
+        ).read_text()
+
+        lookup = source.index("PluginReputationCoordinators.get().lookup")
+        policy = source.index("PluginReputationInstallPolicy.evaluate(result)", lookup)
+        blocked = source.index("PluginReputationInstallPolicy.Decision.BLOCK", policy)
+        continuation = source.index("installApproved(", blocked)
+
+        self.assertLess(lookup, policy)
+        self.assertLess(policy, blocked)
+        self.assertLess(blocked, continuation)
+        self.assertLess(continuation, source.index("store.scheduleUpdate(", continuation))
+        self.assertLess(continuation, source.index("store.install(", continuation))
+        self.assertLess(
+            continuation,
+            source.index("PythonPluginAdapter.migrateStorage(installed)", continuation),
+        )
+        self.assertEqual(1, source.count("PluginReputationCoordinators.get()"))
+        self.assertEqual(1, source.count("review.close();"))
+
     def test_install_sheet_enforces_risk_decisions(self):
         source = (
             ROOT

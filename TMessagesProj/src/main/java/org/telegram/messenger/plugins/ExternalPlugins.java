@@ -12,6 +12,10 @@ import org.telegram.messenger.FileLog;
 import org.telegram.messenger.plugins.packages.PluginManifest;
 import org.telegram.messenger.plugins.packages.PluginPackageStore;
 import org.telegram.messenger.plugins.packages.PluginPackageValidator;
+import org.telegram.messenger.plugins.reputation.PluginReputationCoordinator;
+import org.telegram.messenger.plugins.reputation.PluginReputationCoordinators;
+import org.telegram.messenger.plugins.reputation.PluginReputationInstallPolicy;
+import org.telegram.messenger.plugins.reputation.PluginReputationQuery;
 import org.telegram.messenger.plugins.risk.PluginRiskDiff;
 import org.telegram.messenger.plugins.risk.PluginRiskPolicy;
 import org.telegram.messenger.plugins.risk.PluginRiskReport;
@@ -481,90 +485,149 @@ public final class ExternalPlugins {
             String expectedVersion,
             boolean confirmed,
             Callback<String> callback) {
-        worker.execute(
+        worker.execute(() -> beginInstall(
+                review,
+                enable,
+                expectedVersion,
+                confirmed,
+                callback));
+    }
+
+    private static void beginInstall(
+            Review review,
+            boolean enable,
+            String expectedVersion,
+            boolean confirmed,
+            Callback<String> callback) {
+        String id = null;
+
+        try {
+            if (store == null || startupError != null) {
+                throw new IOException("Plugin storage unavailable: " + startupError);
+            }
+
+            id = review.result.manifest.id;
+
+            if (review.riskPolicy.decision == PluginRiskPolicy.Decision.BLOCK) {
+                throw new IOException("Plugin package is blocked by static risk analysis");
+            }
+            if (review.riskPolicy.decision == PluginRiskPolicy.Decision.CONFIRM
+                    && !confirmed) {
+                throw new IOException("Plugin risk changes require confirmation");
+            }
+
+            PluginSignerJournal approvedSigner = review.signerReview.approve(confirmed);
+            String developerKeyId = review.result.signatureVerification.isVerified()
+                    ? review.result.signatureVerification.keyId
+                    : null;
+            PluginReputationQuery query = new PluginReputationQuery(
+                    review.result.sha256,
+                    developerKeyId);
+            String pluginId = id;
+
+            PluginReputationCoordinators.get().lookup(query, worker, result -> {
+                PluginReputationInstallPolicy.Decision decision =
+                        PluginReputationInstallPolicy.evaluate(result);
+
+                if (decision == PluginReputationInstallPolicy.Decision.WAIT) {
+                    return;
+                }
+                if (decision == PluginReputationInstallPolicy.Decision.BLOCK) {
+                    completeInstall(
+                            review,
+                            pluginId,
+                            new IOException("Plugin package is blocked by reputation"),
+                            callback);
+                    return;
+                }
+
+                installApproved(
+                        review,
+                        enable,
+                        expectedVersion,
+                        approvedSigner,
+                        pluginId,
+                        callback);
+            });
+        } catch (Exception error) {
+            completeInstall(review, id, error, callback);
+        }
+    }
+
+    private static void installApproved(
+            Review review,
+            boolean enable,
+            String expectedVersion,
+            PluginSignerJournal approvedSigner,
+            String id,
+            Callback<String> callback) {
+        Exception failure = null;
+
+        try {
+            PluginManager manager = PluginManager.getInstance();
+
+            if (manager.isRecoveryBlockingImports()) {
+                throw new IOException("Restart FluxGram before installing or updating plugins");
+            }
+
+            if (expectedVersion != null) {
+                boolean enabledBefore = manager.isEnabled(id);
+                store.scheduleUpdate(
+                        review.archive,
+                        review.result.sha256,
+                        id,
+                        expectedVersion,
+                        enable,
+                        enabledBefore,
+                        approvedSigner);
+                manager.blockUntilRestart(id);
+                pending = Collections.unmodifiableMap(store.pending());
+            } else {
+                String installedId = id;
+                PluginPackageStore.Installed installed =
+                        store.install(
+                                review.archive,
+                                review.result.sha256,
+                                approvedSigner,
+                                () -> PluginStorage.clearPlugin(installedId));
+                PythonPluginAdapter adapter = new PythonPluginAdapter(installed);
+                boolean migrated = true;
+
+                try {
+                    PluginCrashRecovery.runExternal(
+                            installed.manifest.id,
+                            () -> PythonPluginAdapter.migrateStorage(installed));
+                } catch (Exception | LinkageError error) {
+                    PluginCrashRecovery.handled(error);
+                    migrated = false;
+                    disableAfterMigrationFailure(manager, id);
+                    adapter.setPreflightError(error);
+                }
+
+                manager.register(adapter, false);
+
+                if (enable && migrated) {
+                    manager.setEnabled(id, true);
+                }
+            }
+        } catch (Exception error) {
+            failure = error;
+        }
+
+        completeInstall(review, id, failure, callback);
+    }
+
+    private static void completeInstall(
+            Review review,
+            String id,
+            Exception failure,
+            Callback<String> callback) {
+        review.close();
+
+        AndroidUtilities.runOnUIThread(
                 () -> {
-                    String id = null;
-                    Exception failure = null;
-
-                    try {
-                        if (store == null || startupError != null) {
-                            throw new IOException("Plugin storage unavailable: " + startupError);
-                        }
-
-                        id = review.result.manifest.id;
-
-                        if (review.riskPolicy.decision == PluginRiskPolicy.Decision.BLOCK) {
-                            throw new IOException("Plugin package is blocked by static risk analysis");
-                        }
-                        if (review.riskPolicy.decision == PluginRiskPolicy.Decision.CONFIRM
-                                && !confirmed) {
-                            throw new IOException("Plugin risk changes require confirmation");
-                        }
-
-                        PluginSignerJournal approvedSigner =
-                                review.signerReview.approve(confirmed);
-
-                        PluginManager manager = PluginManager.getInstance();
-
-                        if (manager.isRecoveryBlockingImports()) {
-                            throw new IOException(
-                                    "Restart FluxGram before installing or updating plugins");
-                        }
-
-                        if (expectedVersion != null) {
-                            boolean enabledBefore = manager.isEnabled(id);
-                            store.scheduleUpdate(
-                                    review.archive,
-                                    review.result.sha256,
-                                    id,
-                                    expectedVersion,
-                                    enable,
-                                    enabledBefore,
-                                    approvedSigner);
-                            manager.blockUntilRestart(id);
-                            pending = Collections.unmodifiableMap(store.pending());
-                        } else {
-                            String installedId = id;
-                            PluginPackageStore.Installed installed =
-                                    store.install(
-                                            review.archive,
-                                            review.result.sha256,
-                                            approvedSigner,
-                                            () -> PluginStorage.clearPlugin(installedId));
-                            PythonPluginAdapter adapter = new PythonPluginAdapter(installed);
-                            boolean migrated = true;
-
-                            try {
-                                PluginCrashRecovery.runExternal(
-                                        installed.manifest.id,
-                                        () -> PythonPluginAdapter.migrateStorage(installed));
-                            } catch (Exception | LinkageError error) {
-                                PluginCrashRecovery.handled(error);
-                                migrated = false;
-                                disableAfterMigrationFailure(manager, id);
-                                adapter.setPreflightError(error);
-                            }
-
-                            manager.register(adapter, false);
-
-                            if (enable && migrated) {
-                                manager.setEnabled(id, true);
-                            }
-                        }
-                    } catch (Exception error) {
-                        failure = error;
-                    } finally {
-                        review.close();
-                    }
-
-                    String value = id;
-                    Exception error = failure;
-
-                    AndroidUtilities.runOnUIThread(
-                            () -> {
-                                changed();
-                                callback.complete(value, error);
-                            });
+                    changed();
+                    callback.complete(id, failure);
                 });
     }
 

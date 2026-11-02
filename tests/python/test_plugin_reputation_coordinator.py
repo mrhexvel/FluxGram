@@ -11,6 +11,9 @@ REPUTATION = ROOT / "TMessagesProj/src/main/java/org/telegram/messenger/plugins/
 APPLICATION_LOADER = ROOT / (
     "TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java"
 )
+EXTERNAL_PLUGINS = ROOT / (
+    "TMessagesProj/src/main/java/org/telegram/messenger/plugins/ExternalPlugins.java"
+)
 
 
 class PluginReputationCoordinatorTest(unittest.TestCase):
@@ -34,6 +37,7 @@ class PluginReputationCoordinatorTest(unittest.TestCase):
                 REPUTATION / "PluginReputationCache.java",
                 REPUTATION / "PluginReputationQuery.java",
                 REPUTATION / "PluginReputationCoordinator.java",
+                REPUTATION / "PluginReputationInstallPolicy.java",
                 ROOT / "tests/java/PluginReputationCoordinatorCheck.java",
             ]
             subprocess.run(
@@ -54,11 +58,12 @@ class PluginReputationCoordinatorTest(unittest.TestCase):
                 text=True,
             )
 
-    def test_production_composition_is_lazy_and_has_no_consumer(self):
+    def test_production_composition_is_lazy_and_has_one_install_consumer(self):
         coordinator = (REPUTATION / "PluginReputationCoordinators.java").read_text(
             encoding="utf-8"
         )
         application = APPLICATION_LOADER.read_text(encoding="utf-8")
+        external_plugins = EXTERNAL_PLUGINS.read_text(encoding="utf-8")
         java_root = ROOT / "TMessagesProj/src/main/java"
 
         self.assertIn("context.getNoBackupFilesDir()", coordinator)
@@ -70,6 +75,10 @@ class PluginReputationCoordinatorTest(unittest.TestCase):
         )
         self.assertNotIn(".lookup(", coordinator)
         self.assertNotIn("PluginReputationCoordinators.get()", application)
+        self.assertIn(
+            "PluginReputationCoordinators.get().lookup(query, worker, result ->",
+            external_plugins,
+        )
 
         consumers = []
         for path in java_root.rglob("*.java"):
@@ -81,7 +90,36 @@ class PluginReputationCoordinatorTest(unittest.TestCase):
             if "PluginReputationCoordinators.get()" in path.read_text(encoding="utf-8"):
                 consumers.append(str(path.relative_to(ROOT)))
 
-        self.assertEqual([], consumers)
+        self.assertEqual(
+            [
+                "TMessagesProj/src/main/java/org/telegram/messenger/plugins/"
+                "ExternalPlugins.java"
+            ],
+            consumers,
+        )
+
+    def test_install_consumer_waits_for_terminal_authenticated_block(self):
+        source = EXTERNAL_PLUGINS.read_text(encoding="utf-8")
+
+        lookup = source.index("PluginReputationCoordinators.get().lookup")
+        policy = source.index("PluginReputationInstallPolicy.evaluate(result)", lookup)
+        waiting = source.index("PluginReputationInstallPolicy.Decision.WAIT", policy)
+        blocked = source.index("PluginReputationInstallPolicy.Decision.BLOCK", waiting)
+        continuation = source.index("installApproved(", blocked)
+        store_update = source.index("store.scheduleUpdate(", continuation)
+        store_install = source.index("store.install(", continuation)
+        migration = source.index("PythonPluginAdapter.migrateStorage(installed)", continuation)
+
+        self.assertLess(lookup, policy)
+        self.assertLess(policy, waiting)
+        self.assertLess(waiting, blocked)
+        self.assertLess(blocked, continuation)
+        self.assertLess(continuation, store_update)
+        self.assertLess(continuation, store_install)
+        self.assertLess(continuation, migration)
+        self.assertIn("new PluginReputationQuery(\n                    review.result.sha256,", source)
+        self.assertIn("review.result.signatureVerification.isVerified()", source)
+        self.assertIn("? review.result.signatureVerification.keyId", source)
 
 
 if __name__ == "__main__":
