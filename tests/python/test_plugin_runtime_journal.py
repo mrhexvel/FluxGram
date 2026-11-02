@@ -92,6 +92,22 @@ class PluginRuntimeJournalTest(unittest.TestCase):
         self.assertNotIn(".put(", source)
         self.assertNotIn(".take(", source)
 
+    def test_android_files_use_descriptor_boundary_and_lifetime_lock(self):
+        source = (JOURNAL / "PluginRuntimeJournalAndroidFiles.java").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("OsConstants.O_NOFOLLOW", source)
+        self.assertIn("Os.fstat", source)
+        self.assertIn("Os.fsync", source)
+        self.assertIn("Os.rename", source)
+        self.assertIn("FileChannel", source)
+        self.assertIn("channel.lock()", source)
+        self.assertIn("processLock.lock()", source)
+        self.assertIn("processLock.unlock()", source)
+        self.assertNotIn("PluginManager", source)
+        self.assertNotIn("PythonPluginAdapter", source)
+
 
 if __name__ == "__main__":
     unittest.main()

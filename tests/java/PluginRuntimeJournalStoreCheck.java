@@ -199,7 +199,9 @@ public final class PluginRuntimeJournalStoreCheck {
     }
 
     private static void ownerAndClose() throws Exception {
-        PluginRuntimeJournalStore store = new PluginRuntimeJournalStore(new FakeFiles(), 500);
+        FakeFiles files = new FakeFiles();
+        PluginRuntimeJournalStore store = new PluginRuntimeJournalStore(files, 500);
+        require(files.acquireCount == 1);
         store.load();
         AtomicReference<Throwable> failure = new AtomicReference<>();
         Thread other = new Thread(() -> {
@@ -212,8 +214,13 @@ public final class PluginRuntimeJournalStoreCheck {
         other.start();
         other.join(5000);
         require(failure.get() instanceof IllegalStateException);
+        files.failClose = true;
+        expectIo(store::close);
+        expectInvalidState(store::snapshot);
         store.close();
+        require(files.closeCount == 2);
         store.close();
+        require(files.closeCount == 2);
         expectInvalidState(store::snapshot);
     }
 
@@ -235,6 +242,14 @@ public final class PluginRuntimeJournalStoreCheck {
         private int operations;
         private boolean failBefore;
         private boolean failReads;
+        private boolean failClose;
+        private int acquireCount;
+        private int closeCount;
+
+        @Override
+        public void acquire() {
+            acquireCount++;
+        }
 
         @Override
         public byte[] read(PluginRuntimeJournalStore.Name name, int maximumBytes) throws IOException {
@@ -287,6 +302,16 @@ public final class PluginRuntimeJournalStoreCheck {
         public void syncDirectory() throws IOException {
             beforeMutation();
             mutate();
+        }
+
+        @Override
+        public void close() throws IOException {
+            closeCount++;
+
+            if (failClose) {
+                failClose = false;
+                throw new IOException("Injected fixture close failure");
+            }
         }
 
         private void mutate() throws IOException {

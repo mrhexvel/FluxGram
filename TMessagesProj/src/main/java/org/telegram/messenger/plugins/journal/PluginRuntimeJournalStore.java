@@ -18,7 +18,10 @@ public final class PluginRuntimeJournalStore implements AutoCloseable {
         INTENT_TEMPORARY
     }
 
-    public interface FileOperations {
+    public interface FileOperations extends AutoCloseable {
+        default void acquire() throws IOException {
+        }
+
         byte[] read(Name name, int maximumBytes) throws IOException;
 
         void writeSynced(Name name, byte[] value) throws IOException;
@@ -28,6 +31,10 @@ public final class PluginRuntimeJournalStore implements AutoCloseable {
         void delete(Name name) throws IOException;
 
         void syncDirectory() throws IOException;
+
+        @Override
+        default void close() throws IOException {
+        }
     }
 
     public enum Recovery {
@@ -114,9 +121,10 @@ public final class PluginRuntimeJournalStore implements AutoCloseable {
     private State state;
     private byte[] stateBytes;
     private boolean loaded;
+    private boolean closing;
     private boolean closed;
 
-    public PluginRuntimeJournalStore(FileOperations files, long processInstanceId) {
+    public PluginRuntimeJournalStore(FileOperations files, long processInstanceId) throws IOException {
         if (files == null || processInstanceId <= 0) {
             throw new IllegalArgumentException("Invalid plugin runtime journal store");
         }
@@ -124,6 +132,7 @@ public final class PluginRuntimeJournalStore implements AutoCloseable {
         this.files = files;
         this.processInstanceId = processInstanceId;
         ownerThread = Thread.currentThread();
+        files.acquire();
     }
 
     public LoadResult load() throws IOException {
@@ -235,8 +244,15 @@ public final class PluginRuntimeJournalStore implements AutoCloseable {
     }
 
     @Override
-    public void close() {
+    public void close() throws IOException {
         checkOwner();
+
+        if (closed) {
+            return;
+        }
+
+        closing = true;
+        files.close();
         closed = true;
         loaded = false;
         state = null;
@@ -327,7 +343,7 @@ public final class PluginRuntimeJournalStore implements AutoCloseable {
     private void checkOpen() {
         checkOwner();
 
-        if (closed) {
+        if (closing || closed) {
             throw new IllegalStateException("Plugin runtime journal store is closed");
         }
     }
