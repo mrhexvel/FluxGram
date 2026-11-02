@@ -1,3 +1,4 @@
+import json
 import re
 import unittest
 from pathlib import Path
@@ -8,6 +9,9 @@ INSTALL_SHEET = ROOT / "TMessagesProj/src/main/java/org/telegram/ui/PluginInstal
 REPORT_VIEW = ROOT / "TMessagesProj/src/main/java/org/telegram/ui/PluginRiskReportView.java"
 STRINGS = ROOT / "TMessagesProj/src/main/res/values/strings.xml"
 STRINGS_RU = ROOT / "TMessagesProj/src/main/res/values-ru/strings.xml"
+BLOCKED_ANIMATION = ROOT / (
+    "TMessagesProj/src/main/res/raw/plugin_blocked_malicious.json"
+)
 
 
 class PluginR4SourceContractTest(unittest.TestCase):
@@ -62,6 +66,33 @@ class PluginR4SourceContractTest(unittest.TestCase):
         self.assertIn('"Risk.Highlight"', sheet)
         self.assertNotIn(
             "addHeroIcon(R.drawable.outline_shield_plain_24", sheet
+        )
+
+    def test_reputation_block_uses_distinct_theme_aware_animation(self):
+        sheet = INSTALL_SHEET.read_text()
+        animation = json.loads(BLOCKED_ANIMATION.read_text())
+
+        self.assertIn("ExternalPlugins.ReputationBlockedException", sheet)
+        self.assertIn("stateView.showReputationBlocked", sheet)
+        self.assertIn(
+            "setAnimation(R.raw.plugin_blocked_malicious, 100, 100)", sheet
+        )
+        self.assertIn('setLayerColor("Blocked.Primary", primary)', sheet)
+        self.assertIn('setLayerColor("Blocked.Accent"', sheet)
+        self.assertIn('setLayerColor("Blocked.Highlight"', sheet)
+        self.assertIn('setLayerColor("Blocked.Particles", primary)', sheet)
+        self.assertEqual(animation["w"], 128)
+        self.assertEqual(animation["h"], 128)
+        self.assertEqual(animation["fr"], 60)
+        self.assertEqual(animation["op"], 72)
+        self.assertEqual(
+            {layer["nm"] for layer in animation["layers"]},
+            {
+                "Blocked.Primary",
+                "Blocked.Accent",
+                "Blocked.Highlight",
+                "Blocked.Particles",
+            },
         )
 
     def test_sheet_clicks_use_system_respecting_haptics(self):

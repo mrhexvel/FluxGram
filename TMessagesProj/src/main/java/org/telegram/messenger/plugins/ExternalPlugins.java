@@ -15,31 +15,38 @@ import org.telegram.messenger.plugins.packages.PluginPackageValidator;
 import org.telegram.messenger.plugins.reputation.PluginReputationCoordinator;
 import org.telegram.messenger.plugins.reputation.PluginReputationCoordinators;
 import org.telegram.messenger.plugins.reputation.PluginReputationInstallPolicy;
+import org.telegram.messenger.plugins.reputation.PluginReputationPolicy;
 import org.telegram.messenger.plugins.reputation.PluginReputationQuery;
+import org.telegram.messenger.plugins.reputation.PluginReputationStartupPump;
 import org.telegram.messenger.plugins.risk.PluginRiskDiff;
 import org.telegram.messenger.plugins.risk.PluginRiskPolicy;
 import org.telegram.messenger.plugins.risk.PluginRiskReport;
 import org.telegram.messenger.plugins.signing.PluginSignerJournal;
+import org.telegram.messenger.plugins.signing.PluginSignerIdentity;
 import org.telegram.messenger.plugins.signing.PluginSignerReview;
 
 import java.io.*;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 public final class ExternalPlugins {
+    private static final long STARTUP_REPUTATION_TIMEOUT_MS = 12_000;
     private static final ChaquopyPluginPythonRiskScanner RISK_SCANNER =
             new ChaquopyPluginPythonRiskScanner();
-    private static final ExecutorService worker =
-            Executors.newSingleThreadExecutor(r -> new Thread(r, "FluxGramInstaller"));
+    private static final ScheduledExecutorService worker =
+            Executors.newSingleThreadScheduledExecutor(
+                    r -> new Thread(r, "FluxGramInstaller"));
     private static final CopyOnWriteArrayList<Runnable> listeners = new CopyOnWriteArrayList<>();
     private static final Set<String> removing = ConcurrentHashMap.newKeySet();
     private static PluginPackageStore store;
@@ -56,6 +63,15 @@ public final class ExternalPlugins {
 
     public interface Callback<T> {
         void complete(T value, Exception error);
+    }
+
+    public static final class ReputationBlockedException extends IOException {
+        public final List<String> reasons;
+
+        ReputationBlockedException(List<String> reasons) {
+            super("Plugin package is blocked by reputation");
+            this.reasons = Collections.unmodifiableList(new ArrayList<>(reasons));
+        }
     }
 
     public static final class DebugResult {
@@ -114,11 +130,29 @@ public final class ExternalPlugins {
     }
 
     public static final class IncompatiblePlugin implements Plugin {
+        public enum State {
+            INCOMPATIBLE,
+            CHECKING,
+            BLOCKED
+        }
+
         private final PluginPackageStore.Installed installed;
         private final File iconFile;
+        private final State state;
+        private final List<String> reputationReasons;
 
         IncompatiblePlugin(PluginPackageStore.Installed installed) {
+            this(installed, State.INCOMPATIBLE, Collections.emptyList());
+        }
+
+        IncompatiblePlugin(
+                PluginPackageStore.Installed installed,
+                State state,
+                List<String> reputationReasons) {
             this.installed = installed;
+            this.state = state;
+            this.reputationReasons = Collections.unmodifiableList(
+                    new ArrayList<>(reputationReasons));
 
             File resolvedIcon = null;
 
@@ -140,6 +174,14 @@ public final class ExternalPlugins {
 
         public PluginManifest getManifest() {
             return installed.manifest;
+        }
+
+        public State getState() {
+            return state;
+        }
+
+        public List<String> getReputationReasons() {
+            return reputationReasons;
         }
 
         @Override
@@ -245,7 +287,14 @@ public final class ExternalPlugins {
                             return;
                         }
 
+                        ArrayList<PluginPackageStore.Pending> reputationPending = new ArrayList<>();
+
                         for (PluginPackageStore.Pending operation : operations.values()) {
+                            if (!operation.delete && !operation.rollback && !operation.migrated) {
+                                reputationPending.add(operation);
+                                continue;
+                            }
+
                             try {
                                 recoverPendingOperation(manager, operation);
                             } catch (Exception | LinkageError error) {
@@ -256,48 +305,11 @@ public final class ExternalPlugins {
                             }
                         }
 
-                        pending = Collections.unmodifiableMap(store.pending());
-                        recordPendingErrors(store.pendingErrors(), recoveryFailed);
-
-                        LinkedHashMap<String, IncompatiblePlugin> unavailable =
-                                new LinkedHashMap<>();
-
-                        for (PluginPackageStore.Installed installed : store.list()) {
-                            if (installed.manifest.isCompatible()
-                                    && installed.signerStateError == null) {
-                                PythonPluginAdapter adapter = new PythonPluginAdapter(installed);
-
-                                if (recoveryFailed.contains(installed.manifest.id)) {
-                                    adapter.setPreflightError(
-                                            new IOException("Pending plugin recovery failed"));
-                                    manager.registerBlockedUntilRestart(adapter);
-                                    continue;
-                                }
-
-                                try {
-                                    PluginCrashRecovery.runExternal(
-                                            installed.manifest.id,
-                                            () -> PythonPluginAdapter.migrateStorage(installed));
-                                } catch (Exception | LinkageError error) {
-                                    PluginCrashRecovery.handled(error);
-                                    FileLog.e(error);
-                                    disableAfterMigrationFailure(
-                                            manager,
-                                            installed.manifest.id
-                                    );
-                                    adapter.setPreflightError(error);
-                                }
-
-                                manager.register(adapter, false);
-                            } else {
-                                unavailable.put(
-                                        installed.manifest.id,
-                                        new IncompatiblePlugin(installed));
-                                manager.clearPersistedEnabledState(installed.manifest.id);
-                            }
-                        }
-
-                        incompatible = Collections.unmodifiableMap(unavailable);
+                        recoverPendingReputation(
+                                manager,
+                                reputationPending,
+                                recoveryFailed,
+                                () -> loadInstalledWithReputation(manager, recoveryFailed));
                     } catch (Exception error) {
                         startupError = error.toString();
                         FileLog.e(error);
@@ -354,18 +366,81 @@ public final class ExternalPlugins {
             return;
         }
 
-        PluginPackageStore.Installed update = store.activatePendingUpdate(operation.id);
+        throw new IOException("Pending plugin reputation decision is required");
+    }
+
+    private static void recoverPendingReputation(
+            PluginManager manager,
+            ArrayList<PluginPackageStore.Pending> operations,
+            Set<String> recoveryFailed,
+            Runnable complete) {
+        PluginReputationStartupPump pump = new PluginReputationStartupPump(
+                (query, callback) -> PluginReputationCoordinators.get().lookup(
+                        query, worker, callback),
+                (task, delayMillis) -> {
+                    ScheduledFuture<?> future = worker.schedule(
+                            task, delayMillis, TimeUnit.MILLISECONDS);
+                    return () -> future.cancel(false);
+                },
+                STARTUP_REPUTATION_TIMEOUT_MS,
+                () -> {
+                    try {
+                        pending = Collections.unmodifiableMap(store.pending());
+                        recordPendingErrors(store.pendingErrors(), recoveryFailed);
+                    } catch (Exception error) {
+                        startupError = error.toString();
+                        FileLog.e(error);
+                    }
+
+                    complete.run();
+                });
+
+        for (PluginPackageStore.Pending operation : operations) {
+            pump.add(new PluginReputationStartupPump.Task() {
+                private PluginPackageStore.Installed update;
+                private PluginReputationQuery query;
+
+                @Override
+                public PluginReputationQuery prepare() throws Exception {
+                    update = store.activatePendingUpdate(operation.id);
+                    query = reputationQuery(update);
+                    return query;
+                }
+
+                @Override
+                public void complete(PluginReputationCoordinator.Result result) throws Exception {
+                    requireCurrentIdentity(operation.id, query);
+
+                    if (result != null
+                            && PluginReputationInstallPolicy.evaluate(result)
+                            == PluginReputationInstallPolicy.Decision.BLOCK) {
+                        rollbackPending(manager, operation);
+                        return;
+                    }
+
+                    finishPendingUpdate(manager, operation, update);
+                }
+
+                @Override
+                public void failed(Exception error) {
+                    PluginCrashRecovery.handled(error);
+                    recoveryFailed.add(operation.id);
+                    FileLog.e("FluxGram pending plugin recovery failed: "
+                            + operation.id, error);
+                }
+            });
+        }
+
+        pump.start();
+    }
+
+    private static void finishPendingUpdate(
+            PluginManager manager,
+            PluginPackageStore.Pending operation,
+            PluginPackageStore.Installed update) throws Exception {
 
         if (!update.manifest.isCompatible()) {
-            store.rollbackPending(operation.id);
-
-            if (!manager.setPersistedEnabledState(
-                    operation.id,
-                    operation.enabledBeforeUpdate)) {
-                throw new IOException("Cannot restore plugin enabled state");
-            }
-
-            store.finishPendingRollback(operation.id);
+            rollbackPending(manager, operation);
             return;
         }
 
@@ -376,15 +451,7 @@ public final class ExternalPlugins {
         } catch (Exception | LinkageError error) {
             PluginCrashRecovery.handled(error);
             FileLog.e(error);
-            store.rollbackPending(operation.id);
-
-            if (!manager.setPersistedEnabledState(
-                    operation.id,
-                    operation.enabledBeforeUpdate)) {
-                throw new IOException("Cannot restore plugin enabled state");
-            }
-
-            store.finishPendingRollback(operation.id);
+            rollbackPending(manager, operation);
             return;
         }
 
@@ -397,6 +464,204 @@ public final class ExternalPlugins {
         }
 
         store.finishPendingUpdate(operation.id);
+    }
+
+    private static void rollbackPending(
+            PluginManager manager,
+            PluginPackageStore.Pending operation) throws IOException {
+        store.rollbackPending(operation.id);
+
+        if (!manager.setPersistedEnabledState(
+                operation.id,
+                operation.enabledBeforeUpdate)) {
+            throw new IOException("Cannot restore plugin enabled state");
+        }
+
+        store.finishPendingRollback(operation.id);
+    }
+
+    private static void loadInstalledWithReputation(
+            PluginManager manager,
+            Set<String> recoveryFailed) {
+        try {
+            ArrayList<PluginPackageStore.Installed> installedPackages = store.list();
+            LinkedHashMap<String, IncompatiblePlugin> unavailable = new LinkedHashMap<>();
+            PluginReputationStartupPump pump = new PluginReputationStartupPump(
+                    (query, callback) -> PluginReputationCoordinators.get().lookup(
+                            query, worker, callback),
+                    (task, delayMillis) -> {
+                        ScheduledFuture<?> future = worker.schedule(
+                                task, delayMillis, TimeUnit.MILLISECONDS);
+                        return () -> future.cancel(false);
+                    },
+                    STARTUP_REPUTATION_TIMEOUT_MS,
+                    ExternalPlugins::changed);
+
+            for (PluginPackageStore.Installed installed : installedPackages) {
+                if (!installed.manifest.isCompatible() || installed.signerStateError != null) {
+                    unavailable.put(installed.manifest.id, new IncompatiblePlugin(installed));
+                    manager.clearPersistedEnabledState(installed.manifest.id);
+                    continue;
+                }
+
+                PluginReputationQuery query = reputationQuery(installed);
+
+                if (query == null) {
+                    registerInstalled(manager, installed, recoveryFailed);
+                    continue;
+                }
+
+                unavailable.put(
+                        installed.manifest.id,
+                        new IncompatiblePlugin(
+                                installed,
+                                IncompatiblePlugin.State.CHECKING,
+                                Collections.emptyList()));
+                pump.add(installedReputationTask(
+                        manager, installed, query, recoveryFailed));
+            }
+
+            incompatible = Collections.unmodifiableMap(unavailable);
+            changed();
+            pump.start();
+        } catch (Exception error) {
+            startupError = error.toString();
+            FileLog.e(error);
+            changed();
+        }
+    }
+
+    private static PluginReputationStartupPump.Task installedReputationTask(
+            PluginManager manager,
+            PluginPackageStore.Installed installed,
+            PluginReputationQuery query,
+            Set<String> recoveryFailed) {
+        return new PluginReputationStartupPump.Task() {
+            private boolean authenticatedBlocked;
+
+            @Override
+            public PluginReputationQuery prepare() {
+                return query;
+            }
+
+            @Override
+            public void complete(PluginReputationCoordinator.Result result) throws Exception {
+                PluginPackageStore.Installed current = requireCurrentIdentity(
+                        installed.manifest.id, query);
+                PluginReputationInstallPolicy.Decision decision = result == null
+                        ? PluginReputationInstallPolicy.Decision.ALLOW
+                        : PluginReputationInstallPolicy.evaluate(result);
+
+                if (decision == PluginReputationInstallPolicy.Decision.BLOCK) {
+                    authenticatedBlocked = true;
+                    replaceUnavailable(new IncompatiblePlugin(
+                            current,
+                            IncompatiblePlugin.State.BLOCKED,
+                            result.lookup.reasons));
+
+                    if (!manager.clearPersistedEnabledStateNow(installed.manifest.id)) {
+                        throw new IOException("Cannot clear blocked plugin enabled state");
+                    }
+                } else {
+                    removeUnavailable(installed.manifest.id);
+                    registerInstalled(manager, current, recoveryFailed);
+                }
+
+                changed();
+            }
+
+            @Override
+            public void failed(Exception error) {
+                if (authenticatedBlocked) {
+                    PluginCrashRecovery.handled(error);
+                    recoveryFailed.add(installed.manifest.id);
+                    FileLog.e("FluxGram blocked plugin state update failed: "
+                            + installed.manifest.id, error);
+                    changed();
+                    return;
+                }
+
+                try {
+                    PluginPackageStore.Installed current = requireCurrentIdentity(
+                            installed.manifest.id, query);
+                    removeUnavailable(installed.manifest.id);
+                    registerInstalled(manager, current, recoveryFailed);
+                } catch (Exception | LinkageError activationError) {
+                    PluginCrashRecovery.handled(activationError);
+                    recoveryFailed.add(installed.manifest.id);
+                    FileLog.e("FluxGram plugin startup failed: "
+                            + installed.manifest.id, activationError);
+                }
+
+                changed();
+            }
+        };
+    }
+
+    private static void registerInstalled(
+            PluginManager manager,
+            PluginPackageStore.Installed installed,
+            Set<String> recoveryFailed) {
+        PythonPluginAdapter adapter = new PythonPluginAdapter(installed);
+
+        if (recoveryFailed.contains(installed.manifest.id)) {
+            adapter.setPreflightError(new IOException("Pending plugin recovery failed"));
+            manager.registerBlockedUntilRestart(adapter);
+            return;
+        }
+
+        try {
+            PluginCrashRecovery.runExternal(
+                    installed.manifest.id,
+                    () -> PythonPluginAdapter.migrateStorage(installed));
+        } catch (Exception | LinkageError error) {
+            PluginCrashRecovery.handled(error);
+            FileLog.e(error);
+            disableAfterMigrationFailure(manager, installed.manifest.id);
+            adapter.setPreflightError(error);
+        }
+
+        manager.register(adapter, false);
+    }
+
+    private static PluginReputationQuery reputationQuery(
+            PluginPackageStore.Installed installed) {
+        if (installed.signerState != null) {
+            String keyId = installed.signerState.identity.kind
+                    == PluginSignerIdentity.Kind.SIGNED
+                    ? installed.signerState.identity.keyId : null;
+            return new PluginReputationQuery(installed.signerState.archiveSha256, keyId);
+        }
+        if (installed.riskReport != null) {
+            return new PluginReputationQuery(installed.riskReport.archiveSha256, null);
+        }
+
+        return null;
+    }
+
+    private static PluginPackageStore.Installed requireCurrentIdentity(
+            String id,
+            PluginReputationQuery query) throws IOException {
+        PluginPackageStore.Installed current = store.get(id);
+        PluginReputationQuery currentQuery = reputationQuery(current);
+
+        if (query == null ? currentQuery != null : !query.equals(currentQuery)) {
+            throw new IOException("Installed plugin identity changed during reputation check");
+        }
+
+        return current;
+    }
+
+    private static void replaceUnavailable(IncompatiblePlugin plugin) {
+        LinkedHashMap<String, IncompatiblePlugin> updated = new LinkedHashMap<>(incompatible);
+        updated.put(plugin.getId(), plugin);
+        incompatible = Collections.unmodifiableMap(updated);
+    }
+
+    private static void removeUnavailable(String id) {
+        LinkedHashMap<String, IncompatiblePlugin> updated = new LinkedHashMap<>(incompatible);
+        updated.remove(id);
+        incompatible = Collections.unmodifiableMap(updated);
     }
 
     public static String getStartupError() {
@@ -536,7 +801,7 @@ public final class ExternalPlugins {
                     completeInstall(
                             review,
                             pluginId,
-                            new IOException("Plugin package is blocked by reputation"),
+                            new ReputationBlockedException(result.lookup.reasons),
                             callback);
                     return;
                 }
@@ -876,11 +1141,12 @@ public final class ExternalPlugins {
         LinkedHashMap<String, IncompatiblePlugin> unavailable = new LinkedHashMap<>();
 
         for (PluginPackageStore.Installed installed : store.list()) {
-            if (installed.manifest.isCompatible()) {
-                manager.register(new PythonPluginAdapter(installed), false);
-            } else {
-                unavailable.put(installed.manifest.id, new IncompatiblePlugin(installed));
-            }
+            unavailable.put(installed.manifest.id, new IncompatiblePlugin(
+                    installed,
+                    installed.manifest.isCompatible()
+                            ? IncompatiblePlugin.State.CHECKING
+                            : IncompatiblePlugin.State.INCOMPATIBLE,
+                    Collections.emptyList()));
         }
 
         incompatible = Collections.unmodifiableMap(unavailable);

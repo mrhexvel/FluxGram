@@ -11344,6 +11344,10 @@
     <string name="FluxGramPluginError">Plugin operation failed</string>
     <string name="FluxGramPluginInstalled">Plugin installed</string>
     <string name="FluxGramPluginChecking">Checking plugin…</string>
+    <string name="FluxGramPluginReputationChecking">Checking reputation…</string>
+    <string name="FluxGramPluginReputationBlockedArchive">Blocked: this plugin version is known to be malicious</string>
+    <string name="FluxGramPluginReputationBlockedKey">Blocked: the developer key has been revoked</string>
+    <string name="FluxGramPluginReputationBlockedBoth">Blocked: this plugin version is malicious and its developer key has been revoked</string>
     <string name="FluxGramPluginInstalling">Installing plugin…</string>
     <string name="FluxGramPluginLoadFailed">Could not start the plugin. It has been disabled. Details in Logcat: FluxGramPython.</string>
     <string name="FluxGramPluginIncompatible">Plugin disabled: requires SDK %1$d.%2$d, but FluxGram provides SDK %3$d.%4$d.</string>

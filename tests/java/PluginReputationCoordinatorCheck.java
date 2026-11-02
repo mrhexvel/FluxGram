@@ -25,6 +25,7 @@ public final class PluginReputationCoordinatorCheck {
         storeLoadRetriesAndCallbackErrorsReleaseSlots();
         publicLimitsAreExactAndCancellationReleasesCapacity();
         installPolicyWaitsAndBlocksOnlyAuthenticatedEvidence();
+        startupPumpWaitsAndProcessesSequentially();
     }
 
     private static void disabledDoesNotAllocate() {
@@ -365,6 +366,232 @@ public final class PluginReputationCoordinatorCheck {
                 == PluginReputationInstallPolicy.Decision.ALLOW);
     }
 
+    private static void startupPumpWaitsAndProcessesSequentially() {
+        ArrayDeque<PluginReputationCoordinator.Callback> callbacks = new ArrayDeque<>();
+        ManualStartupScheduler scheduler = new ManualStartupScheduler();
+        int[] started = {0};
+        int[] completed = {0};
+        int[] drained = {0};
+        PluginReputationStartupPump pump = new PluginReputationStartupPump(
+                (query, callback) -> {
+                    started[0]++;
+                    callbacks.addLast(callback);
+                    require(callbacks.size() == 1);
+                    return new FakeRequest();
+                },
+                scheduler,
+                100,
+                () -> drained[0]++);
+
+        for (int index = 0; index < 40; index++) {
+            PluginReputationQuery query = query(index + 1);
+            pump.add(new PluginReputationStartupPump.Task() {
+                @Override
+                public PluginReputationQuery prepare() {
+                    return query;
+                }
+
+                @Override
+                public void complete(PluginReputationCoordinator.Result result) {
+                    require(result.terminal);
+                    completed[0]++;
+                }
+
+                @Override
+                public void failed(Exception error) {
+                    throw new AssertionError(error);
+                }
+            });
+        }
+
+        pump.start();
+        require(started[0] == 1);
+        PluginReputationCoordinator.Callback first = callbacks.peekFirst();
+        first.onResult(startupResult(query(1), false));
+        require(started[0] == 1);
+        require(completed[0] == 0);
+        require(scheduler.activeCount() == 1);
+
+        while (!callbacks.isEmpty()) {
+            PluginReputationCoordinator.Callback callback = callbacks.removeFirst();
+            callback.onResult(startupResult(query(completed[0] + 1), true));
+        }
+
+        require(started[0] == 40);
+        require(completed[0] == 40);
+        require(drained[0] == 1);
+
+        int[] operationalAllow = {0};
+        PluginReputationStartupPump failedLookup = new PluginReputationStartupPump(
+                (query, callback) -> {
+                    throw new IllegalStateException("unavailable");
+                },
+                new ManualStartupScheduler(),
+                100,
+                () -> { });
+        failedLookup.add(new PluginReputationStartupPump.Task() {
+            @Override
+            public PluginReputationQuery prepare() {
+                return QUERY;
+            }
+
+            @Override
+            public void complete(PluginReputationCoordinator.Result result) {
+                require(result == null);
+                operationalAllow[0]++;
+            }
+
+            @Override
+            public void failed(Exception error) {
+                throw new AssertionError(error);
+            }
+        });
+        failedLookup.start();
+        require(operationalAllow[0] == 1);
+
+        startupPumpTimeoutIsBounded();
+        startupPumpAppliesTerminalDecisionOnce();
+    }
+
+    private static void startupPumpTimeoutIsBounded() {
+        ArrayDeque<PluginReputationCoordinator.Callback> callbacks = new ArrayDeque<>();
+        ArrayDeque<FakeRequest> requests = new ArrayDeque<>();
+        ManualStartupScheduler scheduler = new ManualStartupScheduler();
+        ArrayList<PluginReputationCoordinator.Result> completed = new ArrayList<>();
+        PluginReputationStartupPump pump = new PluginReputationStartupPump(
+                (query, callback) -> {
+                    FakeRequest request = new FakeRequest();
+                    callbacks.addLast(callback);
+                    requests.addLast(request);
+                    return request;
+                },
+                scheduler,
+                100,
+                () -> { });
+
+        for (int index = 0; index < 2; index++) {
+            PluginReputationQuery query = query(index + 10);
+            pump.add(recordingTask(query, completed));
+        }
+
+        pump.start();
+        PluginReputationCoordinator.Callback late = callbacks.removeFirst();
+        FakeRequest timedOut = requests.removeFirst();
+        scheduler.runNext();
+        require(timedOut.cancelled);
+        require(completed.size() == 1 && completed.get(0) == null);
+        require(callbacks.size() == 1);
+
+        late.onResult(startupResult(query(10), true));
+        require(completed.size() == 1);
+
+        PluginReputationCoordinator.Callback terminal = callbacks.removeFirst();
+        terminal.onResult(startupResult(query(11), true));
+        require(completed.size() == 2 && completed.get(1) != null);
+        require(scheduler.activeCount() == 0);
+        scheduler.runAll();
+        require(completed.size() == 2);
+    }
+
+    private static void startupPumpAppliesTerminalDecisionOnce() {
+        ArrayDeque<PluginReputationCoordinator.Callback> callbacks = new ArrayDeque<>();
+        ManualStartupScheduler scheduler = new ManualStartupScheduler();
+        int[] blocked = {0};
+        int[] allowed = {0};
+        PluginReputationStartupPump pump = new PluginReputationStartupPump(
+                (query, callback) -> {
+                    callbacks.addLast(callback);
+                    return new FakeRequest();
+                },
+                scheduler,
+                100,
+                () -> { });
+
+        for (int index = 0; index < 2; index++) {
+            PluginReputationQuery query = query(index + 20);
+            pump.add(new PluginReputationStartupPump.Task() {
+                @Override
+                public PluginReputationQuery prepare() {
+                    return query;
+                }
+
+                @Override
+                public void complete(PluginReputationCoordinator.Result result) {
+                    if (PluginReputationInstallPolicy.evaluate(result)
+                            == PluginReputationInstallPolicy.Decision.BLOCK) {
+                        blocked[0]++;
+                    } else {
+                        allowed[0]++;
+                    }
+                }
+
+                @Override
+                public void failed(Exception error) {
+                    throw new AssertionError(error);
+                }
+            });
+        }
+
+        PluginReputationCache.LookupResult block = new PluginReputationCache.LookupResult(
+                PluginReputationPolicy.Decision.BLOCK,
+                true,
+                false,
+                true,
+                false,
+                java.util.Collections.singletonList(PluginReputationPolicy.BLOCK_ARCHIVE));
+        pump.start();
+        PluginReputationCoordinator.Callback first = callbacks.removeFirst();
+        PluginReputationCoordinator.Result blockResult = new PluginReputationCoordinator.Result(
+                query(20),
+                block,
+                PluginReputationCoordinator.Stage.REFRESH,
+                PluginReputationCoordinator.Outcome.REFRESH_UNCHANGED,
+                true);
+        first.onResult(blockResult);
+        first.onResult(blockResult);
+        callbacks.removeFirst().onResult(startupResult(query(21), true));
+
+        require(blocked[0] == 1);
+        require(allowed[0] == 1);
+        require(scheduler.activeCount() == 0);
+    }
+
+    private static PluginReputationStartupPump.Task recordingTask(
+            PluginReputationQuery query,
+            List<PluginReputationCoordinator.Result> completed) {
+        return new PluginReputationStartupPump.Task() {
+            @Override
+            public PluginReputationQuery prepare() {
+                return query;
+            }
+
+            @Override
+            public void complete(PluginReputationCoordinator.Result result) {
+                completed.add(result);
+            }
+
+            @Override
+            public void failed(Exception error) {
+                throw new AssertionError(error);
+            }
+        };
+    }
+
+    private static PluginReputationCoordinator.Result startupResult(
+            PluginReputationQuery query,
+            boolean terminal) {
+        return new PluginReputationCoordinator.Result(
+                query,
+                PluginReputationCache.unavailable(),
+                terminal
+                        ? PluginReputationCoordinator.Stage.REFRESH
+                        : PluginReputationCoordinator.Stage.CACHE,
+                terminal
+                        ? PluginReputationCoordinator.Outcome.NETWORK_UNAVAILABLE
+                        : PluginReputationCoordinator.Outcome.CACHE_STALE,
+                terminal);
+    }
+
     private static PluginReputationCoordinator coordinator(
             FakeStore store,
             FakeNetwork network,
@@ -459,6 +686,77 @@ public final class PluginReputationCoordinatorCheck {
             Runnable task = tasks.pollFirst();
             require(task != null);
             task.run();
+        }
+    }
+
+    private static final class FakeRequest implements PluginReputationCoordinator.Request {
+        private boolean cancelled;
+
+        @Override
+        public void cancel() {
+            cancelled = true;
+        }
+
+        @Override
+        public boolean isCancelled() {
+            return cancelled;
+        }
+    }
+
+    private static final class ManualStartupScheduler
+            implements PluginReputationStartupPump.Scheduler {
+        private final ArrayDeque<ScheduledTask> tasks = new ArrayDeque<>();
+
+        @Override
+        public PluginReputationStartupPump.Deadline schedule(
+                Runnable task,
+                long delayMillis) {
+            require(delayMillis == 100);
+            ScheduledTask scheduled = new ScheduledTask(task);
+            tasks.addLast(scheduled);
+            return () -> scheduled.cancelled = true;
+        }
+
+        private int activeCount() {
+            int count = 0;
+
+            for (ScheduledTask task : tasks) {
+                if (!task.cancelled) {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+
+        private void runNext() {
+            ScheduledTask task;
+
+            do {
+                task = tasks.pollFirst();
+                require(task != null);
+            } while (task.cancelled);
+
+            task.runnable.run();
+        }
+
+        private void runAll() {
+            while (!tasks.isEmpty()) {
+                ScheduledTask task = tasks.pollFirst();
+
+                if (!task.cancelled) {
+                    task.runnable.run();
+                }
+            }
+        }
+    }
+
+    private static final class ScheduledTask {
+        private final Runnable runnable;
+        private boolean cancelled;
+
+        private ScheduledTask(Runnable runnable) {
+            this.runnable = runnable;
         }
     }
 

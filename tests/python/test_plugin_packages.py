@@ -1925,7 +1925,7 @@ class PluginStoreTest(unittest.TestCase):
             continuation,
             source.index("PythonPluginAdapter.migrateStorage(installed)", continuation),
         )
-        self.assertEqual(1, source.count("PluginReputationCoordinators.get()"))
+        self.assertEqual(3, source.count("PluginReputationCoordinators.get()"))
         self.assertEqual(1, source.count("review.close();"))
 
     def test_install_sheet_enforces_risk_decisions(self):

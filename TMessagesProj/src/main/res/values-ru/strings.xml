@@ -307,6 +307,10 @@
     <string name="FluxGramPluginError">Не удалось выполнить действие с плагином</string>
     <string name="FluxGramPluginInstalled">Плагин установлен</string>
     <string name="FluxGramPluginChecking">Проверка плагина…</string>
+    <string name="FluxGramPluginReputationChecking">Проверка репутации…</string>
+    <string name="FluxGramPluginReputationBlockedArchive">Заблокирован: эта версия плагина признана вредоносной</string>
+    <string name="FluxGramPluginReputationBlockedKey">Заблокирован: ключ разработчика отозван</string>
+    <string name="FluxGramPluginReputationBlockedBoth">Заблокирован: версия плагина признана вредоносной, а ключ разработчика отозван</string>
     <string name="FluxGramPluginInstalling">Установка плагина…</string>
     <string name="FluxGramPluginLoadFailed">Не удалось запустить плагин. Он отключён. Подробности в Logcat: FluxGramPython.</string>
     <string name="FluxGramPluginIncompatible">Плагин отключён: требуется SDK %1$d.%2$d, а FluxGram предоставляет SDK %3$d.%4$d.</string>

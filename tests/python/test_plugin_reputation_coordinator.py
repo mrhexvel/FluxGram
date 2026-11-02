@@ -38,6 +38,7 @@ class PluginReputationCoordinatorTest(unittest.TestCase):
                 REPUTATION / "PluginReputationQuery.java",
                 REPUTATION / "PluginReputationCoordinator.java",
                 REPUTATION / "PluginReputationInstallPolicy.java",
+                REPUTATION / "PluginReputationStartupPump.java",
                 ROOT / "tests/java/PluginReputationCoordinatorCheck.java",
             ]
             subprocess.run(
@@ -79,6 +80,7 @@ class PluginReputationCoordinatorTest(unittest.TestCase):
             "PluginReputationCoordinators.get().lookup(query, worker, result ->",
             external_plugins,
         )
+        self.assertEqual(3, external_plugins.count("PluginReputationCoordinators.get().lookup("))
 
         consumers = []
         for path in java_root.rglob("*.java"):

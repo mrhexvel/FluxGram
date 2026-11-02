@@ -190,6 +190,8 @@ tasks.register('verifyConfig') {{
                     "TMessagesProj/src/main/java/org/telegram/messenger/plugins/ExternalPlugins.java",
                     "TMessagesProj/src/main/java/org/telegram/messenger/plugins/reputation/"
                     "PluginReputationCoordinator.java",
+                    "TMessagesProj/src/main/java/org/telegram/messenger/plugins/reputation/"
+                    "PluginReputationStartupPump.java",
                 ]
             elif class_name in {
                 "PluginReputationEndpoint",

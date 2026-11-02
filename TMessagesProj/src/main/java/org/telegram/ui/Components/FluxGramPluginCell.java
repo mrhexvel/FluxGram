@@ -17,6 +17,8 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.plugins.Plugin;
 import org.telegram.ui.ActionBar.Theme;
 
+import java.util.function.Predicate;
+
 public final class FluxGramPluginCell extends LinearLayout {
     public FluxGramPluginCell(
             Context context,
@@ -24,10 +26,12 @@ public final class FluxGramPluginCell extends LinearLayout {
             Plugin plugin,
             String name,
             String details,
+            String status,
+            boolean statusError,
             String description,
             boolean checked,
             boolean available,
-            Runnable toggle,
+            Predicate<Boolean> toggle,
             View.OnClickListener openActions) {
         super(context);
         setOrientation(VERTICAL);
@@ -60,6 +64,7 @@ public final class FluxGramPluginCell extends LinearLayout {
         row.setOrientation(HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setContentDescription(name + ", " + details
+                + (status == null || status.isEmpty() ? "" : ". " + status)
                 + (description == null || description.isEmpty() ? "" : ". " + description));
         row.setFocusable(true);
         row.setBackground(Theme.getSelectorDrawable(false));
@@ -85,7 +90,7 @@ public final class FluxGramPluginCell extends LinearLayout {
         LinearLayout labels = new LinearLayout(context);
         labels.setOrientation(VERTICAL);
         labels.setGravity(Gravity.CENTER_VERTICAL);
-        labels.setAlpha(available ? 1f : 0.5f);
+        labels.setAlpha(available || status != null ? 1f : 0.5f);
 
         TextView title = new TextView(context);
         title.setText(name);
@@ -110,6 +115,36 @@ public final class FluxGramPluginCell extends LinearLayout {
         labels.addView(subtitle, LayoutHelper.createLinear(
                 LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 2, 0, 0));
 
+        if (status != null && !status.isEmpty()) {
+            LinearLayout statusRow = new LinearLayout(context);
+            statusRow.setOrientation(HORIZONTAL);
+            statusRow.setGravity(Gravity.CENTER_VERTICAL);
+
+            int statusColor = Theme.getColor(
+                    statusError ? Theme.key_text_RedRegular : Theme.key_color_orange,
+                    provider);
+            ImageView statusIcon = new ImageView(context);
+            statusIcon.setImageResource(statusError
+                    ? R.drawable.msg_warning : R.drawable.msg_recent);
+            statusIcon.setColorFilter(new PorterDuffColorFilter(
+                    statusColor, PorterDuff.Mode.SRC_IN));
+            statusIcon.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+            statusRow.addView(statusIcon, LayoutHelper.createLinear(14, 14));
+
+            TextView statusText = new TextView(context);
+            statusText.setText(status);
+            statusText.setTextSize(13);
+            statusText.setTextColor(statusColor);
+            statusText.setSingleLine(true);
+            statusText.setEllipsize(TextUtils.TruncateAt.END);
+            statusText.setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT);
+            statusText.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+            statusRow.addView(statusText, LayoutHelper.createLinear(
+                    0, LayoutHelper.WRAP_CONTENT, 1, 4, 0, 0));
+            labels.addView(statusRow, LayoutHelper.createLinear(
+                    LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 2, 0, 0));
+        }
+
         LinearLayout.LayoutParams labelsParams = new LinearLayout.LayoutParams(
                 0, LayoutHelper.WRAP_CONTENT, 1);
         labelsParams.setMarginEnd(AndroidUtilities.dp(8));
@@ -125,8 +160,11 @@ public final class FluxGramPluginCell extends LinearLayout {
                 return;
             }
 
-            switchView.setChecked(!switchView.isChecked(), true);
-            toggle.run();
+            boolean next = !switchView.isChecked();
+
+            if (toggle.test(next)) {
+                switchView.setChecked(next, true);
+            }
         };
         row.setOnClickListener(toggleListener);
         switchView.setOnClickListener(toggleListener);

@@ -28,6 +28,7 @@ import org.telegram.messenger.plugins.ExternalPlugins;
 import org.telegram.messenger.plugins.PluginManager;
 import org.telegram.messenger.plugins.packages.PluginManifest;
 import org.telegram.messenger.plugins.packages.PluginPackageStore;
+import org.telegram.messenger.plugins.reputation.PluginReputationPolicy;
 import org.telegram.messenger.plugins.risk.PluginRiskPolicy;
 import org.telegram.messenger.plugins.signing.PluginSignerTransition;
 import org.telegram.ui.ActionBar.AlertDialog;
@@ -620,7 +621,15 @@ public final class PluginInstallSheet {
 
                     if (error != null) {
                         sheet.setTerminal(true);
-                        stateView.showError(error.getMessage(), sheet::dismiss);
+
+                        if (error instanceof ExternalPlugins.ReputationBlockedException) {
+                            stateView.showReputationBlocked(
+                                    reputationBlockedMessage(
+                                            (ExternalPlugins.ReputationBlockedException) error),
+                                    sheet::dismiss);
+                        } else {
+                            stateView.showError(error.getMessage(), sheet::dismiss);
+                        }
                     } else {
                         ExternalPlugins.changed();
                         sheet.setTerminal(true);
@@ -846,6 +855,18 @@ public final class PluginInstallSheet {
         return message;
     }
 
+    private CharSequence reputationBlockedMessage(
+            ExternalPlugins.ReputationBlockedException error) {
+        boolean archive = error.reasons.contains(PluginReputationPolicy.BLOCK_ARCHIVE);
+        boolean key = error.reasons.contains(PluginReputationPolicy.BLOCK_KEY);
+
+        return LocaleController.getString(archive && key
+                ? R.string.FluxGramPluginReputationBlockedBoth
+                : key
+                ? R.string.FluxGramPluginReputationBlockedKey
+                : R.string.FluxGramPluginReputationBlockedArchive);
+    }
+
     private CharSequence confirmationMessage(ExternalPlugins.Review review) {
         StringBuilder message = new StringBuilder();
 
@@ -1015,6 +1036,14 @@ public final class PluginInstallSheet {
             addSecondaryButton(LocaleController.getString(R.string.Close), onClose);
         }
 
+        void showReputationBlocked(CharSequence message, Runnable onClose) {
+            reset(false, null, onClose);
+            addBlockedAnimation();
+            addTitle(LocaleController.getString(R.string.FluxGramPluginRiskBlocked));
+            addMessage(message);
+            addPrimaryButton(LocaleController.getString(R.string.Close), onClose);
+        }
+
         void showError(String error, Runnable onClose) {
             reset(false, null, onClose);
             addHeroIcon(R.drawable.msg_warning, Theme.key_text_RedRegular);
@@ -1086,6 +1115,21 @@ public final class PluginInstallSheet {
             animation.setLayerColor(
                     "Risk.Highlight",
                     fragment.getThemedColor(Theme.key_dialogBackground));
+
+            playAnimation(animation);
+            addView(animation, LayoutHelper.createLinear(
+                    100, 100, Gravity.CENTER_HORIZONTAL, 0, 10, 0, 4));
+        }
+
+        private void addBlockedAnimation() {
+            RLottieImageView animation = new RLottieImageView(context);
+            animation.setAnimation(R.raw.plugin_blocked_malicious, 100, 100);
+            int primary = fragment.getThemedColor(Theme.key_text_RedBold);
+            animation.setLayerColor("Blocked.Primary", primary);
+            animation.setLayerColor("Blocked.Accent", Theme.multAlpha(primary, 0.72f));
+            animation.setLayerColor("Blocked.Highlight", fragment.getThemedColor(
+                    Theme.key_dialogBackground));
+            animation.setLayerColor("Blocked.Particles", primary);
 
             playAnimation(animation);
             addView(animation, LayoutHelper.createLinear(

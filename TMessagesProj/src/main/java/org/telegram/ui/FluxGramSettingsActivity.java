@@ -45,6 +45,7 @@ import org.telegram.messenger.plugins.ExternalPlugins;
 import org.telegram.messenger.plugins.Plugin;
 import org.telegram.messenger.plugins.PluginDeveloperBridge;
 import org.telegram.messenger.plugins.PluginManager;
+import org.telegram.messenger.plugins.reputation.PluginReputationPolicy;
 import org.telegram.messenger.plugins.PythonPluginAdapter;
 import org.telegram.messenger.plugins.packages.PluginManifest;
 import org.telegram.messenger.plugins.packages.PluginPackageStore;
@@ -934,7 +935,33 @@ public class FluxGramSettingsActivity extends BaseFragment {
 
             PluginPackageStore.Pending pending = ExternalPlugins.getPending(plugin.getId());
             String description = plugin.getDescription();
-            boolean incompatible = plugin instanceof ExternalPlugins.IncompatiblePlugin;
+            ExternalPlugins.IncompatiblePlugin metadataPlugin =
+                    plugin instanceof ExternalPlugins.IncompatiblePlugin
+                            ? (ExternalPlugins.IncompatiblePlugin) plugin : null;
+            boolean metadataOnly = metadataPlugin != null;
+            boolean incompatible = metadataOnly
+                    && metadataPlugin.getState()
+                    == ExternalPlugins.IncompatiblePlugin.State.INCOMPATIBLE;
+            String status = null;
+            boolean statusError = false;
+
+            if (metadataOnly && metadataPlugin.getState()
+                    == ExternalPlugins.IncompatiblePlugin.State.CHECKING) {
+                status = LocaleController.getString(
+                        R.string.FluxGramPluginReputationChecking);
+            } else if (metadataOnly && metadataPlugin.getState()
+                    == ExternalPlugins.IncompatiblePlugin.State.BLOCKED) {
+                boolean archive = metadataPlugin.getReputationReasons().contains(
+                        PluginReputationPolicy.BLOCK_ARCHIVE);
+                boolean key = metadataPlugin.getReputationReasons().contains(
+                        PluginReputationPolicy.BLOCK_KEY);
+                status = LocaleController.getString(archive && key
+                        ? R.string.FluxGramPluginReputationBlockedBoth
+                        : key
+                        ? R.string.FluxGramPluginReputationBlockedKey
+                        : R.string.FluxGramPluginReputationBlockedArchive);
+                statusError = true;
+            }
 
             if (pending != null) {
                 description += "\n\n" + LocaleController.getString(pending.delete
@@ -953,7 +980,7 @@ public class FluxGramSettingsActivity extends BaseFragment {
 
             if (incompatible) {
                 PluginManifest manifest =
-                        ((ExternalPlugins.IncompatiblePlugin) plugin).getManifest();
+                        metadataPlugin.getManifest();
                 if (manifest.javaModule != null && !manifest.javaModule.isCompatible()) {
                     description += "\n\n" + LocaleController.formatString(
                             "FluxGramPluginJavaIncompatible",
@@ -976,17 +1003,17 @@ public class FluxGramSettingsActivity extends BaseFragment {
             FluxGramPluginCell cell = new FluxGramPluginCell(
                     getParentActivity(), getResourceProvider(), plugin, plugin.getName(),
                     LocaleController.getString(R.string.FluxGramPluginVersion) + " " + plugin.getVersion(),
-                    description, !incompatible && manager.isEnabled(plugin.getId()),
-                    !incompatible && pending == null && !ExternalPlugins.isRemoving(plugin.getId())
+                    status, statusError, description,
+                    !metadataOnly && manager.isEnabled(plugin.getId()),
+                    !metadataOnly && pending == null && !ExternalPlugins.isRemoving(plugin.getId())
                             && !(plugin instanceof PythonPluginAdapter
                             && ((PythonPluginAdapter) plugin).isStoppingForRemoval()),
-                    incompatible ? null
-                            : () -> manager.setEnabled(
-                                    plugin.getId(), !manager.isEnabled(plugin.getId())),
+                    metadataOnly ? null
+                            : enabled -> manager.setEnabled(plugin.getId(), enabled),
                     view -> showPluginActions(
                             view,
                             plugin,
-                            incompatible,
+                            metadataOnly,
                             external && pending == null
                                     && !ExternalPlugins.isRemoving(plugin.getId())));
             items.add(UItem.asCustom(cell, LayoutHelper.WRAP_CONTENT));
@@ -997,11 +1024,11 @@ public class FluxGramSettingsActivity extends BaseFragment {
     private void showPluginActions(
             View anchor,
             Plugin plugin,
-            boolean incompatible,
+            boolean metadataOnly,
             boolean canDelete) {
         ItemOptions options = ItemOptions.makeOptions(this, anchor);
 
-        if (!incompatible) {
+        if (!metadataOnly) {
             options.add(
                     R.drawable.msg_settings,
                     LocaleController.getString(R.string.Settings),
