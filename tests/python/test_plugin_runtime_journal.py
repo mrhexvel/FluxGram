@@ -17,7 +17,9 @@ class PluginRuntimeJournalTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="plugin-runtime-journal-") as output:
             sources = [
                 JOURNAL / "PluginRuntimeJournalCatalog.java",
+                JOURNAL / "PluginRuntimeJournalCollector.java",
                 JOURNAL / "PluginRuntimeJournalEvent.java",
+                JOURNAL / "PluginRuntimeJournalInput.java",
                 JOURNAL / "PluginRuntimeJournalSnapshot.java",
                 ROOT / "tests/java/PluginRuntimeJournalCheck.java",
             ]
@@ -63,6 +65,19 @@ class PluginRuntimeJournalTest(unittest.TestCase):
         self.assertIn("MANAGED_HOOK", source)
         self.assertIn("MANAGED_STORAGE", source)
         self.assertIn("TYPED_SUBSCRIPTION", source)
+
+    def test_collector_is_bounded_and_nonblocking_for_producers(self):
+        source = (JOURNAL / "PluginRuntimeJournalCollector.java").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("MAX_PENDING_EVENTS = 256", source)
+        self.assertIn("MAX_BATCH_EVENTS = 64", source)
+        self.assertIn("queueLock.tryLock()", source)
+        self.assertNotIn("queueLock.lockInterruptibly()", source)
+        self.assertNotIn("BlockingQueue", source)
+        self.assertNotIn(".put(", source)
+        self.assertNotIn(".take(", source)
 
 
 if __name__ == "__main__":

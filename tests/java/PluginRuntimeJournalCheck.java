@@ -1,11 +1,16 @@
 import org.telegram.messenger.plugins.journal.PluginRuntimeJournalCatalog;
+import org.telegram.messenger.plugins.journal.PluginRuntimeJournalCollector;
 import org.telegram.messenger.plugins.journal.PluginRuntimeJournalEvent;
+import org.telegram.messenger.plugins.journal.PluginRuntimeJournalInput;
 import org.telegram.messenger.plugins.journal.PluginRuntimeJournalSnapshot;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.security.MessageDigest;
 import java.util.Arrays;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 public final class PluginRuntimeJournalCheck {
     private static final String ARCHIVE = repeat("ab", 32);
@@ -19,6 +24,12 @@ public final class PluginRuntimeJournalCheck {
         malformedSnapshots();
         retentionAndCounters();
         immutability();
+        collectorFlow();
+        collectorOverflow();
+        collectorConcurrentProducers();
+        collectorSequenceFailure();
+        collectorOwnsConsumerThread();
+        collectorClose();
     }
 
     private static void catalogIsStable() {
@@ -357,6 +368,173 @@ public final class PluginRuntimeJournalCheck {
         }
     }
 
+    private static void collectorFlow() {
+        PluginRuntimeJournalCollector collector = new PluginRuntimeJournalCollector(
+                17,
+                10);
+
+        require(collector.offer(input(1)) == PluginRuntimeJournalCollector.OfferResult.ACCEPTED);
+        require(collector.offer(input(2)) == PluginRuntimeJournalCollector.OfferResult.ACCEPTED);
+        require(collector.offer(input(3)) == PluginRuntimeJournalCollector.OfferResult.ACCEPTED);
+        require(collector.pendingCount() == 3);
+
+        PluginRuntimeJournalCollector.Batch batch = collector.drain();
+        require(batch.events.size() == 3);
+        require(batch.droppedEvents == 0);
+        require(batch.events.get(0).sequence == 10);
+        require(batch.events.get(1).sequence == 11);
+        require(batch.events.get(2).sequence == 12);
+        require(batch.events.get(0).monotonicTimeMillis
+                <= batch.events.get(1).monotonicTimeMillis);
+        require(batch.events.get(1).monotonicTimeMillis
+                <= batch.events.get(2).monotonicTimeMillis);
+        require(batch.events.get(0).processInstanceId == 17);
+        require(collector.pendingCount() == 0);
+
+        PluginRuntimeJournalSnapshot snapshot = PluginRuntimeJournalSnapshot.empty();
+
+        for (PluginRuntimeJournalEvent event : batch.events) {
+            snapshot = snapshot.append(event);
+        }
+
+        require(snapshot.events.size() == 3);
+        expectUnsupported(() -> batch.events.clear());
+        collector.close();
+    }
+
+    private static void collectorOverflow() {
+        PluginRuntimeJournalCollector collector = new PluginRuntimeJournalCollector(
+                19,
+                1);
+
+        for (int i = 0; i < PluginRuntimeJournalCollector.MAX_PENDING_EVENTS; i++) {
+            require(collector.offer(input(i + 1))
+                    == PluginRuntimeJournalCollector.OfferResult.ACCEPTED);
+        }
+
+        require(collector.offer(input(999))
+                == PluginRuntimeJournalCollector.OfferResult.DROPPED_FULL);
+        require(collector.pendingCount() == PluginRuntimeJournalCollector.MAX_PENDING_EVENTS);
+
+        int drained = 0;
+        long dropped = 0;
+
+        while (collector.pendingCount() > 0) {
+            PluginRuntimeJournalCollector.Batch batch = collector.drain();
+            require(batch.events.size() <= PluginRuntimeJournalCollector.MAX_BATCH_EVENTS);
+            drained += batch.events.size();
+            dropped += batch.droppedEvents;
+        }
+
+        require(drained == PluginRuntimeJournalCollector.MAX_PENDING_EVENTS);
+        require(dropped == 1);
+        collector.close();
+    }
+
+    private static void collectorConcurrentProducers() throws Exception {
+        int producerCount = 8;
+        int offersPerProducer = 1000;
+        CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch done = new CountDownLatch(producerCount);
+        PluginRuntimeJournalCollector collector = new PluginRuntimeJournalCollector(
+                21,
+                1);
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+
+        for (int producerIndex = 0; producerIndex < producerCount; producerIndex++) {
+            final int currentProducer = producerIndex;
+            Thread producer = new Thread(() -> {
+                try {
+                    require(start.await(5, TimeUnit.SECONDS));
+
+                    for (int i = 0; i < offersPerProducer; i++) {
+                        collector.offer(input(currentProducer + 1));
+                    }
+                } catch (Throwable error) {
+                    failure.compareAndSet(null, error);
+                } finally {
+                    done.countDown();
+                }
+            });
+            producer.start();
+        }
+
+        start.countDown();
+        require(done.await(10, TimeUnit.SECONDS));
+        require(failure.get() == null);
+
+        int accepted = 0;
+        long dropped = 0;
+
+        while (collector.pendingCount() > 0) {
+            PluginRuntimeJournalCollector.Batch batch = collector.drain();
+            accepted += batch.events.size();
+            dropped += batch.droppedEvents;
+        }
+
+        require(accepted + dropped == (long) producerCount * offersPerProducer);
+        collector.close();
+    }
+
+    private static void collectorSequenceFailure() {
+
+        PluginRuntimeJournalCollector sequence = new PluginRuntimeJournalCollector(
+                25,
+                Long.MAX_VALUE);
+        require(sequence.offer(input(1)) == PluginRuntimeJournalCollector.OfferResult.ACCEPTED);
+        require(sequence.offer(input(2))
+                == PluginRuntimeJournalCollector.OfferResult.DROPPED_SEQUENCE_EXHAUSTED);
+
+        PluginRuntimeJournalCollector.Batch sequenceBatch = sequence.drain();
+        require(sequenceBatch.events.size() == 1);
+        require(sequenceBatch.events.get(0).sequence == Long.MAX_VALUE);
+        require(sequenceBatch.droppedEvents == 1);
+        sequence.close();
+    }
+
+    private static void collectorOwnsConsumerThread() throws Exception {
+        PluginRuntimeJournalCollector collector = new PluginRuntimeJournalCollector(26, 1);
+        require(collector.offer(input(1)) == PluginRuntimeJournalCollector.OfferResult.ACCEPTED);
+        collector.drain();
+        AtomicReference<Throwable> result = new AtomicReference<>();
+        Thread otherConsumer = new Thread(() -> {
+            try {
+                collector.drain();
+            } catch (Throwable error) {
+                result.set(error);
+            }
+        });
+        otherConsumer.start();
+        otherConsumer.join(5000);
+        require(result.get() instanceof IllegalStateException);
+        collector.close();
+    }
+
+    private static void collectorClose() {
+        PluginRuntimeJournalCollector collector = new PluginRuntimeJournalCollector(
+                27,
+                1);
+        require(collector.offer(input(1)) == PluginRuntimeJournalCollector.OfferResult.ACCEPTED);
+        collector.close();
+        collector.close();
+        require(collector.isClosed());
+        require(collector.pendingCount() == 0);
+        require(collector.drain().isEmpty());
+        require(collector.offer(input(2))
+                == PluginRuntimeJournalCollector.OfferResult.REJECTED_CLOSED);
+    }
+
+    private static PluginRuntimeJournalInput input(long runtimeInstanceId) {
+        return new PluginRuntimeJournalInput(
+                runtimeInstanceId,
+                "example.plugin",
+                ARCHIVE,
+                1,
+                PluginRuntimeJournalCatalog.Kind.RUNTIME_GENERATION_RUNNING,
+                null,
+                0);
+    }
+
     private static PluginRuntimeJournalEvent event(
             long sequence,
             long runtime,
@@ -454,6 +632,16 @@ public final class PluginRuntimeJournalCheck {
             runnable.run();
             throw new AssertionError("Expected IOException");
         } catch (IOException expected) {
+        } catch (Exception error) {
+            throw new AssertionError(error);
+        }
+    }
+
+    private static void expectUnsupported(CheckedRunnable runnable) {
+        try {
+            runnable.run();
+            throw new AssertionError("Expected UnsupportedOperationException");
+        } catch (UnsupportedOperationException expected) {
         } catch (Exception error) {
             throw new AssertionError(error);
         }
