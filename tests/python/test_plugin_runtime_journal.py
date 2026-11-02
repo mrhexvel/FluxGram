@@ -18,11 +18,13 @@ class PluginRuntimeJournalTest(unittest.TestCase):
             sources = [
                 JOURNAL / "PluginRuntimeJournalCatalog.java",
                 JOURNAL / "PluginRuntimeJournalCollector.java",
+                JOURNAL / "PluginRuntimeJournalCoordinator.java",
                 JOURNAL / "PluginRuntimeJournalEvent.java",
                 JOURNAL / "PluginRuntimeJournalInput.java",
                 JOURNAL / "PluginRuntimeJournalSnapshot.java",
                 JOURNAL / "PluginRuntimeJournalStore.java",
                 ROOT / "tests/java/PluginRuntimeJournalCheck.java",
+                ROOT / "tests/java/PluginRuntimeJournalCoordinatorCheck.java",
                 ROOT / "tests/java/PluginRuntimeJournalStoreCheck.java",
             ]
             subprocess.run(
@@ -39,6 +41,12 @@ class PluginRuntimeJournalTest(unittest.TestCase):
             )
             subprocess.run(
                 ["java", "-cp", output, "PluginRuntimeJournalStoreCheck"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            subprocess.run(
+                ["java", "-cp", output, "PluginRuntimeJournalCoordinatorCheck"],
                 check=True,
                 capture_output=True,
                 text=True,
@@ -107,6 +115,27 @@ class PluginRuntimeJournalTest(unittest.TestCase):
         self.assertIn("processLock.unlock()", source)
         self.assertNotIn("PluginManager", source)
         self.assertNotIn("PythonPluginAdapter", source)
+
+    def test_production_composition_is_bounded_and_has_no_event_source(self):
+        composition = (JOURNAL / "PluginRuntimeJournals.java").read_text(
+            encoding="utf-8"
+        )
+        application = (
+            ROOT
+            / "TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("new ArrayBlockingQueue<>(4)", composition)
+        self.assertIn("getNoBackupFilesDir()", composition)
+        self.assertIn('"runtime_journal"', composition)
+        self.assertNotIn("newSingleThreadExecutor", composition)
+        self.assertNotIn("PluginManager", composition)
+        self.assertNotIn("ExternalPlugins", composition)
+        self.assertNotIn("record(", composition)
+        self.assertLess(
+            application.index("PluginRuntimeJournals.initialize(applicationContext)"),
+            application.index("ExternalPlugins.initialize(applicationContext)"),
+        )
 
 
 if __name__ == "__main__":
