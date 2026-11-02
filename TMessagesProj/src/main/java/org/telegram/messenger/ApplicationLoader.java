@@ -46,6 +46,7 @@ import org.telegram.messenger.plugins.ExternalPlugins;
 import org.telegram.messenger.plugins.PluginManager;
 import org.telegram.messenger.plugins.PluginCrashRecovery;
 import org.telegram.messenger.plugins.PluginStorageMaintenance;
+import org.telegram.messenger.plugins.reputation.PluginReputationCoordinators;
 import org.telegram.messenger.utils.Choreographer60FpsContent;
 import org.telegram.messenger.voip.VideoCapturerDevice;
 import org.telegram.tgnet.ConnectionsManager;
@@ -290,6 +291,7 @@ public class ApplicationLoader extends Application {
         IconPackRepository.initializeRuntime();
 
         PluginStorageMaintenance.initialize(applicationContext);
+        PluginReputationCoordinators.initialize(applicationContext);
         ExternalPlugins.initialize(applicationContext);
 
         ApplicationLoader app = (ApplicationLoader) ApplicationLoader.applicationContext;

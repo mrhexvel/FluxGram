@@ -165,7 +165,7 @@ tasks.register('verifyConfig') {{
                         "Expected reputation configuration failure",
                     )
 
-    def test_transport_has_no_production_consumer(self):
+    def test_transport_has_only_coordinator_production_consumer(self):
         class_names = (
             "PluginReputationQuery",
             "PluginReputationTransportResponse",
@@ -184,7 +184,22 @@ tasks.register('verifyConfig') {{
                 if class_name in path.read_text(encoding="utf-8"):
                     references.append(str(path.relative_to(ROOT)))
 
-            self.assertEqual([], references, f"Unexpected production references to {class_name}")
+            expected = []
+            if class_name in {
+                "PluginReputationQuery",
+                "PluginReputationEndpoint",
+                "PluginReputationHttpTransport",
+            }:
+                expected = [
+                    "TMessagesProj/src/main/java/org/telegram/messenger/plugins/reputation/"
+                    + (
+                        "PluginReputationCoordinator.java"
+                        if class_name == "PluginReputationQuery"
+                        else "PluginReputationCoordinators.java"
+                    )
+                ]
+
+            self.assertEqual(expected, references, f"Unexpected production references to {class_name}")
 
     @staticmethod
     def _java_home():

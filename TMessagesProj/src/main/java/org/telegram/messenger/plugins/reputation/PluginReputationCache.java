@@ -47,7 +47,7 @@ public final class PluginReputationCache {
         public final boolean usedBlockingAnchor;
         public final List<String> reasons;
 
-        private LookupResult(
+        LookupResult(
                 PluginReputationPolicy.Decision decision,
                 boolean authenticated,
                 boolean fresh,
@@ -630,7 +630,7 @@ public final class PluginReputationCache {
                 || response.keyStatus == PluginReputationResponse.KeyStatus.REVOKED;
     }
 
-    private static LookupResult unavailable() {
+    static LookupResult unavailable() {
         return new LookupResult(
                 PluginReputationPolicy.Decision.NO_ASSERTION,
                 false,
