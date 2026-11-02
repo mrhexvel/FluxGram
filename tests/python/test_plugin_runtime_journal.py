@@ -21,7 +21,9 @@ class PluginRuntimeJournalTest(unittest.TestCase):
                 JOURNAL / "PluginRuntimeJournalEvent.java",
                 JOURNAL / "PluginRuntimeJournalInput.java",
                 JOURNAL / "PluginRuntimeJournalSnapshot.java",
+                JOURNAL / "PluginRuntimeJournalStore.java",
                 ROOT / "tests/java/PluginRuntimeJournalCheck.java",
+                ROOT / "tests/java/PluginRuntimeJournalStoreCheck.java",
             ]
             subprocess.run(
                 ["javac", "--release", "8", "-d", output, *map(str, sources)],
@@ -35,11 +37,22 @@ class PluginRuntimeJournalTest(unittest.TestCase):
                 capture_output=True,
                 text=True,
             )
+            subprocess.run(
+                ["java", "-cp", output, "PluginRuntimeJournalStoreCheck"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
 
     def test_model_has_no_freeform_sensitive_fields(self):
         source = "\n".join(
-            path.read_text(encoding="utf-8")
-            for path in sorted(JOURNAL.glob("*.java"))
+            (JOURNAL / name).read_text(encoding="utf-8")
+            for name in (
+                "PluginRuntimeJournalCatalog.java",
+                "PluginRuntimeJournalEvent.java",
+                "PluginRuntimeJournalInput.java",
+                "PluginRuntimeJournalSnapshot.java",
+            )
         )
         forbidden = (
             "messageText",

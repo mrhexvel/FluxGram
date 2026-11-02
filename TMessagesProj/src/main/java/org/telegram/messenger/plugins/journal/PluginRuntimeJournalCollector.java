@@ -20,10 +20,18 @@ public final class PluginRuntimeJournalCollector implements AutoCloseable {
     }
 
     public static final class Batch {
+        public final long processInstanceId;
+        public final long batchId;
         public final List<PluginRuntimeJournalEvent> events;
         public final long droppedEvents;
 
-        private Batch(List<PluginRuntimeJournalEvent> events, long droppedEvents) {
+        private Batch(
+                long processInstanceId,
+                long batchId,
+                List<PluginRuntimeJournalEvent> events,
+                long droppedEvents) {
+            this.processInstanceId = processInstanceId;
+            this.batchId = batchId;
             this.events = Collections.unmodifiableList(new ArrayList<>(events));
             this.droppedEvents = droppedEvents;
         }
@@ -35,24 +43,48 @@ public final class PluginRuntimeJournalCollector implements AutoCloseable {
 
     private final long processInstanceId;
     private final long startedNanos;
+    private final long initialMonotonicTimeMillis;
     private final ReentrantLock queueLock = new ReentrantLock();
     private final ReentrantLock drainLock = new ReentrantLock();
     private final ArrayDeque<PluginRuntimeJournalEvent> pending = new ArrayDeque<>();
     private final AtomicLong droppedEvents = new AtomicLong();
 
     private long nextSequence;
+    private long nextBatchId;
     private long lastMonotonicTimeMillis;
     private boolean sequenceExhausted;
+    private boolean batchExhausted;
     private boolean closed;
     private Thread consumerThread;
 
     public PluginRuntimeJournalCollector(long processInstanceId, long nextSequence) {
-        if (processInstanceId <= 0 || nextSequence <= 0) {
+        this(processInstanceId, nextSequence, 1, 0);
+    }
+
+    public PluginRuntimeJournalCollector(
+            long processInstanceId,
+            long nextSequence,
+            long nextBatchId) {
+        this(processInstanceId, nextSequence, nextBatchId, 0);
+    }
+
+    public PluginRuntimeJournalCollector(
+            long processInstanceId,
+            long nextSequence,
+            long nextBatchId,
+            long initialMonotonicTimeMillis) {
+        if (processInstanceId <= 0
+                || nextSequence <= 0
+                || nextBatchId <= 0
+                || initialMonotonicTimeMillis < 0) {
             throw new IllegalArgumentException("Invalid plugin runtime journal collector");
         }
 
         this.processInstanceId = processInstanceId;
         this.nextSequence = nextSequence;
+        this.nextBatchId = nextBatchId;
+        this.initialMonotonicTimeMillis = initialMonotonicTimeMillis;
+        lastMonotonicTimeMillis = initialMonotonicTimeMillis;
         startedNanos = System.nanoTime();
     }
 
@@ -79,9 +111,10 @@ public final class PluginRuntimeJournalCollector implements AutoCloseable {
             }
 
             long elapsedNanos = System.nanoTime() - startedNanos;
-            long monotonicTimeMillis = elapsedNanos < 0
-                    ? lastMonotonicTimeMillis
-                    : elapsedNanos / 1_000_000L;
+            long elapsedMillis = elapsedNanos < 0 ? 0 : elapsedNanos / 1_000_000L;
+            long monotonicTimeMillis = Long.MAX_VALUE - initialMonotonicTimeMillis < elapsedMillis
+                    ? Long.MAX_VALUE
+                    : initialMonotonicTimeMillis + elapsedMillis;
 
             if (monotonicTimeMillis < lastMonotonicTimeMillis) {
                 monotonicTimeMillis = lastMonotonicTimeMillis;
@@ -118,17 +151,34 @@ public final class PluginRuntimeJournalCollector implements AutoCloseable {
 
             try {
                 if (closed) {
-                    return new Batch(Collections.emptyList(), 0);
+                    return new Batch(processInstanceId, 0, Collections.emptyList(), 0);
                 }
 
                 int count = Math.min(MAX_BATCH_EVENTS, pending.size());
+                long dropped = droppedEvents.get();
+
+                if (count == 0 && dropped == 0) {
+                    return new Batch(processInstanceId, 0, Collections.emptyList(), 0);
+                }
+                if (batchExhausted) {
+                    throw new IllegalStateException("Plugin runtime journal batch sequence exhausted");
+                }
+
                 ArrayList<PluginRuntimeJournalEvent> events = new ArrayList<>(count);
 
                 for (int i = 0; i < count; i++) {
                     events.add(pending.removeFirst());
                 }
 
-                return new Batch(events, droppedEvents.getAndSet(0));
+                long batchId = nextBatchId;
+
+                if (nextBatchId == Long.MAX_VALUE) {
+                    batchExhausted = true;
+                } else {
+                    nextBatchId++;
+                }
+
+                return new Batch(processInstanceId, batchId, events, droppedEvents.getAndSet(0));
             } finally {
                 queueLock.unlock();
             }
