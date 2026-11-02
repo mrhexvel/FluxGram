@@ -19,11 +19,11 @@ import java.util.concurrent.locks.ReentrantLock;
 
 public final class PluginRuntimeJournalAndroidFiles
         implements PluginRuntimeJournalStore.FileOperations {
-    private static final String STATE_FILE = "state";
-    private static final String STATE_TEMPORARY_FILE = "state.tmp";
-    private static final String INTENT_FILE = "intent";
-    private static final String INTENT_TEMPORARY_FILE = "intent.tmp";
-    private static final String LOCK_FILE = "lock";
+    static final String STATE_FILE = "state";
+    static final String STATE_TEMPORARY_FILE = "state.tmp";
+    static final String INTENT_FILE = "intent";
+    static final String INTENT_TEMPORARY_FILE = "intent.tmp";
+    static final String LOCK_FILE = "lock";
     private static final Map<String, ReentrantLock> PROCESS_LOCKS = new HashMap<>();
 
     private final File root;
