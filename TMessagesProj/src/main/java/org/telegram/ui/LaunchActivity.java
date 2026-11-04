@@ -33,6 +33,7 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
+import android.graphics.drawable.ColorDrawable;
 import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Build;
@@ -171,7 +172,6 @@ import org.telegram.ui.ActionBar.INavigationLayout;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.ChatMessageCell;
 import org.telegram.ui.Cells.LanguageCell;
-import org.telegram.ui.Components.ActivityWindowEmptyBackgroundDrawable;
 import org.telegram.ui.Components.AlertsCreator;
 import org.telegram.ui.Components.AnimatedEmojiDrawable;
 import org.telegram.ui.Components.AppIconBulletinLayout;
@@ -398,6 +398,15 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        if (Build.VERSION.SDK_INT >= 31 && savedInstanceState == null) {
+            long splashStartedAt = SystemClock.uptimeMillis();
+            getSplashScreen().setOnExitAnimationListener(splashScreenView -> {
+                long elapsed = SystemClock.uptimeMillis() - splashStartedAt;
+                long remaining = Math.max(0, 970 - elapsed);
+                splashScreenView.postDelayed(splashScreenView::remove, remaining);
+            });
+        }
+
         isActive = true;
         activeInstanceCount++;
         if (BuildVars.DEBUG_VERSION) {
@@ -441,7 +450,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         } catch (Throwable ignore) {
 
         }
-        getWindow().setBackgroundDrawable(new ActivityWindowEmptyBackgroundDrawable());
+        getWindow().setBackgroundDrawable(new ColorDrawable(
+                Theme.getColor(Theme.key_windowBackgroundWhite)
+        ));
         getWindow().setFormat(PixelFormat.OPAQUE);
 
         flagSecureReason = new FlagSecureReason(getWindow(), () -> SharedConfig.passcodeHash.length() > 0 && !SharedConfig.allowScreenCapture);
