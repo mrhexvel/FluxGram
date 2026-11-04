@@ -50,6 +50,21 @@ public final class PluginRuntimeJournals {
         return instance;
     }
 
+    public static PluginRuntimeJournalCoordinator.RecordResult record(
+            PluginRuntimeJournalInput input) {
+        PluginRuntimeJournalCoordinator current;
+
+        synchronized (PluginRuntimeJournals.class) {
+            current = instance;
+        }
+
+        if (current == null) {
+            return PluginRuntimeJournalCoordinator.RecordResult.UNAVAILABLE;
+        }
+
+        return current.record(input);
+    }
+
     private static PluginRuntimeJournalStore openStore(
             Context context,
             long processInstanceId) throws IOException {

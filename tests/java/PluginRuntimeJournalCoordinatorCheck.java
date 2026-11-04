@@ -1,4 +1,6 @@
+import org.telegram.messenger.plugins.journal.PluginRuntimeJournalCatalog;
 import org.telegram.messenger.plugins.journal.PluginRuntimeJournalCoordinator;
+import org.telegram.messenger.plugins.journal.PluginRuntimeJournalInput;
 import org.telegram.messenger.plugins.journal.PluginRuntimeJournalStore;
 
 import java.io.IOException;
@@ -10,8 +12,12 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public final class PluginRuntimeJournalCoordinatorCheck {
+    private static final String ARCHIVE = repeat("cd", 32);
+
     public static void main(String[] args) throws Exception {
         backgroundBootstrapAndClose();
+        prestartRecordPersists();
+        commitRetryKeepsBatch();
         loadRetryKeepsProcessIdentity();
         closeRetryKeepsOwnerThread();
     }
@@ -35,6 +41,10 @@ public final class PluginRuntimeJournalCoordinatorCheck {
         awaitState(coordinator, PluginRuntimeJournalCoordinator.State.RUNNING);
         require(processIds.size() == 1 && processIds.get(0) == 77);
         require(opened.get(0).ownerThread != caller);
+        require(coordinator.record(input())
+                == PluginRuntimeJournalCoordinator.RecordResult.ACCEPTED);
+        awaitStateFile(opened.get(0));
+        require(opened.get(0).writeThread == opened.get(0).ownerThread);
         coordinator.close();
         awaitState(coordinator, PluginRuntimeJournalCoordinator.State.CLOSED);
         require(opened.get(0).closeThread == opened.get(0).ownerThread);
@@ -44,24 +54,61 @@ public final class PluginRuntimeJournalCoordinatorCheck {
     private static void loadRetryKeepsProcessIdentity() throws Exception {
         ExecutorService executor = Executors.newSingleThreadExecutor();
         List<Long> processIds = new ArrayList<>();
+        List<FakeFiles> opened = new ArrayList<>();
         int[] attempts = {0};
         PluginRuntimeJournalCoordinator coordinator = new PluginRuntimeJournalCoordinator(
                 processInstanceId -> {
                     processIds.add(processInstanceId);
                     FakeFiles files = new FakeFiles();
                     files.failRead = attempts[0]++ == 0;
+                    opened.add(files);
                     return new PluginRuntimeJournalStore(files, processInstanceId);
                 },
                 () -> 88,
                 executor);
 
-        coordinator.start();
-        awaitState(coordinator, PluginRuntimeJournalCoordinator.State.UNAVAILABLE);
-        require(coordinator.loadFailures() == 1);
-        coordinator.start();
+        require(coordinator.record(input())
+                == PluginRuntimeJournalCoordinator.RecordResult.QUEUED);
         awaitState(coordinator, PluginRuntimeJournalCoordinator.State.RUNNING);
+        awaitStateFile(opened.get(1));
         require(processIds.size() == 2);
         require(processIds.get(0).equals(processIds.get(1)));
+        require(coordinator.loadFailures() == 1);
+        coordinator.close();
+        awaitState(coordinator, PluginRuntimeJournalCoordinator.State.CLOSED);
+    }
+
+    private static void prestartRecordPersists() throws Exception {
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        FakeFiles files = new FakeFiles();
+        PluginRuntimeJournalCoordinator coordinator = new PluginRuntimeJournalCoordinator(
+                processInstanceId -> new PluginRuntimeJournalStore(files, processInstanceId),
+                () -> 78,
+                executor);
+
+        require(coordinator.record(input())
+                == PluginRuntimeJournalCoordinator.RecordResult.QUEUED);
+        awaitState(coordinator, PluginRuntimeJournalCoordinator.State.RUNNING);
+        awaitStateFile(files);
+        coordinator.close();
+        awaitState(coordinator, PluginRuntimeJournalCoordinator.State.CLOSED);
+    }
+
+    private static void commitRetryKeepsBatch() throws Exception {
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        FakeFiles files = new FakeFiles();
+        files.failWrite = true;
+        PluginRuntimeJournalCoordinator coordinator = new PluginRuntimeJournalCoordinator(
+                processInstanceId -> new PluginRuntimeJournalStore(files, processInstanceId),
+                () -> 79,
+                executor);
+
+        coordinator.start();
+        awaitState(coordinator, PluginRuntimeJournalCoordinator.State.RUNNING);
+        require(coordinator.record(input())
+                == PluginRuntimeJournalCoordinator.RecordResult.ACCEPTED);
+        awaitStateFile(files);
+        require(coordinator.commitFailures() == 1);
         coordinator.close();
         awaitState(coordinator, PluginRuntimeJournalCoordinator.State.CLOSED);
     }
@@ -120,6 +167,43 @@ public final class PluginRuntimeJournalCoordinatorCheck {
         throw new AssertionError("Timed out waiting for journal close failure");
     }
 
+    private static void awaitStateFile(FakeFiles files) throws Exception {
+        long deadline = System.currentTimeMillis() + 5000;
+
+        while (System.currentTimeMillis() < deadline) {
+            synchronized (files.values) {
+                if (files.values.containsKey(PluginRuntimeJournalStore.Name.STATE)) {
+                    return;
+                }
+            }
+
+            Thread.sleep(5);
+        }
+
+        throw new AssertionError("Timed out waiting for persisted journal event");
+    }
+
+    private static PluginRuntimeJournalInput input() {
+        return new PluginRuntimeJournalInput(
+                1,
+                "example.plugin",
+                ARCHIVE,
+                1,
+                PluginRuntimeJournalCatalog.Kind.RUNTIME_GENERATION_RUNNING,
+                null,
+                0);
+    }
+
+    private static String repeat(String value, int count) {
+        StringBuilder result = new StringBuilder(value.length() * count);
+
+        for (int i = 0; i < count; i++) {
+            result.append(value);
+        }
+
+        return result.toString();
+    }
+
     private static void require(boolean condition) {
         if (!condition) {
             throw new AssertionError("Plugin runtime journal coordinator check failed");
@@ -132,7 +216,9 @@ public final class PluginRuntimeJournalCoordinatorCheck {
 
         private Thread ownerThread;
         private Thread closeThread;
+        private Thread writeThread;
         private boolean failRead;
+        private boolean failWrite;
         private boolean failClose;
         private int closeAttempts;
 
@@ -150,14 +236,27 @@ public final class PluginRuntimeJournalCoordinatorCheck {
                 throw new IOException("Injected journal load failure");
             }
 
-            byte[] value = values.get(name);
-            return value == null ? null : value.clone();
+            synchronized (values) {
+                byte[] value = values.get(name);
+                return value == null ? null : value.clone();
+            }
         }
 
         @Override
-        public void writeSynced(PluginRuntimeJournalStore.Name name, byte[] value) {
+        public void writeSynced(
+                PluginRuntimeJournalStore.Name name,
+                byte[] value) throws IOException {
             require(Thread.currentThread() == ownerThread);
-            values.put(name, value.clone());
+            writeThread = Thread.currentThread();
+
+            if (failWrite) {
+                failWrite = false;
+                throw new IOException("Injected journal write failure");
+            }
+
+            synchronized (values) {
+                values.put(name, value.clone());
+            }
         }
 
         @Override
@@ -165,13 +264,19 @@ public final class PluginRuntimeJournalCoordinatorCheck {
                 PluginRuntimeJournalStore.Name source,
                 PluginRuntimeJournalStore.Name target) {
             require(Thread.currentThread() == ownerThread);
-            values.put(target, values.remove(source));
+
+            synchronized (values) {
+                values.put(target, values.remove(source));
+            }
         }
 
         @Override
         public void delete(PluginRuntimeJournalStore.Name name) {
             require(Thread.currentThread() == ownerThread);
-            values.remove(name);
+
+            synchronized (values) {
+                values.remove(name);
+            }
         }
 
         @Override

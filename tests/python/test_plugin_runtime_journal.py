@@ -131,11 +131,34 @@ class PluginRuntimeJournalTest(unittest.TestCase):
         self.assertNotIn("newSingleThreadExecutor", composition)
         self.assertNotIn("PluginManager", composition)
         self.assertNotIn("ExternalPlugins", composition)
-        self.assertNotIn("record(", composition)
         self.assertLess(
             application.index("PluginRuntimeJournals.initialize(applicationContext)"),
             application.index("ExternalPlugins.initialize(applicationContext)"),
         )
+
+    def test_running_producer_is_external_and_after_lifecycle_transition(self):
+        adapter = (
+            ROOT
+            / "TMessagesProj/src/main/java/org/telegram/messenger/plugins/PythonPluginAdapter.java"
+        ).read_text(encoding="utf-8")
+        java_session = (
+            ROOT
+            / "TMessagesProj/src/main/java/org/telegram/messenger/plugins/JavaPluginSession.java"
+        ).read_text(encoding="utf-8")
+
+        running = adapter.index(
+            "lifecycle.setState(request, PythonPluginLifecycle.State.RUNNING)"
+        )
+        journal = adapter.index("journalRunning(request)")
+        changed = adapter.index("ExternalPlugins.changed()", journal)
+        self.assertLess(running, journal)
+        self.assertLess(journal, changed)
+        self.assertIn("if (!isExternal()", adapter)
+        self.assertIn("archiveSha256 == null", adapter)
+        self.assertIn("installed.signerState.archiveSha256", adapter)
+        self.assertIn("installed.riskReport.archiveSha256", adapter)
+        self.assertIn("RUNTIME_GENERATION_RUNNING", adapter)
+        self.assertNotIn("PluginRuntimeJournals", java_session)
 
 
 if __name__ == "__main__":

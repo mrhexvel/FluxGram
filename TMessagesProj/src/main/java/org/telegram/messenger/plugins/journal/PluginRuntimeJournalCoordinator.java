@@ -1,6 +1,7 @@
 package org.telegram.messenger.plugins.journal;
 
 import java.io.IOException;
+import java.util.ArrayDeque;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 
@@ -11,6 +12,16 @@ public final class PluginRuntimeJournalCoordinator implements AutoCloseable {
         RUNNING,
         UNAVAILABLE,
         CLOSING,
+        CLOSED
+    }
+
+    public enum RecordResult {
+        ACCEPTED,
+        DROPPED_BUSY,
+        DROPPED_FULL,
+        DROPPED_SEQUENCE_EXHAUSTED,
+        QUEUED,
+        UNAVAILABLE,
         CLOSED
     }
 
@@ -26,16 +37,24 @@ public final class PluginRuntimeJournalCoordinator implements AutoCloseable {
     private final StoreFactory storeFactory;
     private final ProcessInstanceIdFactory processInstanceIdFactory;
     private final ExecutorService executor;
+    private final ArrayDeque<PluginRuntimeJournalInput> pendingStart = new ArrayDeque<>();
 
-    private State state = State.NEW;
+    private volatile State state = State.NEW;
     private long processInstanceId;
     private PluginRuntimeJournalStore store;
-    private PluginRuntimeJournalCollector collector;
+    private volatile PluginRuntimeJournalCollector collector;
+    private PluginRuntimeJournalCollector.Batch inFlight;
     private boolean workerScheduled;
-    private boolean closeRequested;
+    private boolean flushRequested;
+    private boolean bootstrapCleanupPending;
+    private volatile boolean closeRequested;
     private long loadFailures;
     private long closeFailures;
     private long rejectedTasks;
+    private long commitFailures;
+    private long bootstrapRetryDelayMillis = 50;
+
+    private static final int MAX_PENDING_START = 64;
 
     public PluginRuntimeJournalCoordinator(
             StoreFactory storeFactory,
@@ -52,15 +71,7 @@ public final class PluginRuntimeJournalCoordinator implements AutoCloseable {
 
     public void start() {
         synchronized (lock) {
-            if (state != State.NEW && state != State.UNAVAILABLE) {
-                return;
-            }
-            if (closeRequested) {
-                return;
-            }
-
-            state = State.STARTING;
-            scheduleLocked(this::bootstrap);
+            startLocked();
         }
     }
 
@@ -88,6 +99,53 @@ public final class PluginRuntimeJournalCoordinator implements AutoCloseable {
         }
     }
 
+    public long commitFailures() {
+        synchronized (lock) {
+            return commitFailures;
+        }
+    }
+
+    public RecordResult record(PluginRuntimeJournalInput input) {
+        if (input == null) {
+            throw new IllegalArgumentException("Plugin runtime journal input is required");
+        }
+
+        synchronized (lock) {
+            if (state == State.CLOSING || state == State.CLOSED || closeRequested) {
+                return RecordResult.CLOSED;
+            }
+            if (state != State.RUNNING || collector == null) {
+                if (pendingStart.size() >= MAX_PENDING_START) {
+                    return RecordResult.UNAVAILABLE;
+                }
+
+                pendingStart.addLast(input);
+                startLocked();
+                return RecordResult.QUEUED;
+            }
+
+            PluginRuntimeJournalCollector.OfferResult result = collector.offer(input);
+            flushRequested = true;
+
+            if (!workerScheduled) {
+                scheduleLocked(this::flushWorker);
+            }
+
+            switch (result) {
+                case ACCEPTED:
+                    return RecordResult.ACCEPTED;
+                case DROPPED_BUSY:
+                    return RecordResult.DROPPED_BUSY;
+                case DROPPED_FULL:
+                    return RecordResult.DROPPED_FULL;
+                case DROPPED_SEQUENCE_EXHAUSTED:
+                    return RecordResult.DROPPED_SEQUENCE_EXHAUSTED;
+                default:
+                    return RecordResult.CLOSED;
+            }
+        }
+    }
+
     @Override
     public void close() {
         synchronized (lock) {
@@ -99,7 +157,14 @@ public final class PluginRuntimeJournalCoordinator implements AutoCloseable {
             state = State.CLOSING;
 
             if (!workerScheduled) {
-                scheduleLocked(this::closeWorker);
+                if (!pendingStart.isEmpty() && store == null) {
+                    scheduleLocked(this::bootstrap);
+                } else if (inFlight != null || flushRequested) {
+                    flushRequested = true;
+                    scheduleLocked(this::flushWorker);
+                } else {
+                    scheduleLocked(this::closeWorker);
+                }
             }
         }
     }
@@ -139,9 +204,21 @@ public final class PluginRuntimeJournalCoordinator implements AutoCloseable {
                 store = opened;
                 collector = created;
                 opened = null;
+                bootstrapRetryDelayMillis = 50;
+                boolean queued = false;
+
+                while (!pendingStart.isEmpty()) {
+                    created.offer(pendingStart.removeFirst());
+                    queued = true;
+                }
+
                 workerScheduled = false;
 
-                if (closeRequested) {
+                if (queued) {
+                    flushRequested = true;
+                    state = closeRequested ? State.CLOSING : State.RUNNING;
+                    scheduleLocked(this::flushWorker);
+                } else if (closeRequested) {
                     state = State.CLOSING;
                     scheduleLocked(this::closeWorker);
                 } else {
@@ -158,9 +235,14 @@ public final class PluginRuntimeJournalCoordinator implements AutoCloseable {
                 if (store != null) {
                     state = State.CLOSING;
                     scheduleLocked(this::closeWorker);
+                } else if (closeRequested && !pendingStart.isEmpty()) {
+                    state = State.CLOSING;
                 } else if (closeRequested) {
                     state = State.CLOSING;
                     scheduleLocked(this::closeWorker);
+                } else if (!pendingStart.isEmpty()) {
+                    state = State.STARTING;
+                    scheduleLocked(this::retryBootstrap);
                 } else {
                     state = State.UNAVAILABLE;
                 }
@@ -178,6 +260,7 @@ public final class PluginRuntimeJournalCoordinator implements AutoCloseable {
         } catch (IOException error) {
             synchronized (lock) {
                 store = opened;
+                bootstrapCleanupPending = true;
                 closeFailures = saturatingIncrement(closeFailures);
             }
         }
@@ -213,10 +296,141 @@ public final class PluginRuntimeJournalCoordinator implements AutoCloseable {
             collector = null;
             store = null;
             workerScheduled = false;
+
+            if (bootstrapCleanupPending) {
+                bootstrapCleanupPending = false;
+
+                if (closeRequested) {
+                    if (!pendingStart.isEmpty()) {
+                        state = State.CLOSING;
+                        return;
+                    }
+                } else {
+                    if (pendingStart.isEmpty()) {
+                        state = State.UNAVAILABLE;
+                    } else {
+                        state = State.STARTING;
+                        scheduleLocked(this::retryBootstrap);
+                    }
+                    return;
+                }
+            }
+
             state = State.CLOSED;
         }
 
         executor.shutdown();
+    }
+
+    private void flushWorker() {
+        int committedBatches = 0;
+        int closingFailures = 0;
+        long retryDelayMillis = 50;
+
+        synchronized (lock) {
+            flushRequested = false;
+        }
+
+        while (committedBatches < 4 || closeRequested) {
+            if (inFlight == null) {
+                PluginRuntimeJournalCollector currentCollector = collector;
+
+                if (currentCollector == null) {
+                    break;
+                }
+
+                inFlight = currentCollector.drain();
+
+                if (inFlight.isEmpty()) {
+                    inFlight = null;
+                    break;
+                }
+            }
+
+            try {
+                store.commit(inFlight);
+                inFlight = null;
+                retryDelayMillis = 50;
+                committedBatches++;
+            } catch (IOException error) {
+                synchronized (lock) {
+                    commitFailures = saturatingIncrement(commitFailures);
+                }
+
+                try {
+                    Thread.sleep(retryDelayMillis);
+                } catch (InterruptedException interrupted) {
+                    continue;
+                }
+
+                retryDelayMillis = Math.min(1000, retryDelayMillis * 2);
+
+                if (closeRequested && ++closingFailures >= 2) {
+                    synchronized (lock) {
+                        flushRequested = true;
+                        workerScheduled = false;
+                        state = State.CLOSING;
+                    }
+                    return;
+                }
+            }
+
+            synchronized (lock) {
+                if (!closeRequested && committedBatches >= 4) {
+                    flushRequested = true;
+                    break;
+                }
+            }
+        }
+
+        synchronized (lock) {
+            workerScheduled = false;
+
+            if (closeRequested) {
+                state = State.CLOSING;
+                scheduleLocked(this::closeWorker);
+            } else if (flushRequested) {
+                flushRequested = true;
+                scheduleLocked(this::flushWorker);
+            }
+        }
+    }
+
+    private void startLocked() {
+        if (state != State.NEW && state != State.UNAVAILABLE) {
+            return;
+        }
+        if (closeRequested) {
+            return;
+        }
+
+        state = State.STARTING;
+        scheduleLocked(this::bootstrap);
+    }
+
+    private void retryBootstrap() {
+        long delay;
+
+        synchronized (lock) {
+            delay = bootstrapRetryDelayMillis;
+            bootstrapRetryDelayMillis = Math.min(1000, bootstrapRetryDelayMillis * 2);
+        }
+
+        try {
+            Thread.sleep(delay);
+        } catch (InterruptedException ignored) {
+        }
+
+        synchronized (lock) {
+            if (closeRequested && pendingStart.isEmpty()) {
+                workerScheduled = false;
+                state = State.CLOSING;
+                scheduleLocked(this::closeWorker);
+                return;
+            }
+        }
+
+        bootstrap();
     }
 
     private void scheduleLocked(Runnable operation) {

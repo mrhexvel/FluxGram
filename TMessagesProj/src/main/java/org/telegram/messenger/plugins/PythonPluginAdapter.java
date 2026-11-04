@@ -11,6 +11,10 @@ import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.ApplicationLoader;
+import org.telegram.messenger.plugins.journal.PluginRuntimeJournalCatalog;
+import org.telegram.messenger.plugins.journal.PluginRuntimeJournalCoordinator;
+import org.telegram.messenger.plugins.journal.PluginRuntimeJournalInput;
+import org.telegram.messenger.plugins.journal.PluginRuntimeJournals;
 import org.telegram.messenger.plugins.packages.PluginManifest;
 import org.fluxgram.JavaPluginUiResource;
 import org.fluxgram.JavaSettingsBlock;
@@ -38,11 +42,13 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
 
 public final class PythonPluginAdapter implements Plugin {
     private static final String TAG = "FluxGramPython";
     private static final Handler UI_HANDLER = new Handler(Looper.getMainLooper());
+    private static final AtomicLong NEXT_RUNTIME_INSTANCE_ID = new AtomicLong(1);
     private static final int MAILBOX_CAPACITY = 69;
     private static final int EVENT_CAPACITY = 64;
     private static final int STORAGE_CAPACITY = 2;
@@ -53,7 +59,9 @@ public final class PythonPluginAdapter implements Plugin {
     private final int descriptionResId;
     private final int iconResId;
     private final String version;
+    private final long runtimeInstanceId = nextRuntimeInstanceId();
     private volatile String externalPath;
+    private String archiveSha256;
     private String externalName, externalDescription;
     private PluginManifest.JavaModule javaModule;
     private JavaPluginLoader javaLoader;
@@ -83,6 +91,12 @@ public final class PythonPluginAdapter implements Plugin {
         javaModule = installed.manifest.javaModule;
         externalName = installed.manifest.name;
         externalDescription = installed.manifest.description;
+
+        if (installed.signerState != null) {
+            archiveSha256 = installed.signerState.archiveSha256;
+        } else if (installed.riskReport != null) {
+            archiveSha256 = installed.riskReport.archiveSha256;
+        }
 
         if (installed.manifest.icon != null) {
             File file = new File(installed.directory, installed.manifest.icon);
@@ -187,6 +201,7 @@ public final class PythonPluginAdapter implements Plugin {
     private int settingsBlockActions;
     private PyObject bridge;
     private PyObject instance;
+    private long lastJournaledRunningGeneration;
     private FutureTask<Void> removal;
     private volatile boolean messageReceivedSubscribers;
     private volatile boolean messageEditedSubscribers;
@@ -497,11 +512,49 @@ public final class PythonPluginAdapter implements Plugin {
                     javaUiStop.activate();
                 }
 
+                journalRunning(request);
                 ExternalPlugins.changed();
             }
         } catch (Exception | LinkageError error) {
             handleFailure(request, "Load", error, true);
         }
+    }
+
+    private void journalRunning(long generation) {
+        if (!isExternal()
+                || archiveSha256 == null
+                || lastJournaledRunningGeneration == generation) {
+            return;
+        }
+
+        try {
+            PluginRuntimeJournalCoordinator.RecordResult result = PluginRuntimeJournals.record(
+                    new PluginRuntimeJournalInput(
+                            runtimeInstanceId,
+                            id,
+                            archiveSha256,
+                            generation,
+                            PluginRuntimeJournalCatalog.Kind.RUNTIME_GENERATION_RUNNING,
+                            null,
+                            0));
+
+            if (result != PluginRuntimeJournalCoordinator.RecordResult.UNAVAILABLE
+                    && result != PluginRuntimeJournalCoordinator.RecordResult.CLOSED) {
+                lastJournaledRunningGeneration = generation;
+            }
+        } catch (RuntimeException error) {
+            FileLog.e(error);
+        }
+    }
+
+    private static long nextRuntimeInstanceId() {
+        long value = NEXT_RUNTIME_INSTANCE_ID.getAndIncrement();
+
+        if (value <= 0) {
+            throw new IllegalStateException("Plugin runtime identity is exhausted");
+        }
+
+        return value;
     }
 
     private void handleFailure(
