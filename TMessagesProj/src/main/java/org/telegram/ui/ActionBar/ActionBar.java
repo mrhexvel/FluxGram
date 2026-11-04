@@ -124,6 +124,7 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
 
     private boolean supportsHolidayImage;
     private boolean forceHolidayImage;
+    private boolean forceHolidayAnimationPaused;
     private Drawable forcedHolidayDrawable;
     private SnowflakesEffect snowflakesEffect;
     private FireworksEffect fireworksEffect;
@@ -380,6 +381,15 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
         invalidate();
     }
 
+    public void setForceHolidayAnimationPaused(boolean paused) {
+        if (forceHolidayAnimationPaused == paused) {
+            return;
+        }
+
+        forceHolidayAnimationPaused = paused;
+        invalidate();
+    }
+
     private Drawable getHolidayDrawable() {
         return forceHolidayImage ? forcedHolidayDrawable : Theme.getCurrentHolidayDrawable();
     }
@@ -475,8 +485,10 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
                     }
                 }
                 if (snowflakesEffect != null) {
-                    snowflakesEffect.setFrameDelayMillis(forceHolidayImage ? 16 : 0);
-                    snowflakesEffect.onDraw(this, canvas);
+                    if (!forceHolidayImage || !forceHolidayAnimationPaused) {
+                        snowflakesEffect.setFrameDelayMillis(forceHolidayImage ? 16 : 0);
+                        snowflakesEffect.onDraw(this, canvas);
+                    }
                 } else if (fireworksEffect != null) {
                     fireworksEffect.onDraw(this, canvas);
                 }

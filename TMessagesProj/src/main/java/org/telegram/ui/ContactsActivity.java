@@ -1272,7 +1272,7 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
     @Override
     public void onResume() {
         super.onResume();
-        if (listViewAdapter != null) {
+        if (!hasMainTabs && listViewAdapter != null) {
             listViewAdapter.notifyDataSetChanged();
         }
     }
@@ -1280,6 +1280,9 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
     @Override
     public void onBecomeFullyVisible() {
         super.onBecomeFullyVisible();
+        if (hasMainTabs && listViewAdapter != null) {
+            listViewAdapter.notifyDataSetChanged();
+        }
         if (checkPermission && Build.VERSION.SDK_INT >= 23) {
             Activity activity = getParentActivity();
             if (activity != null) {

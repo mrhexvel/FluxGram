@@ -116,6 +116,26 @@ class NavigationTransitionSettingsTest(unittest.TestCase):
         self.assertIn("hasCustomTransition", back)
         self.assertIn("!overrideTransition && !hasCustomTransition", back)
 
+    def test_chat_content_and_heavy_settings_preview_wait_for_transition_end(self):
+        chat = (JAVA / "ui/ChatActivity.java").read_text()
+        activity = (JAVA / "ui/FluxGramSettingsActivity.java").read_text()
+
+        transition_start = chat.split(
+            "public void onTransitionAnimationStart(boolean isOpen, boolean backward)", 1
+        )[1].split(
+            "public void onTransitionAnimationEnd(boolean isOpen, boolean backward)", 1
+        )[0]
+        visible = activity.split("public void onBecomeFullyVisible()", 1)[1].split(
+            "private void fillItems", 1
+        )[0]
+
+        self.assertNotIn("NotificationCenter.messagesDidLoad", transition_start)
+        self.assertIn("messageAppearancePreviewContainer.addView", visible)
+        self.assertIn(
+            "UItem.asCustom(STICKER_SIZE_PREVIEW, messageAppearancePreviewContainer)",
+            activity,
+        )
+
     def test_predictive_callback_mode_is_startup_fixed_and_uses_platform_progress(self):
         launch = (JAVA / "ui/LaunchActivity.java").read_text()
         registration = launch.split(

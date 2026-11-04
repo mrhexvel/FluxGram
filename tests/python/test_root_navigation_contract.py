@@ -164,30 +164,68 @@ class RootNavigationContractTest(unittest.TestCase):
         self.assertIn("state.fragment instanceof CallLogActivity", stability)
         self.assertIn("state.fragment instanceof SettingsActivity", stability)
 
-    def test_root_pager_shared_axis_transform_is_opt_in_and_bounded(self):
+    def test_root_pager_keeps_full_size_pages_during_horizontal_transition(self):
         pager = (JAVA / "ui/ViewPagerActivity.java").read_text()
         activity = (JAVA / "ui/MainTabsActivity.java").read_text()
-        transform = activity.split("protected void onViewPagerPageTransform", 1)[1].split(
-            "protected int getFragmentsCount", 1
+
+        self.assertNotIn("onViewPagerPageTransform", pager)
+        self.assertNotIn("onViewPagerPageTransform", activity)
+        self.assertNotIn("applyRootPageTransform", activity)
+        self.assertIn("return 240L;", pager)
+
+    def test_root_pager_retains_a_container_for_each_destination(self):
+        pager = (JAVA / "ui/ViewPagerActivity.java").read_text()
+        adapter = pager.split("viewPager.setAdapter", 1)[1].split(
+            "contentView.addView(viewPager", 1
         )[0]
 
-        self.assertIn("protected void onViewPagerPageTransform", pager)
-        self.assertIn("boolean hasWidth = getAvailableTranslationX() > 0f", pager)
-        self.assertIn("hasWidth ? getCurrentPositionAlpha() : 1f", pager)
-        self.assertIn("hasWidth ? getNextPositionAlpha() : 0f", pager)
-        self.assertIn("getCurrentPositionAlpha()", pager)
-        self.assertIn("getNextPositionAlpha()", pager)
-        self.assertIn("SharedConfig.animationsEnabled()", transform)
-        self.assertIn("!LiteMode.isPowerSaverApplied()", transform)
-        self.assertIn("MathUtils.clamp(visibility, 0f, 1f)", transform)
-        self.assertIn("lerp(0.72f, 1f, progress)", transform)
-        self.assertIn("lerp(0.96f, 1f, progress)", transform)
-        self.assertIn("page.setAlpha(alpha)", transform)
-        self.assertIn("page.setScaleX(scale)", transform)
-        self.assertIn("page.setScaleY(scale)", transform)
-        self.assertNotIn("tabsView.setAlpha", transform)
-        self.assertNotIn("tabsView.setScale", transform)
-        self.assertIn("return 240L;", pager)
+        self.assertIn("public int getItemViewType(int position)", adapter)
+        self.assertIn("return position;", adapter)
+        self.assertIn("if (fragmentView.getParent() != container)", adapter)
+        self.assertEqual(adapter.count("container.removeAllViews();"), 1)
+
+    def test_profile_tab_is_retained_after_page_transition(self):
+        activity = (JAVA / "ui/MainTabsActivity.java").read_text()
+        scroll_end = activity.split("protected void onViewPagerScrollEnd()", 1)[1].split(
+            "protected void onViewPagerTabAnimationUpdate", 1
+        )[0]
+
+        self.assertNotIn("dropFragmentAtPosition(POSITION_PROFILE)", scroll_end)
+        self.assertIn("dropFragmentAtPosition(POSITION_CALLS_OR_SETTINGS)", scroll_end)
+
+    def test_retained_root_profile_skips_redundant_full_resume_layout(self):
+        profile = (JAVA / "ui/ProfileActivity.java").read_text()
+        resume = profile.split("public void onResume()", 1)[1].split(
+            "public void onPause()", 1
+        )[0]
+
+        self.assertIn("boolean needsFullResumeLayout = !hasMainTabs || !fragmentOpened;", resume)
+        self.assertIn("listAdapter != null && needsFullResumeLayout", resume)
+        self.assertIn("if (needsFullResumeLayout) {\n            fixLayout();", resume)
+        self.assertIn("updateProfileData(true);", resume)
+        self.assertIn("if (needsFullResumeLayout) {\n            needLayout(false);", resume)
+
+    def test_root_lists_refresh_after_the_page_transition(self):
+        contacts = (JAVA / "ui/ContactsActivity.java").read_text()
+        settings = (JAVA / "ui/SettingsActivity.java").read_text()
+
+        contacts_resume = contacts.split("public void onResume()", 1)[1].split(
+            "public void onBecomeFullyVisible()", 1
+        )[0]
+        contacts_visible = contacts.split("public void onBecomeFullyVisible()", 1)[1].split(
+            "protected RecyclerListView getListView()", 1
+        )[0]
+        settings_resume = settings.split("public void onResume()", 1)[1].split(
+            "public void onBecomeFullyVisible()", 1
+        )[0]
+        settings_visible = settings.split("public void onBecomeFullyVisible()", 1)[1].split(
+            "private ArrayList<Integer> accountNumbers", 1
+        )[0]
+
+        self.assertIn("!hasMainTabs && listViewAdapter != null", contacts_resume)
+        self.assertIn("hasMainTabs && listViewAdapter != null", contacts_visible)
+        self.assertIn("!hasMainTabs && listView.adapter != null", settings_resume)
+        self.assertIn("hasMainTabs && listView.adapter != null", settings_visible)
 
     def test_settings_blur_sources_are_recorded_only_when_invalidated(self):
         settings = (JAVA / "ui/SettingsActivity.java").read_text()
@@ -203,22 +241,17 @@ class RootNavigationContractTest(unittest.TestCase):
         self.assertIn("private boolean iBlur3Invalidated = true;", settings)
         self.assertIn("iBlur3Invalidated = true;", colors)
 
-    def test_root_glass_capture_uses_the_same_page_transform(self):
+    def test_root_glass_capture_follows_only_page_translation(self):
         activity = (JAVA / "ui/MainTabsActivity.java").read_text()
         glass = activity.split("iBlur3SourceTabGlass.setupRenderer", 1)[1].split(
             "iBlur3SourceColor = new BlurredBackgroundSourceColor", 1
         )[0]
-        draw = activity.split("private void drawRootPageGlassSource", 1)[1].split(
-            "protected FrameLayout createContentView", 1
-        )[0]
 
-        self.assertIn("View rootPage = getRootPage(fragment)", glass)
-        self.assertIn("rootPage.getAlpha()", glass)
-        self.assertIn("rootPage.getScaleX()", glass)
-        self.assertIn("rootPage.getScaleY()", glass)
-        self.assertIn("drawRootPageGlassSource(canvas, fragment, source, width, height)", glass)
-        self.assertIn("canvas.scale(rootPage.getScaleX(), rootPage.getScaleY())", draw)
-        self.assertIn("canvas.saveLayerAlpha(0, 0, width, height, alpha)", draw)
+        self.assertIn("canvas.translate(fragmentPosition.left, fragmentPosition.top)", glass)
+        self.assertNotIn("rootPage.getAlpha()", glass)
+        self.assertNotIn("rootPage.getScaleX()", glass)
+        self.assertNotIn("rootPage.getScaleY()", glass)
+        self.assertNotIn("canvas.saveLayerAlpha", glass)
 
     def test_root_popup_uses_policy_and_snapshot_navigation(self):
         dialogs = (JAVA / "ui/DialogsActivity.java").read_text()

@@ -9876,11 +9876,12 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     @Override
     public void onResume() {
         super.onResume();
+        boolean needsFullResumeLayout = !hasMainTabs || !fragmentOpened;
         if (sharedMediaLayout != null) {
             sharedMediaLayout.onResume();
         }
         invalidateIsInLandscapeMode();
-        if (listAdapter != null) {
+        if (listAdapter != null && needsFullResumeLayout) {
             // saveScrollPosition();
             firstLayout = true;
             listAdapter.notifyDataSetChanged();
@@ -9896,7 +9897,9 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         }
 
         updateProfileData(true);
-        fixLayout();
+        if (needsFullResumeLayout) {
+            fixLayout();
+        }
         if (nameTextView[1] != null) {
             setParentActivityTitle(nameTextView[1].getText());
         }
@@ -9919,7 +9922,9 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             flagSecure.attach();
         }
         updateItemsUsername();
-        needLayout(false);
+        if (needsFullResumeLayout) {
+            needLayout(false);
+        }
     }
 
     @Override

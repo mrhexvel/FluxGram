@@ -30331,6 +30331,9 @@ public class ChatActivity extends BaseFragment implements
     @Override
     public void onTransitionAnimationStart(boolean isOpen, boolean backward) {
         super.onTransitionAnimationStart(isOpen, backward);
+        if (contentView != null) {
+            contentView.setForceSnowflakesAnimationPaused(true);
+        }
         startMs = System.currentTimeMillis();
         int[] alowedNotifications = null;
         if (isOpen) {
@@ -30338,18 +30341,10 @@ public class ChatActivity extends BaseFragment implements
                 fragmentOpened = true;
                 updateMessagesVisiblePart(false);
             }
-            if (transitionAnimationIndex == 0) {
-                alowedNotifications = new int[]{
-                        NotificationCenter.dialogsNeedReload, NotificationCenter.closeChats,
-                        NotificationCenter.botKeyboardDidLoad, NotificationCenter.needDeleteDialog,
-                        NotificationCenter.messagesDidLoad
-                };
-            } else {
-                alowedNotifications = new int[]{
-                        NotificationCenter.dialogsNeedReload, NotificationCenter.closeChats,
-                        NotificationCenter.botKeyboardDidLoad, NotificationCenter.needDeleteDialog
-                };
-            }
+            alowedNotifications = new int[]{
+                    NotificationCenter.dialogsNeedReload, NotificationCenter.closeChats,
+                    NotificationCenter.botKeyboardDidLoad, NotificationCenter.needDeleteDialog
+            };
             openAnimationEnded = false;
             if (!backward) {
                 openAnimationStartTime = SystemClock.elapsedRealtime();
@@ -30372,6 +30367,9 @@ public class ChatActivity extends BaseFragment implements
     @Override
     public void onTransitionAnimationEnd(boolean isOpen, boolean backward) {
         super.onTransitionAnimationEnd(isOpen, backward);
+        if (contentView != null) {
+            contentView.setForceSnowflakesAnimationPaused(false);
+        }
         if (isOpen) {
             if (backward) {
                 if (showPinBulletin && pinBulletin != null) {

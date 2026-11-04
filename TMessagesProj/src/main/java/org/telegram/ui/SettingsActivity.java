@@ -640,7 +640,15 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
     @Override
     public void onResume() {
         super.onResume();
-        if (listView.adapter != null) {
+        if (!hasMainTabs && listView.adapter != null) {
+            listView.adapter.notifyDataSetChanged();
+        }
+    }
+
+    @Override
+    public void onBecomeFullyVisible() {
+        super.onBecomeFullyVisible();
+        if (hasMainTabs && listView.adapter != null) {
             listView.adapter.notifyDataSetChanged();
         }
     }

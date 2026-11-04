@@ -47,16 +47,6 @@ public abstract class ViewPagerActivity extends BaseFragment {
 
     }
 
-    protected void onViewPagerPageTransform(
-            View currentPage,
-            View nextPage,
-            float currentVisibility,
-            float nextVisibility
-    ) {
-
-    }
-
-
     protected FrameLayout createContentView(Context context) {
         return new FrameLayout(context);
     }
@@ -84,6 +74,11 @@ public abstract class ViewPagerActivity extends BaseFragment {
             }
 
             @Override
+            public int getItemViewType(int position) {
+                return position;
+            }
+
+            @Override
             public void bindView(View view, int position, int viewType) {
                 FragmentState state = fragmentsArr.get(position);
                 final BaseFragment fragment;
@@ -108,18 +103,19 @@ public abstract class ViewPagerActivity extends BaseFragment {
                 }
 
                 FrameLayout container = (FrameLayout) view;
-                container.removeAllViews();
-
                 final View fragmentView = fragment.getFragmentView();
-                AndroidUtilities.removeFromParent(fragmentView);
-                if (!fragment.hasOwnBackground() && fragmentView.getBackground() == null) {
-                    fragmentView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
-                }
+                if (fragmentView.getParent() != container) {
+                    container.removeAllViews();
+                    AndroidUtilities.removeFromParent(fragmentView);
+                    if (!fragment.hasOwnBackground() && fragmentView.getBackground() == null) {
+                        fragmentView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                    }
 
-                container.addView(fragmentView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
-                if (fragment.getActionBar() != null && fragment.getActionBar().shouldAddToContainer()) {
-                    AndroidUtilities.removeFromParent(fragment.getActionBar());
-                    container.addView(fragment.getActionBar());
+                    container.addView(fragmentView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+                    if (fragment.getActionBar() != null && fragment.getActionBar().shouldAddToContainer()) {
+                        AndroidUtilities.removeFromParent(fragment.getActionBar());
+                        container.addView(fragment.getActionBar());
+                    }
                 }
 
                 ViewCompat.requestApplyInsets(container);
@@ -475,13 +471,6 @@ public abstract class ViewPagerActivity extends BaseFragment {
         @Override
         public void onTabAnimationUpdate(boolean manual) {
             super.onTabAnimationUpdate(manual);
-            boolean hasWidth = getAvailableTranslationX() > 0f;
-            onViewPagerPageTransform(
-                    viewPages[0],
-                    viewPages[1],
-                    hasWidth ? getCurrentPositionAlpha() : 1f,
-                    hasWidth ? getNextPositionAlpha() : 0f
-            );
             onViewPagerTabAnimationUpdate(manual);
             checkFragmentsVisibility();
             checkSystemBarColors();

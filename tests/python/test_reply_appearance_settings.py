@@ -240,7 +240,7 @@ class ReplyAppearanceSettingsTest(unittest.TestCase):
         size_label = activity.index(
             'addSectionLabel(items, "(etg) " + LocaleController.getString(R.string.FluxGramStickerSize))'
         )
-        preview = activity.index("UItem.asCustom(STICKER_SIZE_PREVIEW, messageAppearancePreview)")
+        preview = activity.index("UItem.asCustom(STICKER_SIZE_PREVIEW, messageAppearancePreviewContainer)")
         time_mode = activity.index("STICKER_TIME_MODE", preview)
         reply_group = activity.index("UItem.asExpandableSwitch(", time_mode)
         shape_header = activity.index("addSectionLabel(items, R.string.FluxGramStickerShape)", reply_group)
@@ -266,7 +266,9 @@ class ReplyAppearanceSettingsTest(unittest.TestCase):
 
         self.assertEqual(1, activity.count("new FluxGramMessageAppearancePreviewCell("))
         self.assertIn("UItem.asCustomShadow(label, LayoutHelper.WRAP_CONTENT)", activity)
-        self.assertIn("UItem.asCustom(STICKER_SIZE_PREVIEW, messageAppearancePreview)", activity)
+        self.assertIn("UItem.asCustom(STICKER_SIZE_PREVIEW, messageAppearancePreviewContainer)", activity)
+        self.assertIn("public void onBecomeFullyVisible()", activity)
+        self.assertIn("messageAppearancePreviewContainer.addView(messageAppearancePreview", activity)
         self.assertIn("new SeekBarView", combined_preview)
         self.assertNotIn("FluxGramStickerSize));", combined_preview)
         self.assertIn("112,", combined_preview)

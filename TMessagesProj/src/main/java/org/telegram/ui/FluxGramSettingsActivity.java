@@ -180,6 +180,7 @@ public class FluxGramSettingsActivity extends BaseFragment {
     private FluxGramSectionRadiusCell sectionRadiusCell;
     private FluxGramFolderPreviewCell folderPreview;
     private FluxGramMessageAppearancePreviewCell messageAppearancePreview;
+    private FrameLayout messageAppearancePreviewContainer;
     private FluxGramStickerShapeCell stickerShapeCell;
     private boolean replyAppearanceExpanded;
     private boolean destroyed;
@@ -299,6 +300,7 @@ public class FluxGramSettingsActivity extends BaseFragment {
                     context, currentAccount, getResourceProvider()
             );
         } else if (section == CHATS) {
+            messageAppearancePreviewContainer = new FrameLayout(context);
             messageAppearancePreview = new FluxGramMessageAppearancePreviewCell(
                     context,
                     currentAccount,
@@ -338,6 +340,18 @@ public class FluxGramSettingsActivity extends BaseFragment {
         actionBar.setAdaptiveBackground(listView);
 
         return fragmentView;
+    }
+
+    @Override
+    public void onBecomeFullyVisible() {
+        super.onBecomeFullyVisible();
+        if (messageAppearancePreviewContainer != null
+                && messageAppearancePreview.getParent() == null) {
+            messageAppearancePreviewContainer.addView(messageAppearancePreview, LayoutHelper.createFrame(
+                    LayoutHelper.MATCH_PARENT,
+                    LayoutHelper.MATCH_PARENT
+            ));
+        }
     }
 
     private void fillItems(ArrayList<UItem> items) {
@@ -611,7 +625,7 @@ public class FluxGramSettingsActivity extends BaseFragment {
 
         if (section == CHATS) {
             addSectionLabel(items, "(etg) " + LocaleController.getString(R.string.FluxGramStickerSize));
-            items.add(UItem.asCustom(STICKER_SIZE_PREVIEW, messageAppearancePreview));
+            items.add(UItem.asCustom(STICKER_SIZE_PREVIEW, messageAppearancePreviewContainer));
             items.add(UItem.asButton(
                     STICKER_TIME_MODE,
                     LocaleController.getString(R.string.FluxGramStickerTimeMode),

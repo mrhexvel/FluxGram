@@ -481,10 +481,21 @@ class AppearanceSettingsTest(unittest.TestCase):
         self.assertIn("quickReplyShortcut == null", eligibility)
         self.assertIn("contentView.setForceSnowflakes(", chat)
         self.assertIn("public void setForceSnowflakes(boolean forceSnowflakes)", frame)
-        self.assertIn("forceSnowflakes || Theme.canStartHolidayAnimation()", frame)
+        self.assertIn("public void setForceHolidayAnimationPaused(boolean paused)", action_bar)
+        self.assertIn("public void setForceSnowflakesAnimationPaused(boolean paused)", frame)
+        self.assertIn("!forceHolidayImage || !forceHolidayAnimationPaused", action_bar)
+        self.assertIn("forceSnowflakes && !forceSnowflakesAnimationPaused", frame)
+        self.assertIn("actionBar.setForceHolidayAnimationPaused(true);", dialogs)
+        self.assertIn("actionBar.setForceHolidayAnimationPaused(false);", dialogs)
+        self.assertIn("contentView.setForceSnowflakesAnimationPaused(true);", chat)
+        self.assertIn("contentView.setForceSnowflakesAnimationPaused(false);", chat)
+        self.assertIn("Theme.canStartHolidayAnimation()", frame)
         self.assertIn("LiteMode.isEnabled(LiteMode.FLAG_CHAT_BACKGROUND)", frame)
         self.assertIn("setFrameDelayMillis(forceHolidayImage ? 16 : 0)", action_bar)
-        self.assertIn("setFrameDelayMillis(forceSnowflakes ? 16 : 0)", frame)
+        self.assertIn(
+            "forceSnowflakes && !forceSnowflakesAnimationPaused ? 16 : 0",
+            frame,
+        )
         self.assertIn("public void setFrameDelayMillis(long frameDelayMillis)", snow)
         self.assertIn("parent.postInvalidateDelayed(frameDelayMillis);", snow)
         self.assertIn("parent.invalidate();", snow)

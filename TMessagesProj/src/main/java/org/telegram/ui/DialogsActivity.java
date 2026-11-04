@@ -9354,6 +9354,14 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     }
 
     @Override
+    public void onTransitionAnimationStart(boolean isOpen, boolean backward) {
+        super.onTransitionAnimationStart(isOpen, backward);
+        if (actionBar != null) {
+            actionBar.setForceHolidayAnimationPaused(true);
+        }
+    }
+
+    @Override
     public void onTransitionAnimationProgress(boolean isOpen, float progress) {
         if (rightSlidingDialogContainer != null && rightSlidingDialogContainer.hasFragment()) {
             rightSlidingDialogContainer.getFragment().onTransitionAnimationProgress(isOpen, progress);
@@ -9369,6 +9377,9 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
     @Override
     public void onTransitionAnimationEnd(boolean isOpen, boolean backward) {
+        if (actionBar != null) {
+            actionBar.setForceHolidayAnimationPaused(false);
+        }
         if (rightSlidingDialogContainer != null && rightSlidingDialogContainer.hasFragment()) {
             rightSlidingDialogContainer.getFragment().onTransitionAnimationEnd(isOpen, backward);
         } else {
