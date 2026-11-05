@@ -25,6 +25,7 @@ import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.plugins.ExternalPlugins;
+import org.telegram.messenger.plugins.packages.PluginManifest;
 import org.telegram.messenger.plugins.risk.PluginRiskCatalog;
 import org.telegram.messenger.plugins.risk.PluginRiskDiff;
 import org.telegram.messenger.plugins.risk.PluginRiskEvidence;
@@ -45,6 +46,27 @@ final class PluginRiskReportView extends LinearLayout {
 
     PluginRiskReportView(
             Context context,
+            ExternalPlugins.Review review,
+            Theme.ResourcesProvider resourcesProvider) {
+        this(
+                context,
+                review.result.manifest,
+                review.result.riskReport,
+                review,
+                resourcesProvider);
+    }
+
+    PluginRiskReportView(
+            Context context,
+            ExternalPlugins.InstalledRiskReport installed,
+            Theme.ResourcesProvider resourcesProvider) {
+        this(context, installed.manifest, installed.report, null, resourcesProvider);
+    }
+
+    private PluginRiskReportView(
+            Context context,
+            PluginManifest manifest,
+            PluginRiskReport report,
             ExternalPlugins.Review review,
             Theme.ResourcesProvider resourcesProvider) {
         super(context);
@@ -69,7 +91,7 @@ final class PluginRiskReportView extends LinearLayout {
         list.setVerticalScrollBarEnabled(false);
         list.setClipToPadding(false);
         list.setPadding(0, dp(12), 0, dp(20));
-        buildReport(review);
+        buildReport(manifest, report, review);
         list.setAdapter(new ReportAdapter());
         addView(list, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
     }
@@ -144,32 +166,35 @@ final class PluginRiskReportView extends LinearLayout {
         view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
     }
 
-    private void buildReport(ExternalPlugins.Review review) {
+    private void buildReport(
+            PluginManifest manifest,
+            PluginRiskReport report,
+            ExternalPlugins.Review review) {
         items.add(Item.header(LocaleController.getString(
                 R.string.FluxGramPluginRiskReportAccess)));
         items.add(Item.access(prominentRow(
                 LocaleController.getString(R.string.FluxGramFullAccess),
                 LocaleController.getString(R.string.FluxGramPluginRiskReportAccessInfo))));
 
-        if (review.installedVersion != null) {
+        if (review != null && review.installedVersion != null) {
             addUpdateSection(review);
         }
 
         items.add(Item.header(LocaleController.getString(
                 R.string.FluxGramPluginRiskReportFindings)));
 
-        if (review.result.riskReport.evidence.isEmpty()) {
+        if (report.evidence.isEmpty()) {
             addRows(rows(row(
                     LocaleController.getString(R.string.FluxGramPluginRiskReportNoFindings),
                     LocaleController.getString(R.string.FluxGramPluginRiskReportNoFindingsInfo))));
         } else {
-            items.add(Item.overview(Overview.from(review.result.riskReport.evidence)));
-            addEvidenceGroups(review.result.riskReport.evidence);
+            items.add(Item.overview(Overview.from(report.evidence)));
+            addEvidenceGroups(report.evidence);
         }
 
         ArrayList<Row> declarations = new ArrayList<>();
 
-        for (String capability : review.result.manifest.declaredCapabilities) {
+        for (String capability : manifest.declaredCapabilities) {
             declarations.add(row(capability, LocaleController.getString(
                     R.string.FluxGramPluginRiskReportDeclaredByAuthor)));
         }
@@ -190,7 +215,7 @@ final class PluginRiskReportView extends LinearLayout {
 
         ArrayList<Row> limitations = new ArrayList<>();
 
-        for (String limitation : review.result.riskReport.limitations) {
+        for (String limitation : report.limitations) {
             limitations.add(reasonRow(limitation));
         }
 
@@ -206,7 +231,7 @@ final class PluginRiskReportView extends LinearLayout {
 
         ArrayList<Row> modules = new ArrayList<>();
 
-        for (PluginRiskReport.ModuleDigest module : review.result.riskReport.modules) {
+        for (PluginRiskReport.ModuleDigest module : report.modules) {
             modules.add(row(module.role, module.sha256));
         }
 
@@ -214,7 +239,6 @@ final class PluginRiskReportView extends LinearLayout {
                 LocaleController.getString(R.string.FluxGramPluginRiskReportModules),
                 modules);
 
-        PluginRiskReport report = review.result.riskReport;
         ArrayList<Row> technical = new ArrayList<>();
         technical.add(row(LocaleController.getString(R.string.FluxGramPluginRiskReportPluginId), report.pluginId));
         technical.add(row(LocaleController.getString(R.string.FluxGramPluginVersion), report.pluginVersion));

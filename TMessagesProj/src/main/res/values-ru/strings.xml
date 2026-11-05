@@ -658,10 +658,14 @@
     <string name="FluxGramPluginRecoveryMessage">%1$s вызвал предыдущий сбой приложения. Плагины не загружены, чтобы вы могли безопасно проверить их.</string>
     <string name="FluxGramPluginRecoveryReview">Проверить плагины</string>
     <string name="FluxGramPluginRecoveryBlockPlugin">Оставить этот плагин выключенным</string>
+    <string name="FluxGramPluginRecoveryRiskReport">Посмотреть сохранённый отчёт</string>
+    <string name="FluxGramPluginRecoveryRiskReportInfo">Это локальный отчёт, сохранённый при проверке установленной версии. Его открытие не запускает и не анализирует плагин повторно.</string>
+    <string name="FluxGramPluginRecoveryRiskReportUnavailable">Для этой установленной версии нет совместимого сохранённого отчёта.</string>
     <string name="FluxGramPluginRecoveryKeepDisabled">Оставить плагины выключенными</string>
     <string name="FluxGramPluginRecoveryUnknown">Внешний плагин</string>
     <string name="FluxGramPluginCausedCrash">Вызвал предыдущий сбой приложения</string>
     <string name="FluxGramPluginRecoverySafeStart">Не загружен в режиме восстановления</string>
+    <string name="FluxGramPluginIdentityUnavailable">Личность пакета недоступна</string>
     <string name="FluxGramPluginStartupBlocked">Запуск заблокирован</string>
     <string name="FluxGramPluginStartupAllowed">Будет доступен после перезапуска</string>
     <string name="FluxGramPluginAllowNextStart">Разрешить после перезапуска</string>

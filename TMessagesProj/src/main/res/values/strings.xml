@@ -11695,10 +11695,14 @@
     <string name="FluxGramPluginRecoveryMessage">%1$s caused the previous app crash. Plugins remain unloaded so you can safely review them.</string>
     <string name="FluxGramPluginRecoveryReview">Review plugins</string>
     <string name="FluxGramPluginRecoveryBlockPlugin">Keep this plugin disabled</string>
+    <string name="FluxGramPluginRecoveryRiskReport">View saved report</string>
+    <string name="FluxGramPluginRecoveryRiskReportInfo">This is the local report saved when this installed version was checked. Opening it does not run or reanalyze the plugin.</string>
+    <string name="FluxGramPluginRecoveryRiskReportUnavailable">No compatible saved report is available for this installed version.</string>
     <string name="FluxGramPluginRecoveryKeepDisabled">Keep plugins disabled</string>
     <string name="FluxGramPluginRecoveryUnknown">An external plugin</string>
     <string name="FluxGramPluginCausedCrash">Caused the previous app crash</string>
     <string name="FluxGramPluginRecoverySafeStart">Not loaded during recovery</string>
+    <string name="FluxGramPluginIdentityUnavailable">Package identity is unavailable</string>
     <string name="FluxGramPluginStartupBlocked">Blocked from starting</string>
     <string name="FluxGramPluginStartupAllowed">Available after restart</string>
     <string name="FluxGramPluginAllowNextStart">Allow after restart</string>

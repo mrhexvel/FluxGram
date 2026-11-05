@@ -93,6 +93,76 @@ class PluginCrashRecoveryTest(unittest.TestCase):
         self.assertLess(blocked, install)
         self.assertGreater(restore_blocked, restore)
 
+    def test_saved_report_does_not_release_recovery_or_run_plugin_code(self):
+        external = (
+            ROOT
+            / "TMessagesProj/src/main/java/org/telegram/messenger/plugins/ExternalPlugins.java"
+        ).read_text()
+        sheet = (
+            ROOT
+            / "TMessagesProj/src/main/java/org/telegram/ui/FluxGramPluginRecoverySheet.java"
+        ).read_text()
+        report_method = external[
+            external.index("public static void loadInstalledRiskReport") :
+            external.index("public static void install(")
+        ]
+        open_report = sheet[
+            sheet.index("private void openRiskReport") :
+            sheet.index("private void showRiskReport")
+        ]
+
+        self.assertIn("worker.execute", report_method)
+        self.assertIn("store.get(id)", report_method)
+        self.assertIn("installed.riskReport", report_method)
+        self.assertIn("installed.signerStateError", report_method)
+        self.assertIn("AndroidUtilities.runOnUIThread", report_method)
+        self.assertNotIn("PluginPackageValidator.inspect", report_method)
+        self.assertNotIn("migrateStorage", report_method)
+        self.assertNotIn("new PythonPluginAdapter", report_method)
+        self.assertIn("ExternalPlugins.loadInstalledRiskReport", open_report)
+        self.assertIn("manager.isRecoveryLatched()", open_report)
+        self.assertNotIn("setSystemEnabled", open_report)
+        self.assertNotIn("openPlugins", open_report)
+        self.assertNotIn("blockStartup", open_report)
+        self.assertIn("isDismissed()", open_report)
+
+    def test_invalid_package_identity_precedes_recovery_and_startup_block(self):
+        source = (
+            ROOT
+            / "TMessagesProj/src/main/java/org/telegram/messenger/plugins/ExternalPlugins.java"
+        ).read_text()
+        startup = source[
+            source.index("for (PluginPackageStore.Installed installed : installedPackages)") :
+            source.index("private static PluginReputationStartupPump.Task")
+        ]
+        recovery = source[
+            source.index("private static void loadMetadataOnly") :
+            source.index("public static boolean isRemoving")
+        ]
+
+        self.assertLess(
+            startup.index("installed.signerStateError"),
+            startup.index("manager.isPluginStartupBlocked"),
+        )
+        self.assertIn("IncompatiblePlugin.State.IDENTITY_ERROR", startup)
+        self.assertLess(
+            recovery.index("installed.signerStateError"),
+            recovery.index("manager.isPluginStartupBlocked"),
+        )
+        self.assertLess(
+            recovery.index("manager.isPluginStartupBlocked"),
+            recovery.index("installed.manifest.isCompatible()"),
+        )
+
+        block_startup = source[
+            source.index("public static boolean blockStartup") :
+            source.index("public static boolean allowStartup")
+        ]
+        self.assertIn(
+            "plugin.state != IncompatiblePlugin.State.IDENTITY_ERROR",
+            block_startup,
+        )
+
     def test_uncaught_guarded_error_creates_recovery_evidence(self):
         if not shutil.which("javac") or not shutil.which("java"):
             self.skipTest("Requires JDK")

@@ -16,6 +16,7 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.plugins.ExternalPlugins;
 import org.telegram.messenger.plugins.Plugin;
 import org.telegram.messenger.plugins.PluginManager;
+import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.BottomSheet;
 import org.telegram.ui.ActionBar.Theme;
@@ -27,6 +28,10 @@ public final class FluxGramPluginRecoverySheet extends BottomSheet {
 
     private final BaseFragment fragment;
     private final String pluginId;
+    private final String pluginLabel;
+    private final LinearLayout content;
+    private boolean loadingReport;
+    private boolean showingReport;
 
     private FluxGramPluginRecoverySheet(
             BaseFragment fragment,
@@ -35,10 +40,20 @@ public final class FluxGramPluginRecoverySheet extends BottomSheet {
         super(fragment.getParentActivity(), false, fragment.getResourceProvider());
         this.fragment = fragment;
         this.pluginId = pluginId;
+        this.pluginLabel = pluginLabel;
 
         Context context = fragment.getParentActivity();
-        LinearLayout content = new LinearLayout(context);
+        content = new LinearLayout(context);
         content.setOrientation(LinearLayout.VERTICAL);
+        showRecoveryContent();
+        setCustomView(content);
+        setOnDismissListener(dialog -> showing = false);
+    }
+
+    private void showRecoveryContent() {
+        Context context = fragment.getParentActivity();
+        showingReport = false;
+        content.removeAllViews();
         content.setPadding(dp(24), dp(20), dp(24), dp(12));
 
         TextView title = new TextView(context);
@@ -70,6 +85,14 @@ public final class FluxGramPluginRecoverySheet extends BottomSheet {
             blockPluginButton.setOnClickListener(view -> blockPlugin());
             content.addView(blockPluginButton, LayoutHelper.createLinear(
                     LayoutHelper.MATCH_PARENT, 48, 0, 0, 0, 0));
+
+            ButtonWithCounterView reportButton = new ButtonWithCounterView(
+                    context, resourcesProvider).setRound().setNeutral();
+            reportButton.setText(LocaleController.getString(
+                    R.string.FluxGramPluginRecoveryRiskReport), false);
+            reportButton.setOnClickListener(view -> openRiskReport(reportButton));
+            content.addView(reportButton, LayoutHelper.createLinear(
+                    LayoutHelper.MATCH_PARENT, 48, 0, 6, 0, 0));
         }
 
         ButtonWithCounterView review = new ButtonWithCounterView(
@@ -86,9 +109,6 @@ public final class FluxGramPluginRecoverySheet extends BottomSheet {
         keepDisabled.setOnClickListener(view -> dismiss());
         content.addView(keepDisabled, LayoutHelper.createLinear(
                 LayoutHelper.MATCH_PARENT, 48, 0, 6, 0, 0));
-
-        setCustomView(content);
-        setOnDismissListener(dialog -> showing = false);
     }
 
     public static void maybeShow() {
@@ -148,5 +168,98 @@ public final class FluxGramPluginRecoverySheet extends BottomSheet {
         }
 
         openPlugins();
+    }
+
+    private void openRiskReport(ButtonWithCounterView button) {
+        if (loadingReport) {
+            return;
+        }
+
+        loadingReport = true;
+        button.setLoading(true);
+        ExternalPlugins.loadInstalledRiskReport(pluginId, (report, error) -> {
+            loadingReport = false;
+
+            if (!isShowing() || isDismissed()) {
+                return;
+            }
+
+            button.setLoading(false);
+            PluginManager manager = PluginManager.getInstance();
+
+            if (!manager.isRecoveryLatched()
+                    || !pluginId.equals(manager.getRecoveryPluginId())) {
+                return;
+            }
+            if (error != null || report == null) {
+                showReportUnavailable();
+                return;
+            }
+
+            showRiskReport(report);
+        });
+    }
+
+    private void showRiskReport(ExternalPlugins.InstalledRiskReport installed) {
+        Context context = fragment.getParentActivity();
+        showingReport = true;
+        content.removeAllViews();
+        content.setPadding(dp(16), dp(12), dp(16), dp(12));
+
+        TextView title = new TextView(context);
+        title.setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT);
+        title.setTextColor(Theme.getColor(Theme.key_dialogTextBlack, resourcesProvider));
+        title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 20);
+        title.setTypeface(AndroidUtilities.bold());
+        title.setText(LocaleController.getString(R.string.FluxGramPluginRiskReportTitle));
+        content.addView(title, LayoutHelper.createLinear(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 8, 0, 8, 0));
+
+        TextView plugin = new TextView(context);
+        plugin.setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT);
+        plugin.setTextColor(Theme.getColor(Theme.key_dialogTextBlack, resourcesProvider));
+        plugin.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+        plugin.setText(installed.manifest.name + "  ·  " + installed.manifest.version);
+        content.addView(plugin, LayoutHelper.createLinear(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 8, 8, 8, 0));
+
+        TextView notice = new TextView(context);
+        notice.setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT);
+        notice.setTextColor(Theme.getColor(Theme.key_dialogTextGray2, resourcesProvider));
+        notice.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+        notice.setLineSpacing(dp(2), 1f);
+        notice.setText(LocaleController.getString(
+                R.string.FluxGramPluginRecoveryRiskReportInfo));
+        content.addView(notice, LayoutHelper.createLinear(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 8, 6, 8, 0));
+
+        content.addView(new PluginRiskReportView(
+                context, installed, resourcesProvider), LayoutHelper.createLinear(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+
+        ButtonWithCounterView back = new ButtonWithCounterView(
+                context, resourcesProvider).setRound().setNeutral();
+        back.setText(LocaleController.getString(R.string.Back), false);
+        back.setOnClickListener(view -> showRecoveryContent());
+        content.addView(back, LayoutHelper.createLinear(
+                LayoutHelper.MATCH_PARENT, 48, 8, 0, 8, 0));
+    }
+
+    private void showReportUnavailable() {
+        new AlertDialog.Builder(fragment.getParentActivity(), resourcesProvider)
+                .setTitle(LocaleController.getString(R.string.FluxGramPluginRiskReportTitle))
+                .setMessage(LocaleController.getString(
+                        R.string.FluxGramPluginRecoveryRiskReportUnavailable))
+                .setPositiveButton(LocaleController.getString(R.string.OK), null)
+                .show();
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (showingReport) {
+            showRecoveryContent();
+        } else {
+            super.onBackPressed();
+        }
     }
 }

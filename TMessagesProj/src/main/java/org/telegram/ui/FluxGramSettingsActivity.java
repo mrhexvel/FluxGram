@@ -977,6 +977,11 @@ public class FluxGramSettingsActivity extends BaseFragment {
                 status = LocaleController.getString(
                         R.string.FluxGramPluginRecoverySafeStart);
             } else if (metadataOnly && metadataPlugin.getState()
+                    == ExternalPlugins.IncompatiblePlugin.State.IDENTITY_ERROR) {
+                status = LocaleController.getString(
+                        R.string.FluxGramPluginIdentityUnavailable);
+                statusError = true;
+            } else if (metadataOnly && metadataPlugin.getState()
                     == ExternalPlugins.IncompatiblePlugin.State.STARTUP_BLOCKED) {
                 status = LocaleController.getString(
                         R.string.FluxGramPluginStartupBlocked);

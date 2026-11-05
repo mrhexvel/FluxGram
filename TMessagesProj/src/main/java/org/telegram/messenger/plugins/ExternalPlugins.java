@@ -135,6 +135,7 @@ public final class ExternalPlugins {
             CHECKING,
             BLOCKED,
             RECOVERY,
+            IDENTITY_ERROR,
             STARTUP_BLOCKED,
             STARTUP_ALLOWED
         }
@@ -256,6 +257,16 @@ public final class ExternalPlugins {
         @Override
         public void close() {
             archive.delete();
+        }
+    }
+
+    public static final class InstalledRiskReport {
+        public final PluginManifest manifest;
+        public final PluginRiskReport report;
+
+        InstalledRiskReport(PluginManifest manifest, PluginRiskReport report) {
+            this.manifest = manifest;
+            this.report = report;
         }
     }
 
@@ -506,6 +517,15 @@ public final class ExternalPlugins {
                     ExternalPlugins::changed);
 
             for (PluginPackageStore.Installed installed : installedPackages) {
+                if (installed.signerStateError != null) {
+                    unavailable.put(installed.manifest.id, new IncompatiblePlugin(
+                            installed,
+                            IncompatiblePlugin.State.IDENTITY_ERROR,
+                            Collections.emptyList()));
+                    manager.clearPersistedEnabledState(installed.manifest.id);
+                    continue;
+                }
+
                 if (manager.isPluginStartupBlocked(installed.manifest.id)) {
                     unavailable.put(installed.manifest.id, new IncompatiblePlugin(
                             installed,
@@ -514,7 +534,7 @@ public final class ExternalPlugins {
                     continue;
                 }
 
-                if (!installed.manifest.isCompatible() || installed.signerStateError != null) {
+                if (!installed.manifest.isCompatible()) {
                     unavailable.put(installed.manifest.id, new IncompatiblePlugin(installed));
                     manager.clearPersistedEnabledState(installed.manifest.id);
                     continue;
@@ -699,7 +719,8 @@ public final class ExternalPlugins {
 
         IncompatiblePlugin plugin = incompatible.get(id);
 
-        if (plugin != null) {
+        if (plugin != null
+                && plugin.state != IncompatiblePlugin.State.IDENTITY_ERROR) {
             replaceUnavailable(new IncompatiblePlugin(
                     plugin.installed,
                     IncompatiblePlugin.State.STARTUP_BLOCKED,
@@ -795,6 +816,41 @@ public final class ExternalPlugins {
 
                     AndroidUtilities.runOnUIThread(() -> callback.complete(value, error));
                 });
+    }
+
+    public static void loadInstalledRiskReport(
+            String id,
+            Callback<InstalledRiskReport> callback) {
+        worker.execute(() -> {
+            InstalledRiskReport result = null;
+            Exception failure = null;
+
+            try {
+                if (store == null || startupError != null) {
+                    throw new IOException("Plugin storage unavailable: " + startupError);
+                }
+
+                PluginPackageStore.Installed installed = store.get(id);
+
+                if (installed == null) {
+                    throw new IOException("Installed plugin is unavailable");
+                }
+                if (installed.signerStateError != null) {
+                    throw new IOException("Installed plugin identity is unavailable");
+                }
+                if (installed.riskReport == null) {
+                    throw new IOException("Installed plugin risk report is unavailable");
+                }
+
+                result = new InstalledRiskReport(installed.manifest, installed.riskReport);
+            } catch (Exception error) {
+                failure = error;
+            }
+
+            InstalledRiskReport value = result;
+            Exception error = failure;
+            AndroidUtilities.runOnUIThread(() -> callback.complete(value, error));
+        });
     }
 
     public static void install(
@@ -1200,13 +1256,21 @@ public final class ExternalPlugins {
         LinkedHashMap<String, IncompatiblePlugin> unavailable = new LinkedHashMap<>();
 
         for (PluginPackageStore.Installed installed : store.list()) {
+            IncompatiblePlugin.State state;
+
+            if (installed.signerStateError != null) {
+                state = IncompatiblePlugin.State.IDENTITY_ERROR;
+            } else if (manager.isPluginStartupBlocked(installed.manifest.id)) {
+                state = IncompatiblePlugin.State.STARTUP_BLOCKED;
+            } else if (installed.manifest.isCompatible()) {
+                state = IncompatiblePlugin.State.RECOVERY;
+            } else {
+                state = IncompatiblePlugin.State.INCOMPATIBLE;
+            }
+
             unavailable.put(installed.manifest.id, new IncompatiblePlugin(
                     installed,
-                    manager.isPluginStartupBlocked(installed.manifest.id)
-                            ? IncompatiblePlugin.State.STARTUP_BLOCKED
-                            : installed.manifest.isCompatible()
-                            ? IncompatiblePlugin.State.RECOVERY
-                            : IncompatiblePlugin.State.INCOMPATIBLE,
+                    state,
                     Collections.emptyList()));
         }
 
