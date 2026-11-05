@@ -25,6 +25,7 @@ class PluginRemovalCleanupTest(unittest.TestCase):
         method = source[start:]
 
         journal = method.index("store.scheduleDelete(id);")
+        stop = method.index(".stopForRemoval();")
         storage = method.index("PluginStorage.clearPlugin(id);")
         settings = method.index("PluginSettings.clearForPluginNow(id)")
         enabled = method.index("manager.clearPersistedPluginStateNow(id)")
@@ -32,6 +33,8 @@ class PluginRemovalCleanupTest(unittest.TestCase):
         unregister = method.index("manager.unregister(id);")
         pending = method.index("store.pending()", unregister)
 
+        self.assertLess(journal, stop)
+        self.assertLess(stop, storage)
         self.assertLess(journal, storage)
         self.assertLess(storage, settings)
         self.assertLess(settings, enabled)
@@ -39,6 +42,7 @@ class PluginRemovalCleanupTest(unittest.TestCase):
         self.assertLess(removed, unregister)
         self.assertLess(enabled, unregister)
         self.assertLess(unregister, pending)
+        self.assertNotIn("Plugin already has a pending operation", method)
         self.assertIn("remove(startupBlockedKey(id))", (
             PLUGINS / "PluginManager.java"
         ).read_text())
@@ -51,6 +55,21 @@ class PluginRemovalCleanupTest(unittest.TestCase):
 
         self.assertNotIn("clearForPlugin", method)
         self.assertNotIn("clearPersistedEnabledState", method)
+
+    def test_pending_plugin_remains_deletable_for_retry(self):
+        source = (
+            ROOT
+            / "TMessagesProj/src/main/java/org/telegram/ui/FluxGramSettingsActivity.java"
+        ).read_text()
+        item = source[
+            source.index("FluxGramPluginCell cell = new FluxGramPluginCell") :
+            source.index("items.add(UItem.asCustom(cell", source.index(
+                "FluxGramPluginCell cell = new FluxGramPluginCell"
+            ))
+        ]
+
+        self.assertIn("external && !ExternalPlugins.isRemoving(plugin.getId())", item)
+        self.assertNotIn("external && pending == null", item)
 
     def test_logout_cleanup_is_durable_and_owner_scoped(self):
         maintenance = (PLUGINS / "PluginStorageMaintenance.java").read_text()

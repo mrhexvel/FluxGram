@@ -305,7 +305,9 @@ public final class ExternalPlugins {
 
                         for (PluginPackageStore.Pending operation : operations.values()) {
                             if (manager.isPluginStartupBlocked(operation.id)
-                                    && !operation.delete) {
+                                    && !operation.delete
+                                    && !operation.rollback
+                                    && !operation.migrated) {
                                 continue;
                             }
 
@@ -366,7 +368,8 @@ public final class ExternalPlugins {
 
             if (!manager.setPersistedEnabledState(
                     operation.id,
-                    operation.enabledBeforeUpdate)) {
+                    !manager.isPluginStartupBlocked(operation.id)
+                            && operation.enabledBeforeUpdate)) {
                 throw new IOException("Cannot restore plugin enabled state");
             }
 
@@ -377,7 +380,8 @@ public final class ExternalPlugins {
         if (operation.migrated) {
             if (!manager.setPersistedEnabledState(
                     operation.id,
-                    operation.enableAfterUpdate)) {
+                    !manager.isPluginStartupBlocked(operation.id)
+                            && operation.enableAfterUpdate)) {
                 throw new IOException("Cannot save plugin enabled state");
             }
 
@@ -462,6 +466,8 @@ public final class ExternalPlugins {
             rollbackPending(manager, operation);
             return;
         }
+
+        store.markPendingMigrationStarted(operation.id);
 
         try {
             PluginCrashRecovery.runExternal(
@@ -1129,6 +1135,7 @@ public final class ExternalPlugins {
                     }
 
                     PluginPackageStore.Installed replacement = store.activatePendingUpdate(id);
+                    store.markPendingMigrationStarted(id);
 
                     Exception migrationError = migrateForDebug(replacement);
 
@@ -1207,6 +1214,7 @@ public final class ExternalPlugins {
 
         if (manager.getPlugin(id) != null
                 || manager.isPluginStartupBlocked(id)
+                || getPending(id) != null
                 || store == null) {
             return;
         }
@@ -1308,9 +1316,8 @@ public final class ExternalPlugins {
                             throw new IOException("Only installed external plugins can be removed");
                         }
 
-                        if (getPending(id) != null) {
-                            throw new IOException("Plugin already has a pending operation");
-                        }
+                        store.scheduleDelete(id);
+                        pending = Collections.unmodifiableMap(store.pending());
 
                         if (runningExternal) {
                             manager.blockUntilRestart(id);
@@ -1325,8 +1332,6 @@ public final class ExternalPlugins {
                             }
                         }
 
-                        store.scheduleDelete(id);
-                        pending = Collections.unmodifiableMap(store.pending());
                         PluginStorage.clearPlugin(id);
 
                         if (!PluginSettings.clearForPluginNow(id)

@@ -70,19 +70,22 @@ public final class PluginPackageStore {
 
     public static final class Pending {
         public final String id;
-        public final boolean delete, enableAfterUpdate, enabledBeforeUpdate, rollback, migrated;
+        public final boolean delete, enableAfterUpdate, enabledBeforeUpdate;
+        public final boolean migrationStarted, rollback, migrated;
 
         Pending(
                 String id,
                 boolean delete,
                 boolean enableAfterUpdate,
                 boolean enabledBeforeUpdate,
+                boolean migrationStarted,
                 boolean rollback,
                 boolean migrated) {
             this.id = id;
             this.delete = delete;
             this.enableAfterUpdate = enableAfterUpdate;
             this.enabledBeforeUpdate = enabledBeforeUpdate;
+            this.migrationStarted = migrationStarted;
             this.rollback = rollback;
             this.migrated = migrated;
         }
@@ -528,39 +531,42 @@ public final class PluginPackageStore {
         File existingJournal = new File(root, ".pending-" + id);
         File backup = new File(root, ".backup-" + id);
 
-        if (backup.exists()) {
-            throw new IOException("Restart FluxGram to finish the pending operation first");
-        }
-
         if (existingJournal.exists()) {
-            if (!pendingErrors.containsKey(id)) {
-                throw new IOException("Restart FluxGram to finish the pending operation first");
+            if (existingJournal.isDirectory()) {
+                File marker = new File(existingJournal, "delete");
+
+                if (!marker.isFile()) {
+                    createMarker(existingJournal, "delete");
+                }
+
+                return;
             }
 
-            File failed = new File(root, ".install-failed-" + java.util.UUID.randomUUID());
+            File staging = createDeleteJournal();
+            File transition = new File(root, ".delete-pending-" + id);
 
-            if (!existingJournal.renameTo(failed)) {
-                throw new IOException("Cannot isolate invalid plugin operation");
+            try {
+                if (transition.exists() || !existingJournal.renameTo(transition)) {
+                    throw new IOException("Cannot preserve invalid plugin operation");
+                }
+                if (!staging.renameTo(existingJournal)) {
+                    throw new IOException("Cannot publish deletion request");
+                }
+
+                deleteTree(transition);
+                return;
+            } finally {
+                deleteTree(staging);
             }
-
-            deleteTree(failed);
         }
 
-        if (!new File(root, id).isDirectory()) {
+        if (!new File(root, id).isDirectory() && !backup.isDirectory()) {
             throw new IOException("Plugin is not installed");
         }
 
-        File staging = File.createTempFile(".install-", "", root);
+        File staging = createDeleteJournal();
 
         try {
-            if (!staging.delete() || !staging.mkdir()) {
-                throw new IOException("Cannot create deletion request");
-            }
-
-            try (FileOutputStream out = new FileOutputStream(new File(staging, "delete"))) {
-                out.getFD().sync();
-            }
-
             if (!staging.renameTo(new File(root, ".pending-" + id))) {
                 throw new IOException("Cannot publish deletion request");
             }
@@ -570,6 +576,8 @@ public final class PluginPackageStore {
     }
 
     public synchronized Map<String, Pending> pending() throws IOException {
+        recoverDeleteRequests();
+
         Map<String, Pending> result = new LinkedHashMap<>();
         Map<String, String> errors = new LinkedHashMap<>();
         File[] files = root.listFiles();
@@ -601,10 +609,11 @@ public final class PluginPackageStore {
                 result.put(
                         id,
                         new Pending(
-                                id,
+                        id,
                                 delete,
                                 new File(file, "enable").isFile(),
                                 new File(file, "enabled-before").isFile(),
+                                new File(file, "migration-started").isFile(),
                                 new File(file, "rollback").isFile(),
                                 new File(file, "migrated").isFile()));
             } catch (IOException error) {
@@ -615,6 +624,58 @@ public final class PluginPackageStore {
         pendingErrors = Collections.unmodifiableMap(errors);
 
         return result;
+    }
+
+    private File createDeleteJournal() throws IOException {
+        File staging = File.createTempFile(".install-", "", root);
+
+        try {
+            if (!staging.delete() || !staging.mkdir()) {
+                throw new IOException("Cannot create deletion request");
+            }
+
+            createMarker(staging, "delete");
+            return staging;
+        } catch (IOException error) {
+            deleteTree(staging);
+            throw error;
+        }
+    }
+
+    private void recoverDeleteRequests() throws IOException {
+        File[] files = root.listFiles();
+
+        if (files == null) {
+            throw new IOException("Cannot read pending plugin deletions");
+        }
+
+        for (File transition : files) {
+            if (!transition.getName().startsWith(".delete-pending-")) {
+                continue;
+            }
+
+            String id = transition.getName().substring(".delete-pending-".length());
+            validateId(id);
+            File journal = new File(root, ".pending-" + id);
+
+            if (journal.exists()) {
+                if (!journal.isDirectory() || !new File(journal, "delete").isFile()) {
+                    throw new IOException("Conflicting pending plugin deletion");
+                }
+            } else {
+                File staging = createDeleteJournal();
+
+                try {
+                    if (!staging.renameTo(journal)) {
+                        throw new IOException("Cannot recover pending plugin deletion");
+                    }
+                } finally {
+                    deleteTree(staging);
+                }
+            }
+
+            deleteTree(transition);
+        }
     }
 
     public synchronized Map<String, String> pendingErrors() {
@@ -634,6 +695,7 @@ public final class PluginPackageStore {
                     finishPendingRollback(operation.id);
                 } else {
                     activatePendingUpdate(operation.id);
+                    markPendingMigrationStarted(operation.id);
                     markPendingMigrated(operation.id);
                     finishPendingUpdate(operation.id);
                 }
@@ -823,7 +885,8 @@ public final class PluginPackageStore {
         File backup = new File(root, ".backup-" + id);
         PluginSignerJournal signerJournal = readSignerJournal(journal, id);
 
-        if (operation.rollback
+        if (!operation.migrationStarted
+                || operation.rollback
                 || new File(journal, "package").exists()
                 || !backup.exists()) {
             throw new IOException("Plugin update is not active");
@@ -838,6 +901,32 @@ public final class PluginPackageStore {
 
         if (!new File(journal, "migrated").isFile()) {
             createMarker(journal, "migrated");
+        }
+    }
+
+    public synchronized void markPendingMigrationStarted(String id) throws IOException {
+        Pending operation = requirePendingUpdate(id);
+        File journal = new File(root, ".pending-" + id);
+        File current = new File(root, id);
+        File backup = new File(root, ".backup-" + id);
+        PluginSignerJournal signerJournal = readSignerJournal(journal, id);
+
+        if (operation.rollback
+                || operation.migrated
+                || new File(journal, "package").exists()
+                || !backup.exists()) {
+            throw new IOException("Plugin update is not active");
+        }
+
+        Installed active = readInstalled(current, id);
+        Installed previous = readInstalled(backup, id);
+        requireSignerStateValid(active);
+        requireSignerStateValid(previous);
+        requireSignerState(previous.signerState, signerJournal.before, "backup");
+        requireSignerState(active.signerState, signerJournal.after, "active package");
+
+        if (!new File(journal, "migration-started").isFile()) {
+            createMarker(journal, "migration-started");
         }
     }
 
@@ -869,10 +958,7 @@ public final class PluginPackageStore {
         File current = new File(root, id);
         File backup = new File(root, ".backup-" + id);
 
-        if (current.exists() && !current.renameTo(backup)) {
-            throw new IOException("Cannot remove plugin");
-        }
-
+        deleteTree(current);
         deleteTree(backup);
         finishJournal(id);
     }

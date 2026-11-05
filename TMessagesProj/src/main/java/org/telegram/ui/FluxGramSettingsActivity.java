@@ -1055,8 +1055,7 @@ public class FluxGramSettingsActivity extends BaseFragment {
                             view,
                             plugin,
                             metadataOnly,
-                            external && pending == null
-                                    && !ExternalPlugins.isRemoving(plugin.getId())));
+                            external && !ExternalPlugins.isRemoving(plugin.getId())));
             items.add(UItem.asCustom(cell, LayoutHelper.WRAP_CONTENT));
             items.add(UItem.asShadow(null));
         }

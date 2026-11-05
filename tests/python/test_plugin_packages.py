@@ -2241,6 +2241,7 @@ class PluginStoreTest(unittest.TestCase):
             [MANIFEST["id"] + ":true:true:false"],
         )
 
+        self.store("markmigrationstarted", extra=(MANIFEST["id"],))
         self.store("markmigrated", extra=(MANIFEST["id"],))
         self.store("finish", extra=(MANIFEST["id"],))
         self.assertEqual(self.installed_version(), "2.0.0")
@@ -2253,6 +2254,16 @@ class PluginStoreTest(unittest.TestCase):
         self.store("activate", extra=(MANIFEST["id"],))
 
         self.store("finish", accepted=False, extra=(MANIFEST["id"],))
+        self.store("markmigrated", accepted=False, extra=(MANIFEST["id"],))
+        self.store("markmigrationstarted", extra=(MANIFEST["id"],))
+        self.assertTrue(
+            (
+                self.root
+                / "installed"
+                / (".pending-" + MANIFEST["id"])
+                / "migration-started"
+            ).is_file()
+        )
 
         self.assertEqual(self.installed_version(), "2.0.0")
         self.assertEqual(self.store("pending"), [MANIFEST["id"] + ":false:true"])
@@ -2326,6 +2337,7 @@ class PluginStoreTest(unittest.TestCase):
         self.update(version="2.0.0")
         root = self.root / "installed"
         self.store("activate", extra=(MANIFEST["id"],))
+        self.store("markmigrationstarted", extra=(MANIFEST["id"],))
         self.store("markmigrated", extra=(MANIFEST["id"],))
         backup = root / (".backup-" + MANIFEST["id"])
         (backup / "manifest.json").unlink()
@@ -2336,7 +2348,7 @@ class PluginStoreTest(unittest.TestCase):
         self.assertFalse(backup.exists())
         self.assertEqual(self.store("pending"), [])
 
-    def test_delete_does_not_discard_invalid_active_update_journal(self):
+    def test_delete_converts_invalid_active_update_journal(self):
         self.store("install", self.archive())
         self.update(version="2.0.0")
         self.store("activate", extra=(MANIFEST["id"],))
@@ -2345,10 +2357,81 @@ class PluginStoreTest(unittest.TestCase):
         journal = pending / ".fluxgram-signer-journal"
         journal.write_bytes(b"partial")
 
-        self.store("delete", accepted=False, extra=(MANIFEST["id"],))
+        self.store("delete", extra=(MANIFEST["id"],))
 
         self.assertTrue(pending.is_dir())
         self.assertTrue((root / (".backup-" + MANIFEST["id"])).is_dir())
+        self.assertEqual(self.store("pending"), [MANIFEST["id"] + ":true:true"])
+
+        self.store("apply")
+
+        self.assertFalse((root / MANIFEST["id"]).exists())
+        self.assertFalse((root / (".backup-" + MANIFEST["id"])).exists())
+        self.assertFalse(pending.exists())
+
+    def test_delete_converts_staged_update_and_is_idempotent(self):
+        self.store("install", self.archive())
+        self.update(version="2.0.0")
+        root = self.root / "installed"
+
+        self.store("delete", extra=(MANIFEST["id"],))
+        self.store("delete", extra=(MANIFEST["id"],))
+
+        self.assertEqual(self.store("pending"), [MANIFEST["id"] + ":true:true"])
+        self.store("apply")
+        self.assertFalse((root / MANIFEST["id"]).exists())
+        self.assertFalse((root / (".pending-" + MANIFEST["id"])).exists())
+
+    def test_delete_converts_rollback_and_migrated_update(self):
+        root = self.root / "installed"
+
+        for marker in ("rollback", "migrated"):
+            self.store("install", self.archive())
+            self.update(version="2.0.0")
+            self.store("activate", extra=(MANIFEST["id"],))
+            pending = root / (".pending-" + MANIFEST["id"])
+            (pending / marker).write_bytes(b"")
+
+            self.store("delete", extra=(MANIFEST["id"],))
+            self.store("apply")
+
+            self.assertFalse((root / MANIFEST["id"]).exists())
+            self.assertFalse((root / (".backup-" + MANIFEST["id"])).exists())
+            self.assertFalse(pending.exists())
+
+    def test_delete_replaces_malformed_active_journal_with_backup(self):
+        self.store("install", self.archive())
+        self.update(version="2.0.0")
+        self.store("activate", extra=(MANIFEST["id"],))
+        root = self.root / "installed"
+        pending = root / (".pending-" + MANIFEST["id"])
+        shutil.rmtree(pending)
+        pending.write_text("broken")
+
+        self.store("delete", extra=(MANIFEST["id"],))
+        self.store("apply")
+
+        self.assertFalse((root / MANIFEST["id"]).exists())
+        self.assertFalse((root / (".backup-" + MANIFEST["id"])).exists())
+        self.assertFalse(pending.exists())
+
+    def test_interrupted_malformed_journal_conversion_recovers_delete(self):
+        self.store("install", self.archive())
+        self.update(version="2.0.0")
+        self.store("activate", extra=(MANIFEST["id"],))
+        root = self.root / "installed"
+        pending = root / (".pending-" + MANIFEST["id"])
+        shutil.rmtree(pending)
+        transition = root / (".delete-pending-" + MANIFEST["id"])
+        transition.write_text("preserved invalid journal")
+
+        self.assertEqual(self.store("pending"), [MANIFEST["id"] + ":true:false"])
+        self.assertFalse(transition.exists())
+        self.store("apply")
+
+        self.assertFalse((root / MANIFEST["id"]).exists())
+        self.assertFalse((root / (".backup-" + MANIFEST["id"])).exists())
+        self.assertFalse(pending.exists())
 
     def test_update_cannot_reuse_or_downgrade_version(self):
         self.store("install", self.archive())
@@ -2414,13 +2497,13 @@ class PluginStoreTest(unittest.TestCase):
         )
         self.assertEqual(self.store("pending"), [])
 
-    def test_conflicting_pending_operations_are_rejected(self):
+    def test_delete_dominates_pending_update(self):
         self.store("install", self.archive())
         self.update()
         self.update(version="2.0.0", accepted=False)
-        self.store("delete", extra=(MANIFEST["id"],), accepted=False)
+        self.store("delete", extra=(MANIFEST["id"],))
         self.store("apply")
-        self.assertEqual(self.installed_version(), "1.1.0")
+        self.assertEqual(self.store("list"), [])
 
     def test_delete_waits_for_restart_and_can_be_reinstalled(self):
         self.store("install", self.archive())

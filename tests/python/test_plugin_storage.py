@@ -89,22 +89,40 @@ class PluginStorageTest(unittest.TestCase):
         ).read_text()
 
         activate = external.index("store.activatePendingUpdate(operation.id)")
+        started = external.index("store.markPendingMigrationStarted(operation.id)")
         migrate = external.index("PythonPluginAdapter.migrateStorage(update)")
         finish = external.index("store.finishPendingUpdate(operation.id)", migrate)
         rollback = external.index("store.rollbackPending(operation.id)", migrate)
         migrated = external.index("store.markPendingMigrated(operation.id)", migrate)
 
         self.assertLess(activate, migrate)
+        self.assertLess(activate, started)
+        self.assertLess(started, migrate)
         self.assertLess(migrate, migrated)
         self.assertLess(migrated, finish)
         self.assertLess(migrate, finish)
         self.assertLess(migrate, rollback)
         self.assertIn('createMarker(journal, "rollback")', store)
+        self.assertIn('createMarker(journal, "migration-started")', store)
         self.assertIn('createMarker(journal, "migrated")', store)
         self.assertLess(
             store.index('createMarker(journal, "migrated")'),
             store.index("deleteTree(backup);", store.index("finishPendingUpdate")),
         )
+
+        debug = external[
+            external.index("public static void developerInstallOrReload") :
+            external.index("private static Exception migrateForDebug")
+        ]
+        self.assertLess(
+            debug.index("store.markPendingMigrationStarted(id)"),
+            debug.index("migrateForDebug(replacement)"),
+        )
+        restore = external[
+            external.index("private static void restoreDebugRegistration") :
+            external.index("public static void export")
+        ]
+        self.assertIn("getPending(id) != null", restore)
 
     def test_startup_isolates_pending_recovery_failures(self):
         external = (JAVA / "ExternalPlugins.java").read_text()

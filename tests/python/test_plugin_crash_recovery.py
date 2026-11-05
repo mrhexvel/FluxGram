@@ -77,6 +77,43 @@ class PluginCrashRecoveryTest(unittest.TestCase):
         self.assertLess(blocked_installed, migration)
         self.assertIn("IncompatiblePlugin.State.STARTUP_BLOCKED", source)
 
+    def test_startup_block_allows_only_terminal_pending_recovery(self):
+        source = (
+            ROOT
+            / "TMessagesProj/src/main/java/org/telegram/messenger/plugins/ExternalPlugins.java"
+        ).read_text()
+        operation_loop = source[
+            source.index("for (PluginPackageStore.Pending operation : operations.values())") :
+            source.index("recoverPendingReputation(")
+        ]
+        recovery = source[
+            source.index("private static void recoverPendingOperation") :
+            source.index("private static void recoverPendingReputation")
+        ]
+
+        self.assertIn("&& !operation.delete", operation_loop)
+        self.assertIn("&& !operation.rollback", operation_loop)
+        self.assertIn("&& !operation.migrated", operation_loop)
+        self.assertGreaterEqual(
+            recovery.count("!manager.isPluginStartupBlocked(operation.id)"),
+            2,
+        )
+
+    def test_delete_intent_precedes_runtime_cleanup_and_resumes_pending_delete(self):
+        source = (
+            ROOT
+            / "TMessagesProj/src/main/java/org/telegram/messenger/plugins/ExternalPlugins.java"
+        ).read_text()
+        delete = source[source.index("public static void delete(") :]
+
+        journal = delete.index("store.scheduleDelete(id);")
+        stop = delete.index(".stopForRemoval();")
+        cleanup = delete.index("PluginStorage.clearPlugin(id);")
+
+        self.assertLess(journal, stop)
+        self.assertLess(stop, cleanup)
+        self.assertNotIn("Plugin already has a pending operation", delete)
+
     def test_startup_block_cannot_be_bypassed_by_debug_cycle(self):
         source = (
             ROOT

@@ -94,6 +94,10 @@ public final class PluginStoreCheck {
                 store.markPendingMigrated(args[3]);
             }
 
+            if (args[0].equals("markmigrationstarted")) {
+                store.markPendingMigrationStarted(args[3]);
+            }
+
             if (args[0].equals("rollback")) {
                 store.rollbackPending(args[3]);
                 store.finishPendingRollback(args[3]);
