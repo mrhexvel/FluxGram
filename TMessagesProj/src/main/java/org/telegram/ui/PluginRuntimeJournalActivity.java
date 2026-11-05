@@ -16,24 +16,20 @@ import org.telegram.messenger.plugins.journal.PluginRuntimeJournals;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
-import org.telegram.ui.Cells.HeaderCell;
 import org.telegram.ui.Components.LayoutHelper;
-import org.telegram.ui.Components.PluginRuntimeJournalEventCell;
+import org.telegram.ui.Components.PluginRuntimeJournalSummaryCell;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalRecyclerView;
 import org.telegram.ui.fluxgram.FluxGramSettingsSections;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 public final class PluginRuntimeJournalActivity extends BaseFragment {
     private static final int REFRESH = 1;
     private static final int RETRY = 2;
-    private static final int SUMMARY = 3;
-    private static final int STATUS = 4;
+    private static final int STATUS = 3;
 
     private UniversalRecyclerView listView;
     private PluginRuntimeJournalExport journal;
@@ -139,33 +135,7 @@ public final class PluginRuntimeJournalActivity extends BaseFragment {
     }
 
     private void fillItems(ArrayList<UItem> items) {
-        addSectionLabel(items, R.string.FluxGramPluginJournalScope);
-
-        if (journal == null) {
-            items.add(UItem.asButton(
-                    SUMMARY,
-                    R.drawable.msg_log,
-                    LocaleController.getString(R.string.FluxGramPluginJournalScopeTitle),
-                    loading
-                            ? LocaleController.getString(R.string.Loading)
-                            : LocaleController.getString(R.string.FluxGramPluginJournalNoSnapshot)));
-        } else {
-            items.add(UItem.asButton(
-                    SUMMARY,
-                    R.drawable.msg_log,
-                    LocaleController.getString(R.string.FluxGramPluginJournalScopeTitle),
-                    LocaleController.formatString(
-                            R.string.FluxGramPluginJournalStats,
-                            journal.events.size(),
-                            journal.droppedEvents,
-                            journal.evictedEvents)));
-        }
-
-        items.add(UItem.asShadow(LocaleController.getString(
-                R.string.FluxGramPluginJournalScopeInfo)));
-
         if (loadFailed) {
-            addSectionLabel(items, R.string.FluxGramPluginJournalStatus);
             items.add(UItem.asButton(
                     RETRY,
                     R.drawable.msg_retry,
@@ -179,7 +149,6 @@ public final class PluginRuntimeJournalActivity extends BaseFragment {
         }
 
         if (journal == null) {
-            addSectionLabel(items, R.string.FluxGramPluginJournalRecent);
             items.add(UItem.asButton(
                     STATUS,
                     LocaleController.getString(R.string.Loading),
@@ -189,7 +158,6 @@ public final class PluginRuntimeJournalActivity extends BaseFragment {
         }
 
         if (journal.events.isEmpty()) {
-            addSectionLabel(items, R.string.FluxGramPluginJournalRecent);
             items.add(UItem.asButton(
                     STATUS,
                     R.drawable.msg_log,
@@ -217,97 +185,75 @@ public final class PluginRuntimeJournalActivity extends BaseFragment {
         for (Map.Entry<String, ArrayList<PluginRuntimeJournalExport.Entry>> group
                 : groups.entrySet()) {
             String pluginId = group.getKey();
-            List<PluginRuntimeJournalExport.Entry> entries = group.getValue();
+            ArrayList<PluginRuntimeJournalExport.Entry> entries = group.getValue();
             Plugin plugin = PluginManager.getInstance().getPlugin(pluginId);
-            String title = plugin == null ? pluginId : plugin.getName();
-            addSectionLabel(items, title);
+            String name = plugin == null ? pluginId : plugin.getName();
+            int starts = 0;
+            int stops = 0;
+            int errors = 0;
 
-            for (int index = 0; index < entries.size(); index++) {
-                PluginRuntimeJournalExport.Entry entry = entries.get(index);
-                items.add(PluginRuntimeJournalEventCell.Factory.of(
-                        entry,
-                        eventTitle(entry),
-                        eventDetails(entry),
-                        eventIcon(entry),
-                        eventColor(entry),
-                        index > 0,
-                        index + 1 < entries.size()));
+            for (PluginRuntimeJournalExport.Entry entry : entries) {
+                if (entry.kind == PluginRuntimeJournalCatalog.Kind.RUNTIME_GENERATION_RUNNING) {
+                    starts++;
+                } else if (entry.kind
+                        == PluginRuntimeJournalCatalog.Kind.CLEANUP_UNLOAD_SUCCEEDED) {
+                    stops++;
+                }
+                if (isFailure(entry)) {
+                    errors++;
+                }
             }
 
-            items.add(UItem.asShadow(plugin == null ? null : pluginId));
+            PluginRuntimeJournalExport.Entry latest = entries.get(0);
+            CharSequence status = pluginStatus(pluginId, latest);
+            CharSequence details = errors == 0
+                    ? LocaleController.formatString(
+                            R.string.FluxGramPluginJournalSummary,
+                            starts,
+                            stops)
+                    : LocaleController.formatString(
+                            R.string.FluxGramPluginJournalSummaryWithErrors,
+                            starts,
+                            stops,
+                            errors);
+            items.add(PluginRuntimeJournalSummaryCell.Factory.of(
+                    plugin,
+                    pluginId,
+                    name,
+                    status,
+                    details,
+                    statusColor(pluginId, latest)));
+
+            items.add(UItem.asShadow(null));
         }
     }
 
-    private CharSequence eventTitle(PluginRuntimeJournalExport.Entry entry) {
-        if (entry.kind == PluginRuntimeJournalCatalog.Kind.RUNTIME_GENERATION_RUNNING) {
-            return LocaleController.getString(R.string.FluxGramPluginJournalRuntimeRunning);
+    private CharSequence pluginStatus(
+            String pluginId,
+            PluginRuntimeJournalExport.Entry latest) {
+        if (latest.kind == PluginRuntimeJournalCatalog.Kind.CLEANUP_UNLOAD_FAILED) {
+            return LocaleController.getString(R.string.FluxGramPluginJournalUnloadFailed);
         }
-
-        switch (entry.category) {
-            case RUNTIME:
-                return LocaleController.getString(R.string.FluxGramPluginJournalRuntimeEvent);
-            case RESOURCE:
-                return LocaleController.getString(R.string.FluxGramPluginJournalResourceEvent);
-            case EXTENSION:
-                return LocaleController.getString(R.string.FluxGramPluginJournalExtensionEvent);
-            case MANAGED_HOOK:
-                return LocaleController.getString(R.string.FluxGramPluginJournalHookEvent);
-            case MANAGED_TASK:
-                return LocaleController.getString(R.string.FluxGramPluginJournalTaskEvent);
-            case TYPED_SUBSCRIPTION:
-                return LocaleController.getString(R.string.FluxGramPluginJournalSubscriptionEvent);
-            case MANAGED_STORAGE:
-                return LocaleController.getString(R.string.FluxGramPluginJournalStorageEvent);
-            case MANAGED_UI:
-                return LocaleController.getString(R.string.FluxGramPluginJournalUiEvent);
-            case QUARANTINE:
-                return LocaleController.getString(R.string.FluxGramPluginJournalQuarantineEvent);
-            case CRASH:
-                return LocaleController.getString(R.string.FluxGramPluginJournalCrashEvent);
-            case CLEANUP:
-                return LocaleController.getString(R.string.FluxGramPluginJournalCleanupEvent);
-            default:
-                return entry.kind.name().toLowerCase(Locale.ROOT).replace('_', ' ');
+        PluginManager manager = PluginManager.getInstance();
+        if (!manager.isSystemEnabled()) {
+            return LocaleController.getString(R.string.FluxGramPluginJournalSystemDisabled);
         }
+        return LocaleController.getString(manager.isEnabled(pluginId)
+                ? R.string.FluxGramPluginJournalEnabled
+                : R.string.FluxGramPluginJournalDisabled);
     }
 
-    private CharSequence eventDetails(PluginRuntimeJournalExport.Entry entry) {
-        String detail = LocaleController.formatString(
-                R.string.FluxGramPluginJournalEventDetails,
-                entry.sequence,
-                aliasNumber(entry.process),
-                aliasNumber(entry.runtime),
-                entry.generation);
-
-        if (entry.kind.valueType == PluginRuntimeJournalCatalog.ValueType.COUNT) {
-            detail += LocaleController.formatString(
-                    R.string.FluxGramPluginJournalCountValue,
-                    entry.value);
-        } else if (entry.kind.valueType
-                == PluginRuntimeJournalCatalog.ValueType.DURATION_BUCKET) {
-            detail += LocaleController.formatString(
-                    R.string.FluxGramPluginJournalDurationValue,
-                    duration(entry.value));
-        }
-
-        return detail;
-    }
-
-    private int eventIcon(PluginRuntimeJournalExport.Entry entry) {
-        return isFailure(entry) ? R.drawable.msg_warning : R.drawable.msg_log;
-    }
-
-    private int eventColor(PluginRuntimeJournalExport.Entry entry) {
-        if (isFailure(entry)) {
+    private int statusColor(
+            String pluginId,
+            PluginRuntimeJournalExport.Entry latest) {
+        if (isFailure(latest)) {
             return getThemedColor(Theme.key_text_RedRegular);
         }
-        if (entry.kind.name().contains("STOPPED")
-                || entry.kind.name().contains("CLOSED")
-                || entry.kind.name().contains("CANCELLED")) {
-            return getThemedColor(Theme.key_windowBackgroundWhiteGrayText2);
+        PluginManager manager = PluginManager.getInstance();
+        if (manager.isSystemEnabled() && manager.isEnabled(pluginId)) {
+            return getThemedColor(Theme.key_windowBackgroundWhiteGreenText);
         }
-
-        return getThemedColor(Theme.key_windowBackgroundWhiteBlueText);
+        return getThemedColor(Theme.key_windowBackgroundWhiteGrayText);
     }
 
     private boolean isFailure(PluginRuntimeJournalExport.Entry entry) {
@@ -316,36 +262,6 @@ public final class PluginRuntimeJournalActivity extends BaseFragment {
                 || name.contains("REJECTED")
                 || entry.category == PluginRuntimeJournalCatalog.Category.QUARANTINE
                 || entry.category == PluginRuntimeJournalCatalog.Category.CRASH;
-    }
-
-    private String aliasNumber(String alias) {
-        int separator = alias.lastIndexOf('-');
-        return separator < 0 ? alias : alias.substring(separator + 1);
-    }
-
-    private String duration(int bucket) {
-        switch (bucket) {
-            case 1:
-                return "<1 ms";
-            case 2:
-                return "<4 ms";
-            case 3:
-                return "<16 ms";
-            case 4:
-                return "<100 ms";
-            default:
-                return ">=100 ms";
-        }
-    }
-
-    private void addSectionLabel(ArrayList<UItem> items, int textResource) {
-        addSectionLabel(items, LocaleController.getString(textResource));
-    }
-
-    private void addSectionLabel(ArrayList<UItem> items, CharSequence text) {
-        HeaderCell label = new HeaderCell(getParentActivity(), 33, getResourceProvider());
-        label.setText(text);
-        items.add(UItem.asCustomShadow(label, LayoutHelper.WRAP_CONTENT));
     }
 
     private void onItemClick(UItem item, View view, int position, float x, float y) {

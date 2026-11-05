@@ -187,6 +187,50 @@ class PluginRuntimeJournalTest(unittest.TestCase):
         self.assertIn("RUNTIME_GENERATION_RUNNING", adapter)
         self.assertNotIn("PluginRuntimeJournals", java_session)
 
+    def test_unload_producer_records_confirmed_cleanup_outcome(self):
+        adapter = (
+            ROOT
+            / "TMessagesProj/src/main/java/org/telegram/messenger/plugins/PythonPluginAdapter.java"
+        ).read_text(encoding="utf-8")
+
+        regular_unload = adapter[adapter.index("private boolean unload(") :]
+        generation = regular_unload.index("pluginSession.getGeneration()")
+        unload = regular_unload.index("unloadAndJournal(generation);")
+        failure_handler = regular_unload.index('handleFailure(request, "Unload"')
+        self.assertLess(generation, unload)
+        self.assertLess(unload, failure_handler)
+        self.assertNotIn("journalUnload(request", regular_unload)
+
+        removal = adapter[
+            adapter.index("public void stopForRemoval()") : adapter.index(
+                "private boolean unload("
+            )
+        ]
+        self.assertIn("? 0 : pluginSession.getGeneration()", removal)
+        self.assertIn("unloadAndJournal(generation);", removal)
+        self.assertNotIn("journalUnload(generation", removal)
+
+        journaled_unload = adapter[
+            adapter.index("private void unloadAndJournal(") : adapter.index(
+                "private void unloadStrict("
+            )
+        ]
+        self.assertLess(
+            journaled_unload.index("journalUnload(generation, false);"),
+            journaled_unload.index("throw error;"),
+        )
+        self.assertLess(
+            journaled_unload.index("unloadStrict();"),
+            journaled_unload.index("journalUnload(generation, true);"),
+        )
+        self.assertIn("CLEANUP_UNLOAD_SUCCEEDED", adapter)
+        self.assertIn("CLEANUP_UNLOAD_FAILED", adapter)
+        self.assertIn("generation <= 0", adapter)
+        self.assertNotIn("PluginRuntimeJournals", (
+            ROOT
+            / "TMessagesProj/src/main/java/org/telegram/messenger/plugins/PluginResourceRegistry.java"
+        ).read_text(encoding="utf-8"))
+
     def test_journal_screen_is_lifecycle_safe_and_available_when_disabled(self):
         activity = (
             ROOT
@@ -194,7 +238,7 @@ class PluginRuntimeJournalTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
         cell = (
             ROOT
-            / "TMessagesProj/src/main/java/org/telegram/ui/Components/PluginRuntimeJournalEventCell.java"
+            / "TMessagesProj/src/main/java/org/telegram/ui/Components/PluginRuntimeJournalSummaryCell.java"
         ).read_text(encoding="utf-8")
         settings = (
             ROOT
@@ -206,8 +250,12 @@ class PluginRuntimeJournalTest(unittest.TestCase):
         self.assertIn("requestGeneration++;\n        loading = false;", activity)
         self.assertIn("AndroidUtilities.runOnUIThread", activity)
         self.assertNotIn("JSONObject", activity)
-        self.assertIn("UItem.asCustomShadow", activity)
-        self.assertIn("PluginRuntimeJournalEventCell.Factory.of", activity)
+        self.assertNotIn("FluxGramPluginJournalScopeInfo", activity)
+        self.assertIn("PluginRuntimeJournalSummaryCell.Factory.of", activity)
+        self.assertNotIn("aliasNumber", activity)
+        self.assertNotIn("journal.droppedEvents", activity)
+        self.assertIn("FluxGramPluginJournalSummary", activity)
+        self.assertIn("FluxGramPluginJournalSummaryWithErrors", activity)
         self.assertIn("extends UItem.UItemFactory", cell)
         plugin_section = settings.index("items.add(UItem.asShadow(systemDescription))")
         self.assertLess(

@@ -527,23 +527,13 @@ public final class PythonPluginAdapter implements Plugin {
             return;
         }
 
-        try {
-            PluginRuntimeJournalCoordinator.RecordResult result = PluginRuntimeJournals.record(
-                    new PluginRuntimeJournalInput(
-                            runtimeInstanceId,
-                            id,
-                            archiveSha256,
-                            generation,
-                            PluginRuntimeJournalCatalog.Kind.RUNTIME_GENERATION_RUNNING,
-                            null,
-                            0));
+        PluginRuntimeJournalCoordinator.RecordResult result = journalEvent(
+                generation,
+                PluginRuntimeJournalCatalog.Kind.RUNTIME_GENERATION_RUNNING);
 
-            if (result != PluginRuntimeJournalCoordinator.RecordResult.UNAVAILABLE
-                    && result != PluginRuntimeJournalCoordinator.RecordResult.CLOSED) {
-                lastJournaledRunningGeneration = generation;
-            }
-        } catch (RuntimeException error) {
-            FileLog.e(error);
+        if (result != PluginRuntimeJournalCoordinator.RecordResult.UNAVAILABLE
+                && result != PluginRuntimeJournalCoordinator.RecordResult.CLOSED) {
+            lastJournaledRunningGeneration = generation;
         }
     }
 
@@ -1002,10 +992,10 @@ public final class PythonPluginAdapter implements Plugin {
                 pendingSettings.clear();
                 removal = new FutureTask<>(() -> {
                     long generation = pluginSession == null
-                            ? lifecycle.getGeneration() : pluginSession.getGeneration();
+                            ? 0 : pluginSession.getGeneration();
 
                     try {
-                        unloadStrict();
+                        unloadAndJournal(generation);
                         Runnable queued;
 
                         while ((queued = executor.getQueue().poll()) != null) {
@@ -1162,14 +1152,27 @@ public final class PythonPluginAdapter implements Plugin {
     }
 
     private boolean unload(long request, boolean disableSelection) {
+        long generation = pluginSession == null ? 0 : pluginSession.getGeneration();
+
         try {
-            unloadStrict();
+            unloadAndJournal(generation);
             return true;
         } catch (Exception | LinkageError error) {
             handleFailure(request, "Unload", error, disableSelection);
 
             return false;
         }
+    }
+
+    private void unloadAndJournal(long generation) throws Exception {
+        try {
+            unloadStrict();
+        } catch (Exception | LinkageError error) {
+            journalUnload(generation, false);
+            throw error;
+        }
+
+        journalUnload(generation, true);
     }
 
     private void unloadStrict() throws Exception {
@@ -1225,6 +1228,37 @@ public final class PythonPluginAdapter implements Plugin {
 
         if (failure != null) {
             throw failure;
+        }
+    }
+
+    private void journalUnload(long generation, boolean successful) {
+        journalEvent(
+                generation,
+                successful
+                        ? PluginRuntimeJournalCatalog.Kind.CLEANUP_UNLOAD_SUCCEEDED
+                        : PluginRuntimeJournalCatalog.Kind.CLEANUP_UNLOAD_FAILED);
+    }
+
+    private PluginRuntimeJournalCoordinator.RecordResult journalEvent(
+            long generation,
+            PluginRuntimeJournalCatalog.Kind kind) {
+        if (!isExternal() || archiveSha256 == null || generation <= 0) {
+            return PluginRuntimeJournalCoordinator.RecordResult.UNAVAILABLE;
+        }
+
+        try {
+            return PluginRuntimeJournals.record(
+                    new PluginRuntimeJournalInput(
+                            runtimeInstanceId,
+                            id,
+                            archiveSha256,
+                            generation,
+                            kind,
+                            null,
+                            0));
+        } catch (RuntimeException error) {
+            FileLog.e(error);
+            return PluginRuntimeJournalCoordinator.RecordResult.UNAVAILABLE;
         }
     }
 
