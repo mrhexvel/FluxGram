@@ -67,6 +67,22 @@ public final class PluginRuntimeJournalExportCheck {
         require(!json.contains("700000001"));
         require(!json.contains("800000001"));
         require(!json.contains("900000001"));
+        require(first.revision == 5);
+        require(first.droppedEvents == 3);
+        require(first.evictedEvents == 0);
+        require(first.events.size() == 2);
+        require(first.events.get(0).process.equals("process-1"));
+        require(first.events.get(0).runtime.equals("runtime-1"));
+        require(first.events.get(0).subject.equals("subject-1"));
+        require(first.events.get(1).timeOffsetMillis == 8);
+        require(first.events.get(1).kind
+                == PluginRuntimeJournalCatalog.Kind.EXTENSION_CALLBACK_FAILED);
+
+        try {
+            first.events.clear();
+            throw new AssertionError("Expected immutable export event list");
+        } catch (UnsupportedOperationException expected) {
+        }
 
         byte[] returned = first.bytes();
         returned[0] = 0;

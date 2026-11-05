@@ -169,6 +169,7 @@ public class FluxGramSettingsActivity extends BaseFragment {
     private static final int SHOW_PROFILE_CHANNEL = 90;
     private static final int SHOW_PROFILE_BIRTHDAY = 91;
     private static final int SHOW_PROFILE_BUSINESS = 92;
+    private static final int PLUGIN_JOURNAL = 93;
     private static final int DOWNLOADS_DIRECTORY_REQUEST = 1001;
 
     private final int section;
@@ -898,6 +899,14 @@ public class FluxGramSettingsActivity extends BaseFragment {
 
         items.add(UItem.asShadow(systemDescription));
 
+        addSectionLabel(items, R.string.FluxGramPluginDiagnostics);
+        items.add(UItem.asButton(
+                PLUGIN_JOURNAL,
+                R.drawable.msg_log,
+                LocaleController.getString(R.string.FluxGramPluginJournal)));
+        items.add(UItem.asShadow(LocaleController.getString(
+                R.string.FluxGramPluginJournalEntryInfo)));
+
         if (!systemEnabled) {
             return;
         }
@@ -1454,6 +1463,8 @@ public class FluxGramSettingsActivity extends BaseFragment {
                 ExternalPlugins.changed();
             } else if (item.id == BUILT_IN_PLUGINS) {
                 presentFragment(new FluxGramSettingsActivity(BUILT_IN_PLUGINS));
+            } else if (item.id == PLUGIN_JOURNAL) {
+                presentFragment(new PluginRuntimeJournalActivity());
             } else if (item.id == PLUGIN_DEVELOPER_ACCESS) {
                 if (PluginDeveloperBridge.isSessionActive()) {
                     PluginDeveloperBridge.stopSession();

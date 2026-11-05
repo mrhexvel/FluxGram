@@ -187,6 +187,34 @@ class PluginRuntimeJournalTest(unittest.TestCase):
         self.assertIn("RUNTIME_GENERATION_RUNNING", adapter)
         self.assertNotIn("PluginRuntimeJournals", java_session)
 
+    def test_journal_screen_is_lifecycle_safe_and_available_when_disabled(self):
+        activity = (
+            ROOT
+            / "TMessagesProj/src/main/java/org/telegram/ui/PluginRuntimeJournalActivity.java"
+        ).read_text(encoding="utf-8")
+        cell = (
+            ROOT
+            / "TMessagesProj/src/main/java/org/telegram/ui/Components/PluginRuntimeJournalEventCell.java"
+        ).read_text(encoding="utf-8")
+        settings = (
+            ROOT
+            / "TMessagesProj/src/main/java/org/telegram/ui/FluxGramSettingsActivity.java"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("PluginRuntimeJournals.export", activity)
+        self.assertIn("request != requestGeneration", activity)
+        self.assertIn("requestGeneration++;\n        loading = false;", activity)
+        self.assertIn("AndroidUtilities.runOnUIThread", activity)
+        self.assertNotIn("JSONObject", activity)
+        self.assertIn("UItem.asCustomShadow", activity)
+        self.assertIn("PluginRuntimeJournalEventCell.Factory.of", activity)
+        self.assertIn("extends UItem.UItemFactory", cell)
+        plugin_section = settings.index("items.add(UItem.asShadow(systemDescription))")
+        self.assertLess(
+            settings.index("PLUGIN_JOURNAL,", plugin_section),
+            settings.index("if (!systemEnabled)", plugin_section),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

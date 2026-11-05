@@ -2,8 +2,11 @@ package org.telegram.messenger.plugins.journal;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
@@ -13,9 +16,20 @@ public final class PluginRuntimeJournalExport {
     public static final int MAX_ENCODED_BYTES = 512 * 1024;
 
     private final byte[] encoded;
+    public final long revision;
+    public final long droppedEvents;
+    public final long evictedEvents;
+    public final List<Entry> events;
 
-    private PluginRuntimeJournalExport(byte[] encoded) {
+    private PluginRuntimeJournalExport(
+            byte[] encoded,
+            PluginRuntimeJournalSnapshot snapshot,
+            List<Entry> events) {
         this.encoded = encoded;
+        revision = snapshot.revision;
+        droppedEvents = snapshot.droppedEvents;
+        evictedEvents = snapshot.evictedEvents;
+        this.events = Collections.unmodifiableList(new ArrayList<>(events));
     }
 
     public static PluginRuntimeJournalExport create(
@@ -29,6 +43,7 @@ public final class PluginRuntimeJournalExport {
         Map<Long, Long> processStartTimes = new HashMap<>();
         Map<RuntimeIdentity, Integer> runtimes = new LinkedHashMap<>();
         Map<PluginRuntimeJournalEvent.SubjectToken, Integer> subjects = new LinkedHashMap<>();
+        ArrayList<Entry> entries = new ArrayList<>(snapshot.events.size());
 
         output.append('{');
         field(output, "format", "fluxgram-plugin-runtime-journal");
@@ -73,6 +88,9 @@ public final class PluginRuntimeJournalExport {
                     ? processStartTimes.get(event.processInstanceId)
                     : event.monotonicTimeMillis;
             processStartTimes.put(event.processInstanceId, processStart);
+            String subject = event.subjectToken == null
+                    ? null
+                    : "subject-" + alias(subjects, event.subjectToken);
 
             output.append('{');
             field(output, "sequence", event.sequence);
@@ -101,10 +119,10 @@ public final class PluginRuntimeJournalExport {
             output.append(',');
             output.append("\"subject\":");
 
-            if (event.subjectToken == null) {
+            if (subject == null) {
                 output.append("null");
             } else {
-                string(output, "subject-" + alias(subjects, event.subjectToken));
+                string(output, subject);
             }
 
             output.append(',');
@@ -117,6 +135,18 @@ public final class PluginRuntimeJournalExport {
             }
 
             output.append('}');
+            entries.add(new Entry(
+                    event.sequence,
+                    event.monotonicTimeMillis - processStart,
+                    "process-" + process,
+                    "runtime-" + runtime,
+                    event.pluginId,
+                    event.archiveSha256,
+                    event.generation,
+                    event.category(),
+                    event.kind,
+                    subject,
+                    event.value));
         }
 
         output.append(']');
@@ -128,7 +158,7 @@ public final class PluginRuntimeJournalExport {
             throw new IOException("Plugin runtime journal export exceeds size limit");
         }
 
-        return new PluginRuntimeJournalExport(encoded);
+        return new PluginRuntimeJournalExport(encoded, snapshot, entries);
     }
 
     public byte[] bytes() {
@@ -230,6 +260,45 @@ public final class PluginRuntimeJournalExport {
         @Override
         public int hashCode() {
             return Objects.hash(processInstanceId, runtimeInstanceId);
+        }
+    }
+
+    public static final class Entry {
+        public final long sequence;
+        public final long timeOffsetMillis;
+        public final String process;
+        public final String runtime;
+        public final String pluginId;
+        public final String archiveSha256;
+        public final long generation;
+        public final PluginRuntimeJournalCatalog.Category category;
+        public final PluginRuntimeJournalCatalog.Kind kind;
+        public final String subject;
+        public final int value;
+
+        private Entry(
+                long sequence,
+                long timeOffsetMillis,
+                String process,
+                String runtime,
+                String pluginId,
+                String archiveSha256,
+                long generation,
+                PluginRuntimeJournalCatalog.Category category,
+                PluginRuntimeJournalCatalog.Kind kind,
+                String subject,
+                int value) {
+            this.sequence = sequence;
+            this.timeOffsetMillis = timeOffsetMillis;
+            this.process = process;
+            this.runtime = runtime;
+            this.pluginId = pluginId;
+            this.archiveSha256 = archiveSha256;
+            this.generation = generation;
+            this.category = category;
+            this.kind = kind;
+            this.subject = subject;
+            this.value = value;
         }
     }
 }
