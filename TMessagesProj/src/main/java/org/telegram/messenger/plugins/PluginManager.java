@@ -92,6 +92,10 @@ public final class PluginManager {
         return "enabled." + id;
     }
 
+    private static String startupBlockedKey(String id) {
+        return "startup_blocked." + id;
+    }
+
     private void notifyEnabledChanged(Entry entry) {
         try {
             entry.plugin.onEnabledChanged(isRuntimeEnabled() && entry.enabled);
@@ -179,9 +183,10 @@ public final class PluginManager {
         }
 
         Entry entry = new Entry(id, plugin);
-        entry.enabled = !blockedUntilRestart
+        boolean startupBlocked = isPluginStartupBlocked(id);
+        entry.enabled = !blockedUntilRestart && !startupBlocked
                 && preferences.getBoolean(enabledKey(id), enabledByDefault);
-        entry.blockedUntilRestart = blockedUntilRestart;
+        entry.blockedUntilRestart = blockedUntilRestart || startupBlocked;
         plugins.put(id, entry);
 
         notifyEnabledChanged(entry);
@@ -224,6 +229,43 @@ public final class PluginManager {
         setEnabled(id, false);
     }
 
+    public synchronized boolean blockPluginOnNextStart(String id) {
+        if (id == null || id.isEmpty()) {
+            return false;
+        }
+
+        boolean saved = preferences.edit()
+                .putBoolean(startupBlockedKey(id), true)
+                .putBoolean(enabledKey(id), false)
+                .commit();
+
+        if (!saved) {
+            return false;
+        }
+
+        Entry entry = plugins.get(id);
+
+        if (entry != null) {
+            entry.blockedUntilRestart = true;
+            entry.enabled = false;
+            notifyEnabledChanged(entry);
+        }
+
+        return true;
+    }
+
+    public synchronized boolean allowPluginOnNextStart(String id) {
+        if (id == null || id.isEmpty()) {
+            return false;
+        }
+
+        return preferences.edit().remove(startupBlockedKey(id)).commit();
+    }
+
+    public synchronized boolean isPluginStartupBlocked(String id) {
+        return id != null && preferences.getBoolean(startupBlockedKey(id), false);
+    }
+
     public synchronized boolean isEnabled(String id) {
         Entry entry = plugins.get(id);
 
@@ -260,6 +302,13 @@ public final class PluginManager {
 
     public synchronized boolean clearPersistedEnabledStateNow(String id) {
         return preferences.edit().remove(enabledKey(id)).commit();
+    }
+
+    public synchronized boolean clearPersistedPluginStateNow(String id) {
+        return preferences.edit()
+                .remove(enabledKey(id))
+                .remove(startupBlockedKey(id))
+                .commit();
     }
 
     public synchronized boolean setPersistedEnabledState(String id, boolean enabled) {

@@ -142,6 +142,12 @@ public class RegistryCheck {
 
         Map<String, Object> values = new HashMap<>();
 
+        Map<String, Object> updates = new HashMap<>();
+
+        Set<String> removals = new HashSet<>();
+
+        boolean failNextCommit;
+
         public boolean getBoolean(String key, boolean fallback) {
             Object value = values.get(key);
 
@@ -155,30 +161,56 @@ public class RegistryCheck {
         }
 
         public Editor edit() {
+            updates.clear();
+            removals.clear();
+
             return this;
         }
 
         public Editor putBoolean(String key, boolean value) {
-            values.put(key, value);
+            updates.put(key, value);
+            removals.remove(key);
 
             return this;
         }
 
         public Editor putString(String key, String value) {
-            values.put(key, value);
+            updates.put(key, value);
+            removals.remove(key);
 
             return this;
         }
 
         public Editor remove(String key) {
-            values.remove(key);
+            removals.add(key);
+            updates.remove(key);
 
             return this;
         }
 
-        public void apply() {}
+        public void apply() {
+            if (!commit()) {
+                throw new AssertionError();
+            }
+        }
 
         public boolean commit() {
+            if (failNextCommit) {
+                failNextCommit = false;
+                updates.clear();
+                removals.clear();
+
+                return false;
+            }
+
+            for (String key : removals) {
+                values.remove(key);
+            }
+
+            values.putAll(updates);
+            updates.clear();
+            removals.clear();
+
             return true;
         }
     }
@@ -341,6 +373,36 @@ public class RegistryCheck {
             check(!external.active);
             manager.beforeSend(null);
             check(external.calls == 0);
+        } else if (args[0].equals("startup_block")) {
+            manager.setSystemEnabled(true);
+            check(manager.setEnabled(external.id, true));
+            check(manager.blockPluginOnNextStart(external.id));
+            check(manager.isPluginStartupBlocked(external.id));
+            check(!manager.isEnabled(external.id));
+            check(!external.active);
+            check(prefs.getBoolean("startup_blocked." + external.id, false));
+            check(!prefs.getBoolean("enabled." + external.id, true));
+            check(manager.allowPluginOnNextStart(external.id));
+            check(!manager.isPluginStartupBlocked(external.id));
+            check(!manager.isEnabled(external.id));
+        } else if (args[0].equals("startup_block_commit_failure")) {
+            P other = new P("example.other");
+            manager.register(other, false);
+            manager.setSystemEnabled(true);
+            check(manager.setEnabled(external.id, true));
+            check(manager.setEnabled(other.id, true));
+            prefs.failNextCommit = true;
+            check(!manager.blockPluginOnNextStart(external.id));
+            check(manager.isEnabled(external.id));
+            check(external.active);
+            check(manager.isEnabled(other.id));
+            check(other.active);
+            check(!manager.isPluginStartupBlocked(external.id));
+            check(manager.blockPluginOnNextStart(external.id));
+            prefs.failNextCommit = true;
+            check(!manager.allowPluginOnNextStart(external.id));
+            check(manager.isPluginStartupBlocked(external.id));
+            check(manager.isEnabled(other.id));
         } else if (args[0].equals("transform")) {
             P first = new P("z.last");
             P second = new P("a.first");
@@ -425,6 +487,12 @@ public class RegistryCheck {
 
     def test_recovery_disables_master_and_requires_restart_before_callbacks(self):
         self.run_case("recovery")
+
+    def test_startup_block_is_durable_and_separate_from_enabled_state(self):
+        self.run_case("startup_block")
+
+    def test_startup_block_commit_failure_preserves_runtime_and_neighbor(self):
+        self.run_case("startup_block_commit_failure")
 
     def test_outgoing_text_transforms_use_stable_plugin_id_order(self):
         self.run_case("transform")

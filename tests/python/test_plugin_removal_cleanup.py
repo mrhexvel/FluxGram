@@ -27,7 +27,7 @@ class PluginRemovalCleanupTest(unittest.TestCase):
         journal = method.index("store.scheduleDelete(id);")
         storage = method.index("PluginStorage.clearPlugin(id);")
         settings = method.index("PluginSettings.clearForPluginNow(id)")
-        enabled = method.index("manager.clearPersistedEnabledStateNow(id)")
+        enabled = method.index("manager.clearPersistedPluginStateNow(id)")
         removed = method.index("store.applyPendingDelete(id);")
         unregister = method.index("manager.unregister(id);")
         pending = method.index("store.pending()", unregister)
@@ -39,6 +39,9 @@ class PluginRemovalCleanupTest(unittest.TestCase):
         self.assertLess(removed, unregister)
         self.assertLess(enabled, unregister)
         self.assertLess(unregister, pending)
+        self.assertIn("remove(startupBlockedKey(id))", (
+            PLUGINS / "PluginManager.java"
+        ).read_text())
 
     def test_update_path_does_not_clear_host_data(self):
         source = (PLUGINS / "ExternalPlugins.java").read_text()

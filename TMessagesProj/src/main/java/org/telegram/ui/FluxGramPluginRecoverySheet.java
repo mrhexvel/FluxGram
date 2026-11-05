@@ -26,10 +26,15 @@ public final class FluxGramPluginRecoverySheet extends BottomSheet {
     private static boolean showing;
 
     private final BaseFragment fragment;
+    private final String pluginId;
 
-    private FluxGramPluginRecoverySheet(BaseFragment fragment, String pluginLabel) {
+    private FluxGramPluginRecoverySheet(
+            BaseFragment fragment,
+            String pluginId,
+            String pluginLabel) {
         super(fragment.getParentActivity(), false, fragment.getResourceProvider());
         this.fragment = fragment;
+        this.pluginId = pluginId;
 
         Context context = fragment.getParentActivity();
         LinearLayout content = new LinearLayout(context);
@@ -57,12 +62,22 @@ public final class FluxGramPluginRecoverySheet extends BottomSheet {
         content.addView(message, LayoutHelper.createLinear(
                 LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 10, 0, 20));
 
+        if (pluginId != null) {
+            ButtonWithCounterView blockPluginButton = new ButtonWithCounterView(
+                    context, resourcesProvider).setRound();
+            blockPluginButton.setText(LocaleController.getString(
+                    R.string.FluxGramPluginRecoveryBlockPlugin), false);
+            blockPluginButton.setOnClickListener(view -> blockPlugin());
+            content.addView(blockPluginButton, LayoutHelper.createLinear(
+                    LayoutHelper.MATCH_PARENT, 48, 0, 0, 0, 0));
+        }
+
         ButtonWithCounterView review = new ButtonWithCounterView(
-                context, resourcesProvider).setRound();
+                context, resourcesProvider).setRound().setNeutral();
         review.setText(LocaleController.getString(R.string.FluxGramPluginRecoveryReview), false);
         review.setOnClickListener(view -> openPlugins());
         content.addView(review, LayoutHelper.createLinear(
-                LayoutHelper.MATCH_PARENT, 48, 0, 0, 0, 0));
+                LayoutHelper.MATCH_PARENT, 48, 0, pluginId == null ? 0 : 6, 0, 0));
 
         ButtonWithCounterView keepDisabled = new ButtonWithCounterView(
                 context, resourcesProvider).setRound().setNeutral();
@@ -99,7 +114,7 @@ public final class FluxGramPluginRecoverySheet extends BottomSheet {
         }
 
         FluxGramPluginRecoverySheet sheet = new FluxGramPluginRecoverySheet(
-                fragment, pluginLabel);
+                fragment, pluginId, pluginLabel);
         showing = true;
 
         try {
@@ -125,5 +140,13 @@ public final class FluxGramPluginRecoverySheet extends BottomSheet {
         ExternalPlugins.changed();
         dismiss();
         fragment.presentFragment(FluxGramSettingsActivity.plugins());
+    }
+
+    private void blockPlugin() {
+        if (!ExternalPlugins.blockStartup(pluginId)) {
+            return;
+        }
+
+        openPlugins();
     }
 }

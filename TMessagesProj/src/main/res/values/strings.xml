@@ -11694,9 +11694,14 @@
     <string name="FluxGramPluginRecoveryTitle">Plugins were disabled</string>
     <string name="FluxGramPluginRecoveryMessage">%1$s caused the previous app crash. Plugins remain unloaded so you can safely review them.</string>
     <string name="FluxGramPluginRecoveryReview">Review plugins</string>
+    <string name="FluxGramPluginRecoveryBlockPlugin">Keep this plugin disabled</string>
     <string name="FluxGramPluginRecoveryKeepDisabled">Keep plugins disabled</string>
     <string name="FluxGramPluginRecoveryUnknown">An external plugin</string>
     <string name="FluxGramPluginCausedCrash">Caused the previous app crash</string>
+    <string name="FluxGramPluginRecoverySafeStart">Not loaded during recovery</string>
+    <string name="FluxGramPluginStartupBlocked">Blocked from starting</string>
+    <string name="FluxGramPluginStartupAllowed">Available after restart</string>
+    <string name="FluxGramPluginAllowNextStart">Allow after restart</string>
     <string name="FluxGramYourSettings">SETTINGS</string>
     <string name="FluxGramMakeItYours">Make FluxGram your own</string>
     <string name="FluxGramGeneralDescription">Client preferences</string>

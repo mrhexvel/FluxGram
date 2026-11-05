@@ -133,7 +133,10 @@ public final class ExternalPlugins {
         public enum State {
             INCOMPATIBLE,
             CHECKING,
-            BLOCKED
+            BLOCKED,
+            RECOVERY,
+            STARTUP_BLOCKED,
+            STARTUP_ALLOWED
         }
 
         private final PluginPackageStore.Installed installed;
@@ -290,6 +293,11 @@ public final class ExternalPlugins {
                         ArrayList<PluginPackageStore.Pending> reputationPending = new ArrayList<>();
 
                         for (PluginPackageStore.Pending operation : operations.values()) {
+                            if (manager.isPluginStartupBlocked(operation.id)
+                                    && !operation.delete) {
+                                continue;
+                            }
+
                             if (!operation.delete && !operation.rollback && !operation.migrated) {
                                 reputationPending.add(operation);
                                 continue;
@@ -334,7 +342,7 @@ public final class ExternalPlugins {
             PluginStorage.clearPlugin(operation.id);
 
             if (!PluginSettings.clearForPluginNow(operation.id)
-                    || !manager.clearPersistedEnabledStateNow(operation.id)) {
+                    || !manager.clearPersistedPluginStateNow(operation.id)) {
                 throw new IOException("Cannot clear deleted plugin state");
             }
 
@@ -498,6 +506,14 @@ public final class ExternalPlugins {
                     ExternalPlugins::changed);
 
             for (PluginPackageStore.Installed installed : installedPackages) {
+                if (manager.isPluginStartupBlocked(installed.manifest.id)) {
+                    unavailable.put(installed.manifest.id, new IncompatiblePlugin(
+                            installed,
+                            IncompatiblePlugin.State.STARTUP_BLOCKED,
+                            Collections.emptyList()));
+                    continue;
+                }
+
                 if (!installed.manifest.isCompatible() || installed.signerStateError != null) {
                     unavailable.put(installed.manifest.id, new IncompatiblePlugin(installed));
                     manager.clearPersistedEnabledState(installed.manifest.id);
@@ -674,6 +690,43 @@ public final class ExternalPlugins {
 
     public static Plugin getIncompatiblePlugin(String id) {
         return incompatible.get(id);
+    }
+
+    public static boolean blockStartup(String id) {
+        if (!PluginManager.getInstance().blockPluginOnNextStart(id)) {
+            return false;
+        }
+
+        IncompatiblePlugin plugin = incompatible.get(id);
+
+        if (plugin != null) {
+            replaceUnavailable(new IncompatiblePlugin(
+                    plugin.installed,
+                    IncompatiblePlugin.State.STARTUP_BLOCKED,
+                    Collections.emptyList()));
+        }
+
+        changed();
+
+        return true;
+    }
+
+    public static boolean allowStartup(String id) {
+        IncompatiblePlugin plugin = incompatible.get(id);
+
+        if (plugin == null
+                || plugin.state != IncompatiblePlugin.State.STARTUP_BLOCKED
+                || !PluginManager.getInstance().allowPluginOnNextStart(id)) {
+            return false;
+        }
+
+        replaceUnavailable(new IncompatiblePlugin(
+                plugin.installed,
+                IncompatiblePlugin.State.STARTUP_ALLOWED,
+                Collections.emptyList()));
+        changed();
+
+        return true;
     }
 
     public static boolean isExternal(Plugin plugin) {
@@ -932,6 +985,10 @@ public final class ExternalPlugins {
                 id = checked.manifest.id;
                 version = checked.manifest.version;
 
+                if (manager.isPluginStartupBlocked(id)) {
+                    throw new IOException("Plugin is blocked from starting");
+                }
+
                 if (!reload) {
                     PluginSignerReview signerReview = PluginSignerReview.prepare(
                             id,
@@ -1092,7 +1149,9 @@ public final class ExternalPlugins {
     private static void restoreDebugRegistration(String id, Throwable failure) {
         PluginManager manager = PluginManager.getInstance();
 
-        if (manager.getPlugin(id) != null || store == null) {
+        if (manager.getPlugin(id) != null
+                || manager.isPluginStartupBlocked(id)
+                || store == null) {
             return;
         }
 
@@ -1143,8 +1202,10 @@ public final class ExternalPlugins {
         for (PluginPackageStore.Installed installed : store.list()) {
             unavailable.put(installed.manifest.id, new IncompatiblePlugin(
                     installed,
-                    installed.manifest.isCompatible()
-                            ? IncompatiblePlugin.State.CHECKING
+                    manager.isPluginStartupBlocked(installed.manifest.id)
+                            ? IncompatiblePlugin.State.STARTUP_BLOCKED
+                            : installed.manifest.isCompatible()
+                            ? IncompatiblePlugin.State.RECOVERY
                             : IncompatiblePlugin.State.INCOMPATIBLE,
                     Collections.emptyList()));
         }
@@ -1205,7 +1266,7 @@ public final class ExternalPlugins {
                         PluginStorage.clearPlugin(id);
 
                         if (!PluginSettings.clearForPluginNow(id)
-                                || !manager.clearPersistedEnabledStateNow(id)) {
+                                || !manager.clearPersistedPluginStateNow(id)) {
                             throw new IOException("Cannot clear deleted plugin state");
                         }
 

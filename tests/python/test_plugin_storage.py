@@ -125,7 +125,10 @@ class PluginStorageTest(unittest.TestCase):
         self.assertIn("recordPendingErrors(store.pendingErrors(), recoveryFailed);", external)
         self.assertIn("manager.registerBlockedUntilRestart(adapter);", external)
         self.assertIn("pendingErrors = Collections.unmodifiableMap(errors);", store)
-        self.assertIn("entry.blockedUntilRestart = blockedUntilRestart;", blocked)
+        self.assertIn(
+            "entry.blockedUntilRestart = blockedUntilRestart || startupBlocked;",
+            blocked,
+        )
         self.assertNotIn("preferences.edit()", blocked)
 
     def test_cleanup_covers_kv_files_sidecars_and_exact_owner(self):

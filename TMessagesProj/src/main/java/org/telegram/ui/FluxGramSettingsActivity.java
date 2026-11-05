@@ -973,6 +973,19 @@ public class FluxGramSettingsActivity extends BaseFragment {
                 status = LocaleController.getString(
                         R.string.FluxGramPluginReputationChecking);
             } else if (metadataOnly && metadataPlugin.getState()
+                    == ExternalPlugins.IncompatiblePlugin.State.RECOVERY) {
+                status = LocaleController.getString(
+                        R.string.FluxGramPluginRecoverySafeStart);
+            } else if (metadataOnly && metadataPlugin.getState()
+                    == ExternalPlugins.IncompatiblePlugin.State.STARTUP_BLOCKED) {
+                status = LocaleController.getString(
+                        R.string.FluxGramPluginStartupBlocked);
+                statusError = true;
+            } else if (metadataOnly && metadataPlugin.getState()
+                    == ExternalPlugins.IncompatiblePlugin.State.STARTUP_ALLOWED) {
+                status = LocaleController.getString(
+                        R.string.FluxGramPluginStartupAllowed);
+            } else if (metadataOnly && metadataPlugin.getState()
                     == ExternalPlugins.IncompatiblePlugin.State.BLOCKED) {
                 boolean archive = metadataPlugin.getReputationReasons().contains(
                         PluginReputationPolicy.BLOCK_ARCHIVE);
@@ -1056,6 +1069,15 @@ public class FluxGramSettingsActivity extends BaseFragment {
                     R.drawable.msg_settings,
                     LocaleController.getString(R.string.Settings),
                     () -> presentFragment(new PluginSettingsActivity(plugin.getId())));
+        }
+
+        if (plugin instanceof ExternalPlugins.IncompatiblePlugin
+                && ((ExternalPlugins.IncompatiblePlugin) plugin).getState()
+                == ExternalPlugins.IncompatiblePlugin.State.STARTUP_BLOCKED) {
+            options.add(
+                    R.drawable.msg_retry,
+                    LocaleController.getString(R.string.FluxGramPluginAllowNextStart),
+                    () -> ExternalPlugins.allowStartup(plugin.getId()));
         }
 
         options.add(

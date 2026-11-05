@@ -31,6 +31,7 @@ class PluginCrashRecoveryTest(unittest.TestCase):
         self.assertIn("runExternalWorker(id, runnable)", adapter)
         self.assertIn("manager.hasRecoveryNotice()", sheet)
         self.assertIn("manager.claimRecoveryNotice()", sheet)
+        self.assertIn("ExternalPlugins.blockStartup(pluginId)", sheet)
         self.assertIn("manager.setSystemEnabled(true)", sheet)
         self.assertIn("manager.isRecoveryPlugin(plugin.getId())", settings)
 
@@ -49,6 +50,48 @@ class PluginCrashRecoveryTest(unittest.TestCase):
         self.assertLess(metadata, recovery_return)
         self.assertLess(recovery_return, migration)
         self.assertNotIn("migrateStorage", helper.split("public static boolean", 1)[0])
+
+    def test_startup_block_is_checked_before_update_activation_and_migration(self):
+        source = (
+            ROOT
+            / "TMessagesProj/src/main/java/org/telegram/messenger/plugins/ExternalPlugins.java"
+        ).read_text()
+        operation_loop = source.index(
+            "for (PluginPackageStore.Pending operation : operations.values())"
+        )
+        blocked_operation = source.index(
+            "manager.isPluginStartupBlocked(operation.id)", operation_loop
+        )
+        activation = source.index("store.activatePendingUpdate(operation.id)")
+        installed_loop = source.index(
+            "for (PluginPackageStore.Installed installed : installedPackages)"
+        )
+        blocked_installed = source.index(
+            "manager.isPluginStartupBlocked(installed.manifest.id)", installed_loop
+        )
+        migration = source.index(
+            "PythonPluginAdapter.migrateStorage(installed)", blocked_installed
+        )
+
+        self.assertLess(blocked_operation, activation)
+        self.assertLess(blocked_installed, migration)
+        self.assertIn("IncompatiblePlugin.State.STARTUP_BLOCKED", source)
+
+    def test_startup_block_cannot_be_bypassed_by_debug_cycle(self):
+        source = (
+            ROOT
+            / "TMessagesProj/src/main/java/org/telegram/messenger/plugins/ExternalPlugins.java"
+        ).read_text()
+        debug = source[source.index("public static void developerInstallOrReload") :]
+        plugin_id = debug.index("id = checked.manifest.id;")
+        blocked = debug.index("manager.isPluginStartupBlocked(id)")
+        install = debug.index("if (!reload)")
+        restore = debug.index("private static void restoreDebugRegistration")
+        restore_blocked = debug.index("manager.isPluginStartupBlocked(id)", restore)
+
+        self.assertLess(plugin_id, blocked)
+        self.assertLess(blocked, install)
+        self.assertGreater(restore_blocked, restore)
 
     def test_uncaught_guarded_error_creates_recovery_evidence(self):
         if not shutil.which("javac") or not shutil.which("java"):

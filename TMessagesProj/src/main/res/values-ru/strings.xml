@@ -657,9 +657,14 @@
     <string name="FluxGramPluginRecoveryTitle">Плагины отключены</string>
     <string name="FluxGramPluginRecoveryMessage">%1$s вызвал предыдущий сбой приложения. Плагины не загружены, чтобы вы могли безопасно проверить их.</string>
     <string name="FluxGramPluginRecoveryReview">Проверить плагины</string>
+    <string name="FluxGramPluginRecoveryBlockPlugin">Оставить этот плагин выключенным</string>
     <string name="FluxGramPluginRecoveryKeepDisabled">Оставить плагины выключенными</string>
     <string name="FluxGramPluginRecoveryUnknown">Внешний плагин</string>
     <string name="FluxGramPluginCausedCrash">Вызвал предыдущий сбой приложения</string>
+    <string name="FluxGramPluginRecoverySafeStart">Не загружен в режиме восстановления</string>
+    <string name="FluxGramPluginStartupBlocked">Запуск заблокирован</string>
+    <string name="FluxGramPluginStartupAllowed">Будет доступен после перезапуска</string>
+    <string name="FluxGramPluginAllowNextStart">Разрешить после перезапуска</string>
     <string name="FluxGramYourSettings">НАСТРОЙКИ</string>
     <string name="FluxGramMakeItYours">Настройте FluxGram под себя</string>
     <string name="FluxGramGeneralDescription">Параметры работы клиента</string>
