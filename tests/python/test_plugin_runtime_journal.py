@@ -20,11 +20,13 @@ class PluginRuntimeJournalTest(unittest.TestCase):
                 JOURNAL / "PluginRuntimeJournalCollector.java",
                 JOURNAL / "PluginRuntimeJournalCoordinator.java",
                 JOURNAL / "PluginRuntimeJournalEvent.java",
+                JOURNAL / "PluginRuntimeJournalExport.java",
                 JOURNAL / "PluginRuntimeJournalInput.java",
                 JOURNAL / "PluginRuntimeJournalSnapshot.java",
                 JOURNAL / "PluginRuntimeJournalStore.java",
                 ROOT / "tests/java/PluginRuntimeJournalCheck.java",
                 ROOT / "tests/java/PluginRuntimeJournalCoordinatorCheck.java",
+                ROOT / "tests/java/PluginRuntimeJournalExportCheck.java",
                 ROOT / "tests/java/PluginRuntimeJournalStoreCheck.java",
             ]
             subprocess.run(
@@ -35,6 +37,12 @@ class PluginRuntimeJournalTest(unittest.TestCase):
             )
             subprocess.run(
                 ["java", "-cp", output, "PluginRuntimeJournalCheck"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            subprocess.run(
+                ["java", "-cp", output, "PluginRuntimeJournalExportCheck"],
                 check=True,
                 capture_output=True,
                 text=True,
@@ -135,6 +143,25 @@ class PluginRuntimeJournalTest(unittest.TestCase):
             application.index("PluginRuntimeJournals.initialize(applicationContext)"),
             application.index("ExternalPlugins.initialize(applicationContext)"),
         )
+
+    def test_export_is_bounded_redacted_and_read_only(self):
+        export = (JOURNAL / "PluginRuntimeJournalExport.java").read_text(
+            encoding="utf-8"
+        )
+        coordinator = (JOURNAL / "PluginRuntimeJournalCoordinator.java").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("MAX_ENCODED_BYTES = 512 * 1024", export)
+        self.assertIn('field(output, "coverage", "host_managed_fluxgram_api_only")', export)
+        self.assertIn('string(output, "direct_xposed_or_aliuhook")', export)
+        self.assertIn('string(output, "raw_network_files_or_database")', export)
+        self.assertNotIn('field(output, "process_instance_id"', export)
+        self.assertNotIn('field(output, "runtime_instance_id"', export)
+        self.assertNotIn('field(output, "subject_token"', export)
+        self.assertIn("MAX_PENDING_EXPORTS = 8", coordinator)
+        self.assertIn("PluginRuntimeJournalExport.create(store.snapshot())", coordinator)
+        self.assertNotIn("store.load()", coordinator[coordinator.index("public ExportRequestResult export"):])
 
     def test_running_producer_is_external_and_after_lifecycle_transition(self):
         adapter = (

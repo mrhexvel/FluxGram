@@ -1,5 +1,6 @@
 import org.telegram.messenger.plugins.journal.PluginRuntimeJournalCatalog;
 import org.telegram.messenger.plugins.journal.PluginRuntimeJournalCoordinator;
+import org.telegram.messenger.plugins.journal.PluginRuntimeJournalExport;
 import org.telegram.messenger.plugins.journal.PluginRuntimeJournalInput;
 import org.telegram.messenger.plugins.journal.PluginRuntimeJournalStore;
 
@@ -10,6 +11,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 public final class PluginRuntimeJournalCoordinatorCheck {
     private static final String ARCHIVE = repeat("cd", 32);
@@ -20,6 +24,10 @@ public final class PluginRuntimeJournalCoordinatorCheck {
         commitRetryKeepsBatch();
         loadRetryKeepsProcessIdentity();
         closeRetryKeepsOwnerThread();
+        unavailableExportDoesNotOpenStore();
+        rejectedExportIsNotQueued();
+        readOnlyExportUsesWorker();
+        exportQueueIsBounded();
     }
 
     private static void backgroundBootstrapAndClose() throws Exception {
@@ -134,6 +142,116 @@ public final class PluginRuntimeJournalCoordinatorCheck {
         require(files.closeThread == files.ownerThread);
     }
 
+    private static void readOnlyExportUsesWorker() throws Exception {
+        Thread caller = Thread.currentThread();
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        FakeFiles files = new FakeFiles();
+        PluginRuntimeJournalCoordinator coordinator = new PluginRuntimeJournalCoordinator(
+                processInstanceId -> new PluginRuntimeJournalStore(files, processInstanceId),
+                () -> 101,
+                executor);
+
+        coordinator.start();
+        awaitState(coordinator, PluginRuntimeJournalCoordinator.State.RUNNING);
+        require(coordinator.record(input())
+                == PluginRuntimeJournalCoordinator.RecordResult.ACCEPTED);
+        awaitStateFile(files);
+        int writesBefore = files.writeCount;
+        CountDownLatch completed = new CountDownLatch(1);
+        AtomicReference<PluginRuntimeJournalCoordinator.ExportStatus> status =
+                new AtomicReference<>();
+        AtomicReference<PluginRuntimeJournalExport> exported = new AtomicReference<>();
+        AtomicReference<Thread> callbackThread = new AtomicReference<>();
+        require(coordinator.export((result, value) -> {
+            status.set(result);
+            exported.set(value);
+            callbackThread.set(Thread.currentThread());
+            completed.countDown();
+        }) == PluginRuntimeJournalCoordinator.ExportRequestResult.QUEUED);
+        require(completed.await(5, TimeUnit.SECONDS));
+        require(status.get() == PluginRuntimeJournalCoordinator.ExportStatus.EXPORTED);
+        require(exported.get() != null);
+        require(callbackThread.get() == files.ownerThread);
+        require(callbackThread.get() != caller);
+        require(files.writeCount == writesBefore);
+        String json = new String(
+                exported.get().bytes(),
+                java.nio.charset.StandardCharsets.UTF_8);
+        require(json.contains("\"kind\":\"runtime_generation_running\""));
+        coordinator.close();
+        awaitState(coordinator, PluginRuntimeJournalCoordinator.State.CLOSED);
+    }
+
+    private static void unavailableExportDoesNotOpenStore() throws Exception {
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        int[] opens = {0};
+        PluginRuntimeJournalCoordinator coordinator = new PluginRuntimeJournalCoordinator(
+                processInstanceId -> {
+                    opens[0]++;
+                    return new PluginRuntimeJournalStore(new FakeFiles(), processInstanceId);
+                },
+                () -> 103,
+                executor);
+
+        require(coordinator.export((status, export) -> {
+        }) == PluginRuntimeJournalCoordinator.ExportRequestResult.UNAVAILABLE);
+        require(opens[0] == 0);
+        coordinator.close();
+        awaitState(coordinator, PluginRuntimeJournalCoordinator.State.CLOSED);
+    }
+
+    private static void rejectedExportIsNotQueued() throws Exception {
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        PluginRuntimeJournalCoordinator coordinator = new PluginRuntimeJournalCoordinator(
+                processInstanceId -> new PluginRuntimeJournalStore(
+                        new FakeFiles(),
+                        processInstanceId),
+                () -> 104,
+                executor);
+
+        coordinator.start();
+        awaitState(coordinator, PluginRuntimeJournalCoordinator.State.RUNNING);
+        executor.shutdown();
+        require(executor.awaitTermination(5, TimeUnit.SECONDS));
+        int[] callbacks = {0};
+        require(coordinator.export((status, export) -> callbacks[0]++)
+                == PluginRuntimeJournalCoordinator.ExportRequestResult.UNAVAILABLE);
+        require(callbacks[0] == 0);
+    }
+
+    private static void exportQueueIsBounded() throws Exception {
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        CountDownLatch releaseWorker = new CountDownLatch(1);
+        CountDownLatch completed = new CountDownLatch(8);
+        PluginRuntimeJournalCoordinator coordinator = new PluginRuntimeJournalCoordinator(
+                processInstanceId -> new PluginRuntimeJournalStore(
+                        new FakeFiles(),
+                        processInstanceId),
+                () -> 102,
+                executor);
+
+        coordinator.start();
+        awaitState(coordinator, PluginRuntimeJournalCoordinator.State.RUNNING);
+        executor.execute(() -> {
+            try {
+                releaseWorker.await(5, TimeUnit.SECONDS);
+            } catch (InterruptedException ignored) {
+            }
+        });
+
+        for (int i = 0; i < 8; i++) {
+            require(coordinator.export((status, export) -> completed.countDown())
+                    == PluginRuntimeJournalCoordinator.ExportRequestResult.QUEUED);
+        }
+
+        require(coordinator.export((status, export) -> {
+        }) == PluginRuntimeJournalCoordinator.ExportRequestResult.OVERLOADED);
+        releaseWorker.countDown();
+        require(completed.await(5, TimeUnit.SECONDS));
+        coordinator.close();
+        awaitState(coordinator, PluginRuntimeJournalCoordinator.State.CLOSED);
+    }
+
     private static void awaitState(
             PluginRuntimeJournalCoordinator coordinator,
             PluginRuntimeJournalCoordinator.State expected) throws Exception {
@@ -221,6 +339,7 @@ public final class PluginRuntimeJournalCoordinatorCheck {
         private boolean failWrite;
         private boolean failClose;
         private int closeAttempts;
+        private int writeCount;
 
         @Override
         public void acquire() {
@@ -248,6 +367,7 @@ public final class PluginRuntimeJournalCoordinatorCheck {
                 byte[] value) throws IOException {
             require(Thread.currentThread() == ownerThread);
             writeThread = Thread.currentThread();
+            writeCount++;
 
             if (failWrite) {
                 failWrite = false;

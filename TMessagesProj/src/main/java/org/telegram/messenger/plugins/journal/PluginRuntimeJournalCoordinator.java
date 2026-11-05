@@ -2,6 +2,8 @@ package org.telegram.messenger.plugins.journal;
 
 import java.io.IOException;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 
@@ -25,6 +27,23 @@ public final class PluginRuntimeJournalCoordinator implements AutoCloseable {
         CLOSED
     }
 
+    public enum ExportRequestResult {
+        QUEUED,
+        OVERLOADED,
+        UNAVAILABLE,
+        CLOSED
+    }
+
+    public enum ExportStatus {
+        EXPORTED,
+        UNAVAILABLE,
+        CLOSED
+    }
+
+    public interface ExportCallback {
+        void onExport(ExportStatus status, PluginRuntimeJournalExport export);
+    }
+
     public interface StoreFactory {
         PluginRuntimeJournalStore open(long processInstanceId) throws IOException;
     }
@@ -38,6 +57,7 @@ public final class PluginRuntimeJournalCoordinator implements AutoCloseable {
     private final ProcessInstanceIdFactory processInstanceIdFactory;
     private final ExecutorService executor;
     private final ArrayDeque<PluginRuntimeJournalInput> pendingStart = new ArrayDeque<>();
+    private final ArrayDeque<ExportCallback> pendingExports = new ArrayDeque<>();
 
     private volatile State state = State.NEW;
     private long processInstanceId;
@@ -55,6 +75,7 @@ public final class PluginRuntimeJournalCoordinator implements AutoCloseable {
     private long bootstrapRetryDelayMillis = 50;
 
     private static final int MAX_PENDING_START = 64;
+    private static final int MAX_PENDING_EXPORTS = 8;
 
     public PluginRuntimeJournalCoordinator(
             StoreFactory storeFactory,
@@ -146,6 +167,37 @@ public final class PluginRuntimeJournalCoordinator implements AutoCloseable {
         }
     }
 
+    public ExportRequestResult export(ExportCallback callback) {
+        if (callback == null) {
+            throw new IllegalArgumentException("Plugin runtime journal export callback is required");
+        }
+
+        synchronized (lock) {
+            if (state == State.CLOSING || state == State.CLOSED || closeRequested) {
+                return ExportRequestResult.CLOSED;
+            }
+            if (state != State.RUNNING || collector == null || store == null) {
+                return ExportRequestResult.UNAVAILABLE;
+            }
+            if (pendingExports.size() >= MAX_PENDING_EXPORTS) {
+                return ExportRequestResult.OVERLOADED;
+            }
+
+            pendingExports.addLast(callback);
+
+            if (!workerScheduled) {
+                scheduleLocked(this::exportWorker);
+            }
+
+            if (state == State.UNAVAILABLE && !workerScheduled) {
+                pendingExports.removeLastOccurrence(callback);
+                return ExportRequestResult.UNAVAILABLE;
+            }
+
+            return ExportRequestResult.QUEUED;
+        }
+    }
+
     @Override
     public void close() {
         synchronized (lock) {
@@ -221,6 +273,9 @@ public final class PluginRuntimeJournalCoordinator implements AutoCloseable {
                 } else if (closeRequested) {
                     state = State.CLOSING;
                     scheduleLocked(this::closeWorker);
+                } else if (!pendingExports.isEmpty()) {
+                    state = State.RUNNING;
+                    scheduleLocked(this::exportWorker);
                 } else {
                     state = State.RUNNING;
                 }
@@ -237,6 +292,7 @@ public final class PluginRuntimeJournalCoordinator implements AutoCloseable {
                     scheduleLocked(this::closeWorker);
                 } else if (closeRequested && !pendingStart.isEmpty()) {
                     state = State.CLOSING;
+                    scheduleLocked(this::closeWorker);
                 } else if (closeRequested) {
                     state = State.CLOSING;
                     scheduleLocked(this::closeWorker);
@@ -292,6 +348,8 @@ public final class PluginRuntimeJournalCoordinator implements AutoCloseable {
             return;
         }
 
+        List<ExportCallback> closedExports = null;
+
         synchronized (lock) {
             collector = null;
             store = null;
@@ -301,10 +359,7 @@ public final class PluginRuntimeJournalCoordinator implements AutoCloseable {
                 bootstrapCleanupPending = false;
 
                 if (closeRequested) {
-                    if (!pendingStart.isEmpty()) {
-                        state = State.CLOSING;
-                        return;
-                    }
+                    pendingStart.clear();
                 } else {
                     if (pendingStart.isEmpty()) {
                         state = State.UNAVAILABLE;
@@ -316,8 +371,12 @@ public final class PluginRuntimeJournalCoordinator implements AutoCloseable {
                 }
             }
 
+            pendingStart.clear();
+            closedExports = takePendingExportsLocked();
             state = State.CLOSED;
         }
+
+        completeExports(closedExports, ExportStatus.CLOSED, null);
 
         executor.shutdown();
     }
@@ -326,6 +385,7 @@ public final class PluginRuntimeJournalCoordinator implements AutoCloseable {
         int committedBatches = 0;
         int closingFailures = 0;
         long retryDelayMillis = 50;
+        boolean drained = false;
 
         synchronized (lock) {
             flushRequested = false;
@@ -343,6 +403,7 @@ public final class PluginRuntimeJournalCoordinator implements AutoCloseable {
 
                 if (inFlight.isEmpty()) {
                     inFlight = null;
+                    drained = true;
                     break;
                 }
             }
@@ -353,9 +414,14 @@ public final class PluginRuntimeJournalCoordinator implements AutoCloseable {
                 retryDelayMillis = 50;
                 committedBatches++;
             } catch (IOException error) {
+                List<ExportCallback> failedExports;
+
                 synchronized (lock) {
                     commitFailures = saturatingIncrement(commitFailures);
+                    failedExports = takePendingExportsLocked();
                 }
+
+                completeExports(failedExports, ExportStatus.UNAVAILABLE, null);
 
                 try {
                     Thread.sleep(retryDelayMillis);
@@ -383,6 +449,29 @@ public final class PluginRuntimeJournalCoordinator implements AutoCloseable {
             }
         }
 
+        List<ExportCallback> exports = null;
+        PluginRuntimeJournalExport exported = null;
+
+        if (drained) {
+            synchronized (lock) {
+                exports = takePendingExportsLocked();
+            }
+
+            if (!exports.isEmpty()) {
+                try {
+                    exported = PluginRuntimeJournalExport.create(store.snapshot());
+                } catch (IOException | RuntimeException ignored) {
+                }
+            }
+        }
+
+        if (exports != null && !exports.isEmpty()) {
+            completeExports(
+                    exports,
+                    exported == null ? ExportStatus.UNAVAILABLE : ExportStatus.EXPORTED,
+                    exported);
+        }
+
         synchronized (lock) {
             workerScheduled = false;
 
@@ -392,6 +481,43 @@ public final class PluginRuntimeJournalCoordinator implements AutoCloseable {
             } else if (flushRequested) {
                 flushRequested = true;
                 scheduleLocked(this::flushWorker);
+            } else if (!pendingExports.isEmpty()) {
+                scheduleLocked(this::exportWorker);
+            }
+        }
+    }
+
+    private void exportWorker() {
+        List<ExportCallback> exports;
+
+        synchronized (lock) {
+            exports = takePendingExportsLocked();
+        }
+
+        PluginRuntimeJournalExport exported = null;
+
+        if (!exports.isEmpty()) {
+            try {
+                exported = PluginRuntimeJournalExport.create(store.snapshot());
+            } catch (IOException | RuntimeException ignored) {
+            }
+        }
+
+        completeExports(
+                exports,
+                exported == null ? ExportStatus.UNAVAILABLE : ExportStatus.EXPORTED,
+                exported);
+
+        synchronized (lock) {
+            workerScheduled = false;
+
+            if (closeRequested) {
+                state = State.CLOSING;
+                scheduleLocked(this::closeWorker);
+            } else if (flushRequested) {
+                scheduleLocked(this::flushWorker);
+            } else if (!pendingExports.isEmpty()) {
+                scheduleLocked(this::exportWorker);
             }
         }
     }
@@ -433,6 +559,24 @@ public final class PluginRuntimeJournalCoordinator implements AutoCloseable {
         bootstrap();
     }
 
+    private List<ExportCallback> takePendingExportsLocked() {
+        ArrayList<ExportCallback> exports = new ArrayList<>(pendingExports);
+        pendingExports.clear();
+        return exports;
+    }
+
+    private void completeExports(
+            List<ExportCallback> callbacks,
+            ExportStatus status,
+            PluginRuntimeJournalExport export) {
+        for (ExportCallback callback : callbacks) {
+            try {
+                callback.onExport(status, export);
+            } catch (Throwable ignored) {
+            }
+        }
+    }
+
     private void scheduleLocked(Runnable operation) {
         if (workerScheduled) {
             return;
@@ -445,11 +589,20 @@ public final class PluginRuntimeJournalCoordinator implements AutoCloseable {
                 try {
                     operation.run();
                 } catch (Throwable error) {
+                    List<ExportCallback> failedExports;
+                    ExportStatus exportStatus;
+
                     synchronized (lock) {
                         workerScheduled = false;
                         loadFailures = saturatingIncrement(loadFailures);
                         state = closeRequested ? State.CLOSING : State.UNAVAILABLE;
+                        failedExports = takePendingExportsLocked();
+                        exportStatus = closeRequested
+                                ? ExportStatus.CLOSED
+                                : ExportStatus.UNAVAILABLE;
                     }
+
+                    completeExports(failedExports, exportStatus, null);
                 }
             });
         } catch (RejectedExecutionException error) {

@@ -65,6 +65,21 @@ public final class PluginRuntimeJournals {
         return current.record(input);
     }
 
+    public static PluginRuntimeJournalCoordinator.ExportRequestResult export(
+            PluginRuntimeJournalCoordinator.ExportCallback callback) {
+        PluginRuntimeJournalCoordinator current;
+
+        synchronized (PluginRuntimeJournals.class) {
+            current = instance;
+        }
+
+        if (current == null) {
+            return PluginRuntimeJournalCoordinator.ExportRequestResult.UNAVAILABLE;
+        }
+
+        return current.export(callback);
+    }
+
     private static PluginRuntimeJournalStore openStore(
             Context context,
             long processInstanceId) throws IOException {
