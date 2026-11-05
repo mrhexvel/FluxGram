@@ -141,6 +141,27 @@ public final class PythonPluginAdapter implements Plugin {
         return lifecycle.getGeneration();
     }
 
+    public PluginQuarantineReason getQuarantineReason() {
+        while (true) {
+            long generation = lifecycle.getGeneration();
+            PluginQuarantineReason reason = quarantineState.get(generation);
+
+            if (generation == lifecycle.getGeneration()) {
+                return reason;
+            }
+        }
+    }
+
+    @Override
+    public void onQuarantined(long generation, PluginQuarantineReason reason) {
+        if (lifecycle.getGeneration() != generation) {
+            return;
+        }
+
+        quarantineState.record(generation, reason);
+        ExternalPlugins.changed();
+    }
+
     String awaitDebugRuntime(long timeoutMs) throws IOException {
         PythonPluginLifecycle.State state;
 
@@ -194,6 +215,7 @@ public final class PythonPluginAdapter implements Plugin {
     private final Semaphore storageSlots = new Semaphore(2);
     private final Semaphore transformSlots = new Semaphore(TRANSFORM_CAPACITY);
     private final PythonPluginLifecycle lifecycle = new PythonPluginLifecycle();
+    private final PluginQuarantineState quarantineState = new PluginQuarantineState();
     private final PythonPluginTaskScheduler taskScheduler;
     private final LinkedHashMap<String, PendingSetting> pendingSettings = new LinkedHashMap<>();
     private final LinkedHashMap<String, Boolean> observedMessages = new LinkedHashMap<>();
@@ -629,6 +651,11 @@ public final class PythonPluginAdapter implements Plugin {
                             @Override
                             public boolean commit(Runnable operation) {
                                 return lifecycle.commitIfRunning(generation, operation);
+                            }
+
+                            @Override
+                            public void onQuarantined(PluginQuarantineReason reason) {
+                                PythonPluginAdapter.this.onQuarantined(generation, reason);
                             }
                         },
                         member,

@@ -218,6 +218,14 @@ public final class PluginManager {
         return entry == null ? null : entry.plugin;
     }
 
+    static void reportQuarantine(String id, long generation, PluginQuarantineReason reason) {
+        Plugin plugin = getInstance().getPlugin(id);
+
+        if (plugin != null) {
+            plugin.onQuarantined(generation, reason);
+        }
+    }
+
     public synchronized void blockUntilRestart(String id) {
         Entry entry = plugins.get(id);
 

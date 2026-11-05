@@ -23,6 +23,9 @@ final class ManagedMethodHooks {
         boolean isActive();
 
         boolean commit(Runnable operation);
+
+        default void onQuarantined(PluginQuarantineReason reason) {
+        }
     }
 
     private static final long CALLBACK_BUDGET_NANOS = 4_000_000L;
@@ -357,7 +360,7 @@ final class ManagedMethodHooks {
                 returnEarly = call.applyOriginal(parameter);
 
                 if (!call.isOriginalThrowable(error)) {
-                    quarantine(error);
+                    quarantine(error, PluginQuarantineReason.CALLBACK_FAILURE);
                 }
             } finally {
                 call.invalidate();
@@ -405,11 +408,19 @@ final class ManagedMethodHooks {
                 return;
             }
 
-            quarantine(new IllegalStateException("Method hook callback exceeded the 4 ms budget"));
+            quarantine(
+                    new IllegalStateException("Method hook callback exceeded the 4 ms budget"),
+                    PluginQuarantineReason.TIME_LIMIT);
         }
 
-        private void quarantine(Throwable error) {
+        private void quarantine(Throwable error, PluginQuarantineReason reason) {
             point.quarantine(this);
+            Lifecycle gate = lifecycle;
+
+            if (gate != null) {
+                gate.onQuarantined(reason);
+            }
+
             releaseIfIdle();
             FileLog.e(error);
         }

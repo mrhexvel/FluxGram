@@ -131,7 +131,12 @@ public final class HostExtensionRegistryCheck {
         AtomicLong clock = new AtomicLong();
         Boundary boundary = new Boundary();
         List<Throwable> reports = new ArrayList<>();
-        HostExtensionRegistry registry = new HostExtensionRegistry(clock::get, boundary, reports::add);
+        List<PluginQuarantineReason> reasons = new ArrayList<>();
+        HostExtensionRegistry registry = new HostExtensionRegistry(
+                clock::get,
+                boundary,
+                reports::add,
+                (pluginId, generation, reason) -> reasons.add(reason));
         HostExtensionDescriptor<ReplacementInput, Void> descriptor = replacement(
                 "test.replacement", 10, 2);
         AtomicBoolean firstActive = new AtomicBoolean(true);
@@ -186,6 +191,8 @@ public final class HostExtensionRegistryCheck {
                 "plugin failure was not attributed");
         require(registry.registrationCount() == 1 && registry.bindingCount() == 0,
                 "plugin failure did not quarantine binding");
+        require(reasons.equals(Arrays.asList(PluginQuarantineReason.CALLBACK_FAILURE)),
+                "plugin failure quarantine reason mismatch");
 
         endpoint.close();
         registration.close();
@@ -204,7 +211,12 @@ public final class HostExtensionRegistryCheck {
         AtomicLong clock = new AtomicLong();
         Boundary boundary = new Boundary();
         List<Throwable> reports = new ArrayList<>();
-        HostExtensionRegistry registry = new HostExtensionRegistry(clock::get, boundary, reports::add);
+        List<PluginQuarantineReason> reasons = new ArrayList<>();
+        HostExtensionRegistry registry = new HostExtensionRegistry(
+                clock::get,
+                boundary,
+                reports::add,
+                (pluginId, generation, reason) -> reasons.add(reason));
         HostExtensionDescriptor<ReplacementInput, Void> budgetDescriptor = replacement(
                 "test.replacement_budget", 10, 2);
         AutoCloseable budgetRegistration = registry.registerReplacement(
@@ -228,6 +240,8 @@ public final class HostExtensionRegistryCheck {
         require(registry.registrationCount() == 0 && registry.bindingCount() == 0
                         && reports.size() == 1,
                 "replacement budget quarantine mismatch");
+        require(reasons.equals(Arrays.asList(PluginQuarantineReason.TIME_LIMIT)),
+                "replacement budget quarantine reason mismatch");
         budgetEndpoint.close();
         budgetRegistration.close();
 

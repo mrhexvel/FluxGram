@@ -45,6 +45,7 @@ import org.telegram.messenger.plugins.ExternalPlugins;
 import org.telegram.messenger.plugins.Plugin;
 import org.telegram.messenger.plugins.PluginDeveloperBridge;
 import org.telegram.messenger.plugins.PluginManager;
+import org.telegram.messenger.plugins.PluginQuarantineReason;
 import org.telegram.messenger.plugins.reputation.PluginReputationPolicy;
 import org.telegram.messenger.plugins.PythonPluginAdapter;
 import org.telegram.messenger.plugins.packages.PluginManifest;
@@ -1012,6 +1013,20 @@ public class FluxGramSettingsActivity extends BaseFragment {
             if (plugin instanceof PythonPluginAdapter
                     && ((PythonPluginAdapter) plugin).getLoadError() != null) {
                 description += "\n\n" + LocaleController.getString(R.string.FluxGramPluginLoadFailed);
+            }
+
+            if (plugin instanceof PythonPluginAdapter) {
+                PluginQuarantineReason reason =
+                        ((PythonPluginAdapter) plugin).getQuarantineReason();
+
+                if (reason != null) {
+                    status = LocaleController.getString(reason == PluginQuarantineReason.TIME_LIMIT
+                            ? R.string.FluxGramPluginQuarantineTimeLimit
+                            : reason == PluginQuarantineReason.CLEANUP_FAILURE
+                            ? R.string.FluxGramPluginQuarantineCleanupFailure
+                            : R.string.FluxGramPluginQuarantineCallbackFailure);
+                    statusError = true;
+                }
             }
 
             if (manager.isRecoveryPlugin(plugin.getId())) {

@@ -185,6 +185,11 @@ public final class PluginComposerRegistry {
 
     static AutoCloseable register(HostExtensionRegistry extensions, String pluginId,
             BooleanSupplier active, ComposerEffect.Factory factory) {
+        return register(extensions, pluginId, 0, active, factory);
+    }
+
+    static AutoCloseable register(HostExtensionRegistry extensions, String pluginId,
+            long generation, BooleanSupplier active, ComposerEffect.Factory factory) {
         requireUi();
 
         if (factory == null || registrations.size() >= 8) {
@@ -192,7 +197,8 @@ public final class PluginComposerRegistry {
         }
 
         Registration registration = new Registration(
-                extensions, pluginId, active, factory, false, false, false, false);
+                extensions, pluginId, generation, active, factory,
+                false, false, false, false);
         registrations.add(registration);
 
         for (Surface surface : new ArrayList<>(surfaces)) {
@@ -204,6 +210,11 @@ public final class PluginComposerRegistry {
 
     static AutoCloseable registerText(HostExtensionRegistry extensions, String pluginId,
             BooleanSupplier active, ComposerTextEffect.Factory factory) {
+        return registerText(extensions, pluginId, 0, active, factory);
+    }
+
+    static AutoCloseable registerText(HostExtensionRegistry extensions, String pluginId,
+            long generation, BooleanSupplier active, ComposerTextEffect.Factory factory) {
         requireUi();
 
         if (factory == null || registrations.size() >= 8) {
@@ -217,7 +228,8 @@ public final class PluginComposerRegistry {
         }
 
         Registration registration = new Registration(
-                extensions, pluginId, active, factory::create, true, false, false, false);
+                extensions, pluginId, generation, active, factory::create,
+                true, false, false, false);
         registrations.add(registration);
 
         for (Surface surface : new ArrayList<>(surfaces)) {
@@ -230,6 +242,12 @@ public final class PluginComposerRegistry {
     static AutoCloseable registerCursor(
             HostExtensionRegistry extensions, String pluginId,
             BooleanSupplier active, ComposerCursorEffect.Factory factory) {
+        return registerCursor(extensions, pluginId, 0, active, factory);
+    }
+
+    static AutoCloseable registerCursor(
+            HostExtensionRegistry extensions, String pluginId,
+            long generation, BooleanSupplier active, ComposerCursorEffect.Factory factory) {
         requireUi();
 
         if (factory == null || registrations.size() >= 8) {
@@ -243,7 +261,8 @@ public final class PluginComposerRegistry {
         }
 
         Registration registration = new Registration(
-                extensions, pluginId, active, factory::create, false, true, false, false);
+                extensions, pluginId, generation, active, factory::create,
+                false, true, false, false);
         registrations.add(registration);
 
         for (Surface surface : new ArrayList<>(surfaces)) {
@@ -256,6 +275,12 @@ public final class PluginComposerRegistry {
     static AutoCloseable registerSelection(
             HostExtensionRegistry extensions, String pluginId,
             BooleanSupplier active, ComposerSelectionEffect.Factory factory) {
+        return registerSelection(extensions, pluginId, 0, active, factory);
+    }
+
+    static AutoCloseable registerSelection(
+            HostExtensionRegistry extensions, String pluginId,
+            long generation, BooleanSupplier active, ComposerSelectionEffect.Factory factory) {
         requireUi();
 
         if (factory == null || registrations.size() >= 8) {
@@ -269,7 +294,8 @@ public final class PluginComposerRegistry {
         }
 
         Registration registration = new Registration(
-                extensions, pluginId, active, factory::create, false, false, true, false);
+                extensions, pluginId, generation, active, factory::create,
+                false, false, true, false);
         registrations.add(registration);
 
         for (Surface surface : new ArrayList<>(surfaces)) {
@@ -282,6 +308,12 @@ public final class PluginComposerRegistry {
     static AutoCloseable registerContent(
             HostExtensionRegistry extensions, String pluginId,
             BooleanSupplier active, ComposerContentEffect.Factory factory) {
+        return registerContent(extensions, pluginId, 0, active, factory);
+    }
+
+    static AutoCloseable registerContent(
+            HostExtensionRegistry extensions, String pluginId,
+            long generation, BooleanSupplier active, ComposerContentEffect.Factory factory) {
         requireUi();
 
         if (factory == null || registrations.size() >= 8) {
@@ -295,7 +327,8 @@ public final class PluginComposerRegistry {
         }
 
         Registration registration = new Registration(
-                extensions, pluginId, active, factory::create, false, false, false, true);
+                extensions, pluginId, generation, active, factory::create,
+                false, false, false, true);
         registrations.add(registration);
 
         for (Surface surface : new ArrayList<>(surfaces)) {
@@ -783,6 +816,7 @@ public final class PluginComposerRegistry {
     private static final class Registration implements AutoCloseable {
         final HostExtensionRegistry extensions;
         final String pluginId;
+        final long generation;
         final BooleanSupplier active;
         final ComposerEffect.Factory factory;
         final boolean text;
@@ -795,7 +829,7 @@ public final class PluginComposerRegistry {
         boolean failed;
 
         Registration(HostExtensionRegistry extensions, String pluginId,
-                BooleanSupplier active, ComposerEffect.Factory factory,
+                long generation, BooleanSupplier active, ComposerEffect.Factory factory,
                 boolean text, boolean cursor, boolean selection, boolean content) {
             if (extensions == null) {
                 throw new IllegalArgumentException("Host extension registry is required");
@@ -803,6 +837,7 @@ public final class PluginComposerRegistry {
 
             this.extensions = extensions;
             this.pluginId = pluginId;
+            this.generation = generation;
             this.active = active;
             this.factory = factory;
             this.text = text;
@@ -855,19 +890,39 @@ public final class PluginComposerRegistry {
         }
 
         void quarantine(Throwable error) {
-            suspend(error);
+            suspend(error, PluginQuarantineReason.CALLBACK_FAILURE);
+
+            closeQuarantinedBindings();
+        }
+
+        void quarantineForTimeLimit(Throwable error) {
+            suspend(error, PluginQuarantineReason.TIME_LIMIT);
+
+            closeQuarantinedBindings();
+        }
+
+        private void closeQuarantinedBindings() {
 
             for (Binding binding : new ArrayList<>(owned)) {
                 try {
                     binding.close();
                 } catch (Exception cleanupError) {
+                    extensions.reportQuarantine(
+                            pluginId,
+                            generation,
+                            PluginQuarantineReason.CLEANUP_FAILURE);
                     Log.e("FluxGramComposer", "[" + pluginId + "] cleanup requires retry", cleanupError);
                 }
             }
         }
 
         void suspend(Throwable error) {
+            suspend(error, PluginQuarantineReason.CLEANUP_FAILURE);
+        }
+
+        private void suspend(Throwable error, PluginQuarantineReason reason) {
             failed = true;
+            extensions.reportQuarantine(pluginId, generation, reason);
             Log.e("FluxGramComposer", "[" + pluginId + "] effect suspended", error);
 
             for (Binding binding : new ArrayList<>(owned)) {
@@ -1676,7 +1731,9 @@ public final class PluginComposerRegistry {
             if (burstStart == 0) {
                 burstStart = frameTimeNanos;
             } else if (frameTimeNanos - burstStart > 2_000_000_000L) {
-                registration.quarantine(new IllegalStateException("Composer animation exceeded two seconds without input"));
+                registration.quarantineForTimeLimit(
+                        new IllegalStateException(
+                                "Composer animation exceeded two seconds without input"));
                 return false;
             }
 
@@ -1780,7 +1837,8 @@ public final class PluginComposerRegistry {
 
         void record(long start) {
             if (System.nanoTime() - start > 4_000_000L && ++overruns >= 3 && !registration.failed) {
-                registration.quarantine(new IllegalStateException("Composer callback budget exceeded"));
+                registration.quarantineForTimeLimit(
+                        new IllegalStateException("Composer callback budget exceeded"));
             }
         }
 

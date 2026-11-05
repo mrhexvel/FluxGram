@@ -450,6 +450,7 @@ public class RegistryCheck {
             str(folder / name)
             for name in (
                 "Plugin.java",
+                "PluginQuarantineReason.java",
                 "PluginCrashRecovery.java",
                 "PluginManager.java",
                 "BeforeSendEvent.java",

@@ -13,6 +13,29 @@ API_VIEW_STUB = ROOT / "tests/java/api_stubs/android/view/View.java"
 
 
 class JavaPluginRuntimeTest(unittest.TestCase):
+    def test_quarantine_state_is_generation_bound(self):
+        if not shutil.which("javac") or not shutil.which("java"):
+            self.skipTest("Requires JDK")
+
+        sources = [
+            SOURCE / "PluginQuarantineReason.java",
+            SOURCE / "PluginQuarantineState.java",
+            ROOT / "tests/java/PluginQuarantineStateCheck.java",
+        ]
+
+        with tempfile.TemporaryDirectory() as directory:
+            subprocess.run(
+                ["javac", "--release", "8", "-d", directory, *map(str, sources)],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["java", "-cp", directory,
+                 "org.telegram.messenger.plugins.PluginQuarantineStateCheck"],
+                check=True,
+                capture_output=True,
+            )
+
     def test_settings_blocks_screen_lifecycle_actions_and_retry(self):
         if not shutil.which("javac") or not shutil.which("java"):
             self.skipTest("Requires JDK")
@@ -52,6 +75,7 @@ class JavaPluginRuntimeTest(unittest.TestCase):
             ROOT / "tests/java/hook_stubs/de/robv/android/xposed/XposedBridge.java",
             ROOT / "tests/java/hook_stubs/org/telegram/messenger/FileLog.java",
             ROOT / "tests/java/hook_stubs/org/telegram/messenger/plugins/PluginCrashRecovery.java",
+            SOURCE / "PluginQuarantineReason.java",
             SOURCE / "ManagedMethodHooks.java",
             ROOT / "tests/java/ManagedMethodHooksCheck.java",
         ]
@@ -99,6 +123,7 @@ class JavaPluginRuntimeTest(unittest.TestCase):
             SOURCE / "PluginScope.java",
             SOURCE / "PluginSession.java",
             SOURCE / "HostExtensionDescriptor.java",
+            SOURCE / "PluginQuarantineReason.java",
             SOURCE / "HostExtensionRegistry.java",
             ROOT / "tests/java/HostExtensionRegistryCheck.java",
         ]
@@ -129,6 +154,7 @@ class JavaPluginRuntimeTest(unittest.TestCase):
             SOURCE / "PluginScope.java",
             SOURCE / "PluginSession.java",
             SOURCE / "HostExtensionDescriptor.java",
+            SOURCE / "PluginQuarantineReason.java",
             SOURCE / "HostExtensionRegistry.java",
             SOURCE / "PluginSemanticIcons.java",
             SOURCE / "PluginChatSelectionActions.java",
@@ -165,6 +191,7 @@ class JavaPluginRuntimeTest(unittest.TestCase):
             SOURCE / "PluginScope.java",
             SOURCE / "PluginSession.java",
             SOURCE / "HostExtensionDescriptor.java",
+            SOURCE / "PluginQuarantineReason.java",
             SOURCE / "HostExtensionRegistry.java",
             SOURCE / "LowLevelJavaPluginContext.java",
             SOURCE / "ComposerInputRendererExtensions.java",

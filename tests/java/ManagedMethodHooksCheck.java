@@ -96,6 +96,8 @@ public final class ManagedMethodHooksCheck {
                 "invalid callback fallback");
         check(!broken.isActive() && PluginCrashRecovery.handled == 1 && FileLog.errors == 1,
                 "callback quarantine and attribution");
+        check(gate.reasons.equals(Arrays.asList(PluginQuarantineReason.CALLBACK_FAILURE)),
+                "callback quarantine reason");
         check((Integer) XposedBridge.invokeHooked(add, null, new Object[] {3, 4}) == 7,
                 "quarantined callback fallback");
         broken.close();
@@ -274,6 +276,7 @@ public final class ManagedMethodHooksCheck {
 
     private static final class Gate implements ManagedMethodHooks.Lifecycle {
         private boolean active = true;
+        private final List<PluginQuarantineReason> reasons = new ArrayList<>();
 
         @Override
         public synchronized boolean isActive() {
@@ -288,6 +291,11 @@ public final class ManagedMethodHooksCheck {
 
             operation.run();
             return true;
+        }
+
+        @Override
+        public synchronized void onQuarantined(PluginQuarantineReason reason) {
+            reasons.add(reason);
         }
 
         synchronized void setActive(boolean value) {

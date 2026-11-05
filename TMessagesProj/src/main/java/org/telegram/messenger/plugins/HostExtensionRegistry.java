@@ -21,6 +21,10 @@ final class HostExtensionRegistry {
         void handled(Throwable error);
     }
 
+    interface QuarantineReporter {
+        void report(String pluginId, long generation, PluginQuarantineReason reason);
+    }
+
     private interface Factory<I, C> {
         Callback<I, C> create() throws Exception;
     }
@@ -37,19 +41,27 @@ final class HostExtensionRegistry {
     private final LongSupplier clock;
     private final CallbackBoundary boundary;
     private final Consumer<Throwable> report;
+    private final QuarantineReporter quarantineReporter;
     private final ArrayList<Registration<?, ?>> registrations = new ArrayList<>();
     private final ArrayList<Endpoint<?, ?>> endpoints = new ArrayList<>();
     private final Map<String, HostExtensionDescriptor<?, ?>> descriptors = new HashMap<>();
     private long nextSequence;
 
     HostExtensionRegistry(LongSupplier clock, CallbackBoundary boundary, Consumer<Throwable> report) {
-        if (clock == null || boundary == null || report == null) {
+        this(clock, boundary, report, (pluginId, generation, reason) -> {
+        });
+    }
+
+    HostExtensionRegistry(LongSupplier clock, CallbackBoundary boundary,
+            Consumer<Throwable> report, QuarantineReporter quarantineReporter) {
+        if (clock == null || boundary == null || report == null || quarantineReporter == null) {
             throw new IllegalArgumentException("Host extension registry dependencies are required");
         }
 
         this.clock = clock;
         this.boundary = boundary;
         this.report = report;
+        this.quarantineReporter = quarantineReporter;
     }
 
     <I> AutoCloseable registerObserver(PluginScope owner,
@@ -425,7 +437,10 @@ final class HostExtensionRegistry {
             }
 
             if (registration.descriptor.mode == HostExtensionDescriptor.Mode.REPLACEMENT) {
-                quarantine(registration, error);
+                quarantine(
+                        registration,
+                        PluginQuarantineReason.CALLBACK_FAILURE,
+                        error);
             } else {
                 report.accept(error);
             }
@@ -496,30 +511,48 @@ final class HostExtensionRegistry {
         binding.endpoint.rebuild();
     }
 
-    private void quarantine(Binding<?, ?> binding, Throwable error) {
+    private void quarantine(Binding<?, ?> binding,
+            PluginQuarantineReason reason, Throwable error) {
         synchronized (this) {
             detach(binding);
         }
+
+        PluginQuarantineReason reportedReason = reason;
 
         try {
             binding.close();
         } catch (Exception | LinkageError | AssertionError cleanupError) {
             error.addSuppressed(cleanupError);
+            reportedReason = PluginQuarantineReason.CLEANUP_FAILURE;
         }
 
+        reportQuarantine(binding.registration, reportedReason);
         report.accept(error);
     }
 
-    private void quarantine(Registration<?, ?> registration, Throwable error) {
+    private void quarantine(Registration<?, ?> registration,
+            PluginQuarantineReason reason, Throwable error) {
         registration.quarantined = true;
+        PluginQuarantineReason reportedReason = reason;
 
         try {
             registration.close();
         } catch (Exception | LinkageError | AssertionError cleanupError) {
             error.addSuppressed(cleanupError);
+            reportedReason = PluginQuarantineReason.CLEANUP_FAILURE;
         }
 
+        reportQuarantine(registration, reportedReason);
         report.accept(error);
+    }
+
+    private void reportQuarantine(
+            Registration<?, ?> registration, PluginQuarantineReason reason) {
+        reportQuarantine(registration.pluginId, registration.generation, reason);
+    }
+
+    void reportQuarantine(String pluginId, long generation, PluginQuarantineReason reason) {
+        quarantineReporter.report(pluginId, generation, reason);
     }
 
     private static Exception collect(Exception failure, Throwable error) {
@@ -686,7 +719,10 @@ final class HostExtensionRegistry {
                 quarantined = true;
             }
 
-            quarantine(this, new IllegalStateException("Host extension callback budget exceeded"));
+            quarantine(
+                    this,
+                    PluginQuarantineReason.TIME_LIMIT,
+                    new IllegalStateException("Host extension callback budget exceeded"));
             return false;
         }
 
@@ -711,7 +747,10 @@ final class HostExtensionRegistry {
             }
 
             if (quarantine) {
-                quarantine(this, new IllegalStateException("Host extension callback budget exceeded"));
+                quarantine(
+                        this,
+                        PluginQuarantineReason.TIME_LIMIT,
+                        new IllegalStateException("Host extension callback budget exceeded"));
             }
 
             return false;
@@ -789,7 +828,7 @@ final class HostExtensionRegistry {
             }
 
             if (failure != null) {
-                quarantine(this, failure);
+                quarantine(this, PluginQuarantineReason.CALLBACK_FAILURE, failure);
                 return;
             }
 
@@ -822,7 +861,7 @@ final class HostExtensionRegistry {
             }
 
             if (failure != null) {
-                quarantine(this, failure);
+                quarantine(this, PluginQuarantineReason.CALLBACK_FAILURE, failure);
                 return null;
             }
 
@@ -862,7 +901,7 @@ final class HostExtensionRegistry {
                         && ((HostExtensionFailureInput) input).isHostFailure(failure)) {
                     report.accept(failure);
                 } else {
-                    quarantine(this, failure);
+                    quarantine(this, PluginQuarantineReason.CALLBACK_FAILURE, failure);
                 }
 
                 return false;

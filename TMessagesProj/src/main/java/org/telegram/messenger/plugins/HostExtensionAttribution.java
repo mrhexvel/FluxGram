@@ -21,6 +21,7 @@ final class HostExtensionAttribution {
                         PluginCrashRecovery.handled(error);
                     }
                 },
-                report);
+                report,
+                PluginManager::reportQuarantine);
     }
 }

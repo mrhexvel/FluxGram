@@ -313,6 +313,9 @@
     <string name="FluxGramPluginReputationBlockedBoth">Заблокирован: версия плагина признана вредоносной, а ключ разработчика отозван</string>
     <string name="FluxGramPluginInstalling">Установка плагина…</string>
     <string name="FluxGramPluginLoadFailed">Не удалось запустить плагин. Он отключён. Подробности в Logcat: FluxGramPython.</string>
+    <string name="FluxGramPluginQuarantineCallbackFailure">Часть плагина остановлена после ошибки его кода</string>
+    <string name="FluxGramPluginQuarantineTimeLimit">Часть плагина остановлена из-за превышения лимита времени</string>
+    <string name="FluxGramPluginQuarantineCleanupFailure">Часть плагина остановлена после ошибки очистки</string>
     <string name="FluxGramPluginIncompatible">Плагин отключён: требуется SDK %1$d.%2$d, а FluxGram предоставляет SDK %3$d.%4$d.</string>
     <string name="FluxGramPluginJavaIncompatible">Плагин отключён: требуется Java API %1$d.%2$d, а FluxGram предоставляет Java API %3$d.%4$d.</string>
     <string name="FluxGramOpenAndroidSettings">Открыть настройки приложения в Android</string>

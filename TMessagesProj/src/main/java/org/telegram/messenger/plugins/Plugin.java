@@ -21,6 +21,8 @@ public interface Plugin {
 
     default void onEnabledChanged(boolean enabled) {}
 
+    default void onQuarantined(long generation, PluginQuarantineReason reason) {}
+
     default void messageReceived(PluginMessageReceivedEvent event) {}
 
     default boolean hasMessageReceivedSubscribers() {

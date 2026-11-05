@@ -140,7 +140,7 @@ public final class FluxGramPluginCell extends LinearLayout {
             statusText.setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT);
             statusText.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
             statusRow.addView(statusText, LayoutHelper.createLinear(
-                    0, LayoutHelper.WRAP_CONTENT, 1, 4, 0, 0));
+                    0, LayoutHelper.WRAP_CONTENT, 1f, 4, 0, 0, 0));
             labels.addView(statusRow, LayoutHelper.createLinear(
                     LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 2, 0, 0));
         }

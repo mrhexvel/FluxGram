@@ -43,6 +43,7 @@ class ComposerEffectsTest(unittest.TestCase):
                 JAVA / "messenger/plugins/PluginScope.java",
                 JAVA / "messenger/plugins/PluginSession.java",
                 JAVA / "messenger/plugins/HostExtensionDescriptor.java",
+                JAVA / "messenger/plugins/PluginQuarantineReason.java",
                 JAVA / "messenger/plugins/HostExtensionRegistry.java",
                 JAVA / "messenger/plugins/PluginComposerRegistry.java",
                 JAVA / "messenger/plugins/LegacyComposerExtensions.java",

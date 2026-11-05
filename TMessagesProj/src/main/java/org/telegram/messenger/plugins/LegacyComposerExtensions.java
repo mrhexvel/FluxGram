@@ -40,31 +40,36 @@ final class LegacyComposerExtensions {
     static AutoCloseable register(String pluginId, long generation,
             BooleanSupplier active, ComposerEffect.Factory factory) {
         return register(REGISTRY, pluginId, generation, active, EFFECT,
-                () -> PluginComposerRegistry.register(REGISTRY, pluginId, active, factory));
+                () -> PluginComposerRegistry.register(
+                        REGISTRY, pluginId, generation, active, factory));
     }
 
     static AutoCloseable registerText(String pluginId, long generation,
             BooleanSupplier active, ComposerTextEffect.Factory factory) {
         return register(REGISTRY, pluginId, generation, active, TEXT,
-                () -> PluginComposerRegistry.registerText(REGISTRY, pluginId, active, factory));
+                () -> PluginComposerRegistry.registerText(
+                        REGISTRY, pluginId, generation, active, factory));
     }
 
     static AutoCloseable registerCursor(String pluginId, long generation,
             BooleanSupplier active, ComposerCursorEffect.Factory factory) {
         return register(REGISTRY, pluginId, generation, active, CURSOR,
-                () -> PluginComposerRegistry.registerCursor(REGISTRY, pluginId, active, factory));
+                () -> PluginComposerRegistry.registerCursor(
+                        REGISTRY, pluginId, generation, active, factory));
     }
 
     static AutoCloseable registerSelection(String pluginId, long generation,
             BooleanSupplier active, ComposerSelectionEffect.Factory factory) {
         return register(REGISTRY, pluginId, generation, active, SELECTION,
-                () -> PluginComposerRegistry.registerSelection(REGISTRY, pluginId, active, factory));
+                () -> PluginComposerRegistry.registerSelection(
+                        REGISTRY, pluginId, generation, active, factory));
     }
 
     static AutoCloseable registerContent(String pluginId, long generation,
             BooleanSupplier active, ComposerContentEffect.Factory factory) {
         return register(REGISTRY, pluginId, generation, active, CONTENT,
-                () -> PluginComposerRegistry.registerContent(REGISTRY, pluginId, active, factory));
+                () -> PluginComposerRegistry.registerContent(
+                        REGISTRY, pluginId, generation, active, factory));
     }
 
     private static AutoCloseable register(HostExtensionRegistry registry,
