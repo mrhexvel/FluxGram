@@ -1276,6 +1276,11 @@ class ChatSettingsTest(unittest.TestCase):
         self.assertIn("!info.isVideo && info.videoEditedInfo == null", sender)
 
         self.assertIn("R.string.FluxGramAttachments", activity)
+        self.assertIn("R.string.FluxGramAttachmentsInfo", activity)
+        attachments = activity.split("addSectionLabel(items, R.string.FluxGramAttachments);", 1)[1].split(
+            "addSectionLabel(items, R.string.FluxGramStickers);", 1
+        )[0]
+        self.assertNotIn('"\\n\\n"', attachments)
         self.assertIn("R.string.FluxGramPhotoHdDefault", activity)
         self.assertIn(".setChecked(SharedConfig.photoHighQualityDefault)", activity)
         handler = activity.split("item.id == PHOTO_HD_DEFAULT", 1)[1].split(

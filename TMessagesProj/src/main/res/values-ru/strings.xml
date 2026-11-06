@@ -568,6 +568,7 @@
     <string name="FluxGramMoveUp">Переместить вверх</string>
     <string name="FluxGramMoveDown">Переместить вниз</string>
     <string name="FluxGramAttachments">Вложения</string>
+    <string name="FluxGramAttachmentsInfo">Настройки применяются к вложениям в чатах.</string>
     <string name="FluxGramPhotoHdDefault">Фото в HD по умолчанию</string>
     <string name="FluxGramPhotoHdDefaultInfo">Применяется к новым выбранным фотографиям и Live Photo. Качество можно изменить вручную. Видео и отправка как файл не меняются.</string>
     <string name="FluxGramShowAttachCameraTile">Показывать плитку встроенной камеры</string>

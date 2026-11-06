@@ -722,16 +722,7 @@ public class FluxGramSettingsActivity extends BaseFragment {
                     RESET_ATTACH_CAMERA_ZOOM,
                     LocaleController.getString(R.string.FluxGramResetAttachCameraZoom)
             ).setChecked(ChatSettings.resetsAttachCameraZoom()));
-            items.add(UItem.asShadow(
-                    LocaleController.getString(R.string.FluxGramPhotoHdDefaultInfo)
-                            + "\n\n"
-                            + LocaleController.getString(R.string.FluxGramShowAttachCameraTileInfo)
-                            + "\n\n"
-                            + LocaleController.getString(R.string.FluxGramAttachCameraInitialFacingInfo)
-                            + "\n\n"
-                            + LocaleController.getString(R.string.FluxGramMirrorAttachFrontPhotosInfo)
-                            + "\n\n"
-                            + LocaleController.getString(R.string.FluxGramResetAttachCameraZoomInfo)));
+            items.add(UItem.asShadow(LocaleController.getString(R.string.FluxGramAttachmentsInfo)));
             addSectionLabel(items, R.string.FluxGramStickers);
             items.add(UItem.asCheck(
                     SHOW_GREETING_STICKER,
