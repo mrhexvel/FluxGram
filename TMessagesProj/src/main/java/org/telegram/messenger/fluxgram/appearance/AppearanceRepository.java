@@ -348,34 +348,12 @@ public final class AppearanceRepository {
                 continue;
             }
 
-            AppearanceApiDto.Result selected = received;
-            AppearanceApiDto.Result existing = memoryCache.getCanonical(received.getPeer());
-            boolean selectedStale = false;
-            boolean selectedUsable = true;
-            boolean retainedExisting = false;
-
-            if (existing == null) {
-                try {
-                    existing = store.readCanonical(received.getPeer());
-                } catch (Exception ignore) {
-                    existing = null;
-                }
+            try {
+                store.write(peer, received, clock.now());
+            } catch (Exception ignore) {
             }
 
-            if (existing != null && existing.getRevision().compareTo(received.getRevision()) > 0) {
-                selected = existing;
-                retainedExisting = true;
-                AppearanceCachePolicy.State state = cachePolicy.state(existing, clock.now());
-                selectedStale = state == AppearanceCachePolicy.State.STALE;
-                selectedUsable = state != AppearanceCachePolicy.State.EXPIRED;
-            } else {
-                try {
-                    store.write(peer, received, clock.now());
-                } catch (Exception ignore) {
-                }
-            }
-
-            memoryCache.put(peer, selected);
+            memoryCache.put(peer, received);
             ArrayList<Pending> waiters = inFlight.remove(peer);
 
             if (waiters == null) {
@@ -383,18 +361,14 @@ public final class AppearanceRepository {
             }
 
             for (Pending pending : waiters) {
-                if (selectedUsable && !(retainedExisting && pending.delivered)) {
-                    dispatch(
-                            peer,
-                            selected,
-                            selectedStale,
-                            pending.callback,
-                            pending.subscription,
-                            pending.generation
-                    );
-                } else if (!pending.delivered) {
-                    dispatchUnavailable(peer, pending);
-                }
+                dispatch(
+                        peer,
+                        received,
+                        false,
+                        pending.callback,
+                        pending.subscription,
+                        pending.generation
+                );
             }
         }
     }

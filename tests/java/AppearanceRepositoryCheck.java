@@ -141,9 +141,10 @@ public final class AppearanceRepositoryCheck {
         ArrayList<AppearanceRepository.Lookup> values = new ArrayList<>();
         repository.load(USER, values::add);
         expect(values.size() == 1
-                        && values.get(0).getStatus() == AppearanceRepository.Lookup.Status.UNAVAILABLE,
-                "older revision cannot replace expired cache");
-        expect(store.profiles.get(USER).getRevision().equals(BigInteger.TEN), "newer revision retained");
+                        && values.get(0).getStatus() == AppearanceRepository.Lookup.Status.PROFILE,
+                "server response replaces expired cache regardless of revision");
+        expect(store.profiles.get(USER).getRevision().equals(BigInteger.valueOf(9)),
+                "server revision stored");
 
         FakeStore staleStore = new FakeStore();
         staleStore.writeDirect(USER, positive(USER, 10, NOW - 1));
@@ -155,8 +156,10 @@ public final class AppearanceRepositoryCheck {
         );
         ArrayList<AppearanceRepository.Lookup> staleValues = new ArrayList<>();
         staleRepository.load(USER, staleValues::add);
-        expect(staleValues.size() == 1 && staleValues.get(0).isStale(),
-                "older revision does not duplicate stale delivery");
+        expect(staleValues.size() == 2
+                        && staleValues.get(0).isStale()
+                        && !staleValues.get(1).isStale(),
+                "server response refreshes stale cache regardless of revision");
 
         DeferredExecutor networkExecutor = new DeferredExecutor();
         AppearanceRepository cancellable = repository(
