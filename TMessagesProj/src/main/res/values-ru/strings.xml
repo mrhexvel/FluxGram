@@ -456,7 +456,7 @@
     <string name="FluxGramFolderPresentationTitle">Только название</string>
     <string name="FluxGramFolderPresentationIcon">Только иконка</string>
     <string name="FluxGramFolderCounter">Счётчики папок</string>
-    <string name="FluxGramFolderCounterAll">Все непрочитанные чаты</string>
+    <string name="FluxGramFolderCounterAll">Все</string>
     <string name="FluxGramFolderCounterUnmuted">Без заглушённых</string>
     <string name="FluxGramFolderCounterHidden">Скрыты</string>
     <string name="FluxGramShowAllChatsFolder">Показывать папку «Все чаты»</string>
