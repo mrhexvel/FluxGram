@@ -3669,6 +3669,23 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                             FolderSettings.getPolicy(currentAccount)
                     );
                 }
+
+                @Override
+                protected CharSequence getTabAccessibilityTitle(Tab tab) {
+                    if (!usesFluxGramRootDialogsAppearance()) {
+                        return super.getTabAccessibilityTitle(tab);
+                    }
+
+                    ArrayList<MessagesController.DialogFilter> filters = getMessagesController().getDialogFilters();
+                    if (tab == null || tab.id < 0 || tab.id >= filters.size()) {
+                        return super.getTabAccessibilityTitle(tab);
+                    }
+
+                    MessagesController.DialogFilter filter = filters.get(tab.id);
+                    return filter.isDefault()
+                            ? LocaleController.getString(R.string.FilterAllChats)
+                            : filter.name;
+                }
             };
             filterTabsView.setVisibility(View.GONE);
             canShowFilterTabsView = false;

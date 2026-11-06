@@ -746,7 +746,7 @@ public class FilterTabsView extends FrameLayout {
             info.addAction(new AccessibilityNodeInfo.AccessibilityAction(AccessibilityNodeInfo.ACTION_LONG_CLICK, LocaleController.getString(R.string.AccDescrOpenMenu2)));
             if (currentTab != null) {
                 StringBuilder sb = new StringBuilder();
-                sb.append(currentTab.title);
+                sb.append(getTabAccessibilityTitle(currentTab));
                 int unread = currentTab != null ? currentTab.counter : 0;
                 if (unread > 0) {
                     sb.append("\n");
@@ -1599,6 +1599,10 @@ public class FilterTabsView extends FrameLayout {
 
     protected CharSequence getDefaultTabTitle(boolean compact) {
         return LocaleController.getString(compact ? R.string.FilterAllChatsShort : R.string.FilterAllChats);
+    }
+
+    protected CharSequence getTabAccessibilityTitle(Tab tab) {
+        return tab == null ? "" : tab.title;
     }
 
     @Override

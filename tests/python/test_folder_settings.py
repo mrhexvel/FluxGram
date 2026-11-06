@@ -277,8 +277,13 @@ public final class FolderIconCatalogCheck {
         self.assertNotIn("FolderPresentation", tabs)
         self.assertEqual(5, tabs.count("getDefaultTabTitle("))
         self.assertIn("protected CharSequence getDefaultTabTitle", tabs)
+        self.assertIn("protected CharSequence getTabAccessibilityTitle", tabs)
+        self.assertIn("sb.append(getTabAccessibilityTitle(currentTab))", tabs)
         self.assertIn("if (!usesFluxGramRootDialogsAppearance())", dialogs)
         self.assertIn("FolderPresentation.createTitle", dialogs)
+        self.assertIn("protected CharSequence getTabAccessibilityTitle(Tab tab)", dialogs)
+        self.assertIn("return super.getTabAccessibilityTitle(tab)", dialogs)
+        self.assertIn("filter.isDefault()", dialogs)
         self.assertIn(
             "filterTabsView.addTab(a, filter.localId, filter.name, filter.entities",
             dialogs,
