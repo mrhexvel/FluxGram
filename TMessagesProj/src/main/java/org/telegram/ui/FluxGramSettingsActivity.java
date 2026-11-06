@@ -1736,6 +1736,7 @@ public class FluxGramSettingsActivity extends BaseFragment {
                 selected,
                 (dialog, index) -> {
                     FolderSettings.setPresentationMode(currentAccount, index);
+                    listView.adapter.update(true);
                     updateFolderPreview();
                 },
                 getResourceProvider()
@@ -1768,6 +1769,7 @@ public class FluxGramSettingsActivity extends BaseFragment {
                 selected,
                 (dialog, index) -> {
                     FolderSettings.setCounterMode(currentAccount, index);
+                    listView.adapter.update(true);
                     updateFolderPreview();
                 },
                 getResourceProvider()

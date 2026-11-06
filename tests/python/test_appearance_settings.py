@@ -325,6 +325,19 @@ class AppearanceSettingsTest(unittest.TestCase):
         self.assertNotIn("AppearanceSettings", recycler)
         self.assertNotIn("AppearanceSettings", adapter)
 
+    def test_folder_options_update_settings_rows_immediately(self):
+        activity = (JAVA / "ui/FluxGramSettingsActivity.java").read_text()
+
+        presentation = activity.split("private void showFolderPresentationDialog()", 1)[1].split(
+            "private CharSequence folderCounterOption", 1
+        )[0]
+        counter = activity.split("private void showFolderCounterDialog()", 1)[1].split(
+            "private void updateFolderPreview()", 1
+        )[0]
+
+        self.assertIn("listView.adapter.update(true);", presentation)
+        self.assertIn("listView.adapter.update(true);", counter)
+
     def test_divider_selector_is_inside_rounding_card(self):
         activity = (JAVA / "ui/FluxGramSettingsActivity.java").read_text()
         rounding = activity.split(
