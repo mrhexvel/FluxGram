@@ -455,6 +455,8 @@
     <string name="FluxGramFolderPresentationTitleAndIcon">Название и иконка</string>
     <string name="FluxGramFolderPresentationTitle">Только название</string>
     <string name="FluxGramFolderPresentationIcon">Только иконка</string>
+    <string name="FluxGramFolderIcon">Иконка папки</string>
+    <string name="FluxGramFolderIconValue">Иконка папки: %1$s</string>
     <string name="FluxGramFolderCounter">Счётчики папок</string>
     <string name="FluxGramFolderCounterAll">Все</string>
     <string name="FluxGramFolderCounterUnmuted">Без заглушённых</string>

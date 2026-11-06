@@ -288,6 +288,8 @@ public class MessagesController extends BaseController implements NotificationCe
     public SparseArray<DialogFilter> dialogFiltersById = new SparseArray<>();
     private boolean loadingSuggestedFilters;
     private boolean loadingRemoteFilters;
+    private boolean loadingRemoteFiltersForced;
+    private boolean forceRemoteFiltersAfterCurrent;
     public boolean dialogFiltersLoaded;
     public ArrayList<TLRPC.TL_dialogFilterSuggested> suggestedFilters = new ArrayList<>();
 
@@ -1309,6 +1311,8 @@ public class MessagesController extends BaseController implements NotificationCe
         public ArrayList<TLRPC.Dialog> dialogsForward = new ArrayList<>();
         public int color;
         public boolean title_noanimate;
+        public String emoticon;
+        public boolean emoticonLoaded = true;
 
         public ArrayList<TL_chatlists.TL_exportedChatlistInvite> invites = null;
 
@@ -2270,7 +2274,14 @@ public class MessagesController extends BaseController implements NotificationCe
                     dialogFiltersLoaded = true;
                     getNotificationCenter().postNotificationName(NotificationCenter.dialogFiltersUpdated);
                     if (remote == 0) {
-                        loadRemoteFilters(false);
+                        boolean forceEmoticonRefresh = false;
+                        for (int a = 0, N = dialogFilters.size(); a < N; a++) {
+                            if (!dialogFilters.get(a).emoticonLoaded) {
+                                forceEmoticonRefresh = true;
+                                break;
+                            }
+                        }
+                        loadRemoteFilters(forceEmoticonRefresh);
                     }
 
                     if (pinnedRemoteDialogs != null && !pinnedRemoteDialogs.dialogs.isEmpty()) {
@@ -2451,19 +2462,38 @@ public class MessagesController extends BaseController implements NotificationCe
         }));
     }
 
-    private Utilities.Callback<Boolean> onLoadedRemoteFilters;
+    private final ArrayList<Utilities.Callback<Boolean>> onLoadedRemoteFilters = new ArrayList<>();
+    private final ArrayList<Utilities.Callback<Boolean>> onForcedRemoteFilters = new ArrayList<>();
 
     public void loadRemoteFilters(boolean force) {
         loadRemoteFilters(force, null);
     }
 
     public void loadRemoteFilters(boolean force, Utilities.Callback<Boolean> whenDone) {
-        if (whenDone != null) {
-            onLoadedRemoteFilters = whenDone;
-        }
-        if (loadingRemoteFilters || !getUserConfig().isClientActivated() || !force && getUserConfig().filtersLoaded) {
+        if (loadingRemoteFilters) {
+            if (force && !loadingRemoteFiltersForced) {
+                forceRemoteFiltersAfterCurrent = true;
+                if (whenDone != null) {
+                    onForcedRemoteFilters.add(whenDone);
+                }
+            } else if (whenDone != null) {
+                onLoadedRemoteFilters.add(whenDone);
+            }
             return;
         }
+        if (whenDone != null) {
+            onLoadedRemoteFilters.add(whenDone);
+        }
+        if (!getUserConfig().isClientActivated()) {
+            completeRemoteFiltersLoad(false);
+            return;
+        }
+        if (!force && getUserConfig().filtersLoaded) {
+            completeRemoteFiltersLoad(true);
+            return;
+        }
+        loadingRemoteFilters = true;
+        loadingRemoteFiltersForced = force;
         if (force) {
             getUserConfig().filtersLoaded = false;
             getUserConfig().saveConfig(false);
@@ -2477,10 +2507,7 @@ public class MessagesController extends BaseController implements NotificationCe
                     filters.add((TLRPC.DialogFilter) vector.objects.get(i));
                 }
                 getMessagesStorage().checkLoadedRemoteFilters(filters, () -> {
-                    if (onLoadedRemoteFilters != null) {
-                        onLoadedRemoteFilters.run(true);
-                        onLoadedRemoteFilters = null;
-                    }
+                    completeRemoteFiltersLoad(true);
                 });
             } else if (response instanceof TLRPC.TL_messages_dialogFilters) {
                 TLRPC.TL_messages_dialogFilters res = (TLRPC.TL_messages_dialogFilters) response;
@@ -2491,21 +2518,48 @@ public class MessagesController extends BaseController implements NotificationCe
                     });
                 }
                 getMessagesStorage().checkLoadedRemoteFilters(res.filters, () -> {
-                    if (onLoadedRemoteFilters != null) {
-                        onLoadedRemoteFilters.run(true);
-                        onLoadedRemoteFilters = null;
-                    }
+                    completeRemoteFiltersLoad(true);
                 });
             } else {
                 AndroidUtilities.runOnUIThread(() -> {
                     loadingRemoteFilters = false;
-                    if (onLoadedRemoteFilters != null) {
-                        onLoadedRemoteFilters.run(false);
-                        onLoadedRemoteFilters = null;
-                    }
+                    completeRemoteFiltersLoad(false);
                 });
             }
         });
+    }
+
+    private void completeRemoteFiltersLoad(boolean success) {
+        ArrayList<Utilities.Callback<Boolean>> callbacks = new ArrayList<>(onLoadedRemoteFilters);
+        onLoadedRemoteFilters.clear();
+        boolean forceAfterCurrent = forceRemoteFiltersAfterCurrent;
+        ArrayList<Utilities.Callback<Boolean>> forcedCallbacks = new ArrayList<>(onForcedRemoteFilters);
+        forceRemoteFiltersAfterCurrent = false;
+        onForcedRemoteFilters.clear();
+        loadingRemoteFiltersForced = false;
+
+        for (int a = 0, N = callbacks.size(); a < N; a++) {
+            try {
+                callbacks.get(a).run(success);
+            } catch (Exception e) {
+                FileLog.e(e);
+            }
+        }
+
+        if (!forceAfterCurrent) {
+            return;
+        }
+        if (loadingRemoteFilters) {
+            if (loadingRemoteFiltersForced) {
+                onLoadedRemoteFilters.addAll(forcedCallbacks);
+            } else {
+                forceRemoteFiltersAfterCurrent = true;
+                onForcedRemoteFilters.addAll(forcedCallbacks);
+            }
+        } else {
+            onLoadedRemoteFilters.addAll(forcedCallbacks);
+            loadRemoteFilters(true);
+        }
     }
 
     public void selectDialogFilter(DialogFilter filter, int index) {
@@ -6610,6 +6664,10 @@ public class MessagesController extends BaseController implements NotificationCe
         dialogFiltersById.clear();
         loadingSuggestedFilters = false;
         loadingRemoteFilters = false;
+        loadingRemoteFiltersForced = false;
+        forceRemoteFiltersAfterCurrent = false;
+        onLoadedRemoteFilters.clear();
+        onForcedRemoteFilters.clear();
         suggestedFilters.clear();
         dialogFiltersLoaded = false;
         ignoreSetOnline = false;

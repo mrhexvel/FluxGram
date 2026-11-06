@@ -1698,6 +1698,20 @@ public class DatabaseMigrationHelper {
             database.executeFast("PRAGMA user_version = 179").stepThis().dispose();
             version = 179;
         }
+        if (version == 179) {
+            database.executeFast("ALTER TABLE dialog_filter ADD COLUMN emoticon TEXT").stepThis().dispose();
+            database.executeFast("PRAGMA user_version = 180").stepThis().dispose();
+            version = 180;
+        }
+        if (version == 180) {
+            database.executeFast("PRAGMA user_version = 181").stepThis().dispose();
+            version = 181;
+        }
+        if (version == 181) {
+            database.executeFast("ALTER TABLE dialog_filter ADD COLUMN emoticon_loaded INTEGER DEFAULT 0").stepThis().dispose();
+            database.executeFast("PRAGMA user_version = 182").stepThis().dispose();
+            version = 182;
+        }
 
         return version;
     }

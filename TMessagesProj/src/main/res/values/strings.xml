@@ -11489,6 +11489,8 @@
     <string name="FluxGramFolderPresentationTitleAndIcon">Name and icon</string>
     <string name="FluxGramFolderPresentationTitle">Name only</string>
     <string name="FluxGramFolderPresentationIcon">Icon only</string>
+    <string name="FluxGramFolderIcon">Folder icon</string>
+    <string name="FluxGramFolderIconValue">Folder icon: %1$s</string>
     <string name="FluxGramFolderCounter">Folder counters</string>
     <string name="FluxGramFolderCounterAll">All unread chats</string>
     <string name="FluxGramFolderCounterUnmuted">Unmuted only</string>

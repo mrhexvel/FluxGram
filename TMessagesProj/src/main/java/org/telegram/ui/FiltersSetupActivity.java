@@ -984,6 +984,7 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
                         MessagesController.DialogFilter filter = new MessagesController.DialogFilter();
                         filter.name = suggested.filter.title.text;
                         filter.entities = suggested.filter.title.entities;
+                        filter.emoticon = suggested.filter.emoticon;
                         filter.id = 2;
                         while (getMessagesController().dialogFiltersById.get(filter.id) != null) {
                             filter.id++;

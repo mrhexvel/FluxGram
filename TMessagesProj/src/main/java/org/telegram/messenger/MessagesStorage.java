@@ -128,7 +128,7 @@ public class MessagesStorage extends BaseController {
         }
     }
 
-    public final static int LAST_DB_VERSION = 179;
+    public final static int LAST_DB_VERSION = 182;
     private boolean databaseMigrationInProgress;
     public boolean showClearDatabaseAlert;
 
@@ -611,7 +611,7 @@ public class MessagesStorage extends BaseController {
         database.executeFast("CREATE INDEX IF NOT EXISTS folder_id_idx_4_dialogs ON dialogs(folder_id);").stepThis().dispose();
         database.executeFast("CREATE INDEX IF NOT EXISTS flags_idx_4_dialogs ON dialogs(flags);").stepThis().dispose();
 
-        database.executeFast("CREATE TABLE dialog_filter(id INTEGER PRIMARY KEY, ord INTEGER, unread_count INTEGER, flags INTEGER, title TEXT, color INTEGER DEFAULT -1, entities BLOB, noanimate INTEGER)").stepThis().dispose();
+        database.executeFast("CREATE TABLE dialog_filter(id INTEGER PRIMARY KEY, ord INTEGER, unread_count INTEGER, flags INTEGER, title TEXT, color INTEGER DEFAULT -1, entities BLOB, noanimate INTEGER, emoticon TEXT, emoticon_loaded INTEGER DEFAULT 1)").stepThis().dispose();
         database.executeFast("CREATE TABLE dialog_filter_ep(id INTEGER, peer INTEGER, PRIMARY KEY (id, peer))").stepThis().dispose();
         database.executeFast("CREATE TABLE dialog_filter_pin_v2(id INTEGER, peer INTEGER, pin INTEGER, PRIMARY KEY (id, peer))").stepThis().dispose();
 
@@ -2603,7 +2603,7 @@ public class MessagesStorage extends BaseController {
 
                 usersToLoad.add(getUserConfig().getClientUserId());
 
-                filtersCursor = database.queryFinalized("SELECT id, ord, unread_count, flags, title, color, entities, noanimate FROM dialog_filter WHERE 1");
+                filtersCursor = database.queryFinalized("SELECT id, ord, unread_count, flags, title, color, entities, noanimate, emoticon, emoticon_loaded FROM dialog_filter WHERE 1");
 
                 boolean updateCounters = false;
                 boolean hasDefaultFilter = false;
@@ -2623,6 +2623,8 @@ public class MessagesStorage extends BaseController {
                         buff.reuse();
                     }
                     filter.title_noanimate = filtersCursor.intValue(7) == 1;
+                    filter.emoticon = filtersCursor.stringValue(8);
+                    filter.emoticonLoaded = filtersCursor.intValue(9) == 1;
                     dialogFilters.add(filter);
                     dialogFiltersMap.put(filter.id, filter);
                     filtersById.put(filter.id, filter);
@@ -2692,7 +2694,7 @@ public class MessagesStorage extends BaseController {
                     dialogFiltersMap.put(filter.id, filter);
                     filtersById.put(filter.id, filter);
 
-                    state = database.executeFast("REPLACE INTO dialog_filter VALUES(?, ?, ?, ?, ?, ?, ?, ?)");
+                    state = database.executeFast("REPLACE INTO dialog_filter VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
                     state.bindInteger(1, filter.id);
                     state.bindInteger(2, filter.order);
                     state.bindInteger(3, filter.unreadCount);
@@ -2704,6 +2706,8 @@ public class MessagesStorage extends BaseController {
                     entitiesVector.serializeToStream(entitiesBuffer);
                     state.bindByteBuffer(7, entitiesBuffer);
                     state.bindInteger(8, filter.title_noanimate ? 1 : 0);
+                    state.bindNull(9);
+                    state.bindInteger(10, 1);
                     state.stepThis().dispose();
                     state = null;
                     entitiesBuffer.reuse();
@@ -3244,7 +3248,7 @@ public class MessagesStorage extends BaseController {
                 dialogFiltersMap.put(filter.id, filter);
             }
 
-            state = database.executeFast("REPLACE INTO dialog_filter VALUES(?, ?, ?, ?, ?, ?, ?, ?)");
+            state = database.executeFast("REPLACE INTO dialog_filter VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             state.bindInteger(1, filter.id);
             state.bindInteger(2, filter.order);
             state.bindInteger(3, filter.unreadCount);
@@ -3257,6 +3261,12 @@ public class MessagesStorage extends BaseController {
             entitiesVector.serializeToStream(entitiesBuffer);
             state.bindByteBuffer(7, entitiesBuffer);
             state.bindInteger(8, filter.title_noanimate ? 1 : 0);
+            if (filter.emoticon == null) {
+                state.bindNull(9);
+            } else {
+                state.bindString(9, filter.emoticon);
+            }
+            state.bindInteger(10, filter.emoticonLoaded ? 1 : 0);
             state.step();
             state.dispose();
             entitiesBuffer.reuse();
@@ -3402,6 +3412,14 @@ public class MessagesStorage extends BaseController {
                             changed = true;
                             filter.title_noanimate= newFilter.title_noanimate;
                         }
+                        if (!TextUtils.equals(filter.emoticon, newFilter.emoticon)) {
+                            changed = true;
+                            filter.emoticon = newFilter.emoticon;
+                        }
+                        if (!filter.emoticonLoaded) {
+                            changed = true;
+                            filter.emoticonLoaded = true;
+                        }
                         final int color = (newFilter.flags & 134217728) != 0 ? newFilter.color : -1;
                         if (filter.color != color) {
                             filter.color = color;
@@ -3543,6 +3561,8 @@ public class MessagesStorage extends BaseController {
                         filter.name = newFilter.title.text;
                         filter.entities = newFilter.title.entities;
                         filter.title_noanimate = newFilter.title_noanimate;
+                        filter.emoticon = newFilter.emoticon;
+                        filter.emoticonLoaded = true;
                         filter.color = (newFilter.flags & 134217728) != 0 ? newFilter.color : -1;
                         filter.pendingUnreadCount = -1;
                         filter.pendingUnmutedUnreadCount = -1;
