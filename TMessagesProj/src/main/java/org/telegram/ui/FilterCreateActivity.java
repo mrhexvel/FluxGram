@@ -1730,9 +1730,9 @@ public class FilterCreateActivity extends BaseFragment {
                     folderIconView.setOnClickListener(anchor -> FolderIconSelector.show(
                             FilterCreateActivity.this,
                             anchor,
-                            FolderIconCatalog.resolve(newFilterEmoticon) != 0
-                                    ? newFilterEmoticon
-                                    : FolderIconCatalog.resolveForFlags(newFilterFlags),
+                            TextUtils.isEmpty(newFilterEmoticon)
+                                    ? FolderIconCatalog.resolveForFlags(newFilterFlags)
+                                    : newFilterEmoticon,
                             emoticon -> {
                                 newFilterEmoticon = emoticon;
                                 folderIconChangedManually = true;

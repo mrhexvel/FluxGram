@@ -242,6 +242,17 @@ public final class FolderIconCatalogCheck {
         self.assertLess(fill_name.index("updateFolderIcon()"), fill_name.index(name_gate))
         self.assertEqual(1, fill_name.count(automatic_icon))
 
+    def test_unknown_server_icon_does_not_select_semantic_fallback(self):
+        editor = (JAVA / "ui/FilterCreateActivity.java").read_text()
+        selector_call = editor.split("FolderIconSelector.show(", 1)[1].split(
+            "emoticon ->", 1
+        )[0]
+
+        self.assertIn("TextUtils.isEmpty(newFilterEmoticon)", selector_call)
+        self.assertIn("? FolderIconCatalog.resolveForFlags(newFilterFlags)", selector_call)
+        self.assertIn(": newFilterEmoticon", selector_call)
+        self.assertNotIn("FolderIconCatalog.resolve(newFilterEmoticon)", selector_call)
+
     def test_legacy_icon_refresh_uses_immutable_save_snapshots(self):
         editor = (JAVA / "ui/FilterCreateActivity.java").read_text()
 
