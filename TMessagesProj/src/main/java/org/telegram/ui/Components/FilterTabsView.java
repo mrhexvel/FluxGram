@@ -872,17 +872,12 @@ public class FilterTabsView extends FrameLayout {
                 return;
             }
             long newTime = SystemClock.elapsedRealtime();
-            long dt = (newTime - lastAnimationTime);
-            if (dt > 17) {
-                dt = 17;
-            }
-            animationTime += dt / 320.0f;
+            long dt = Math.max(0, Math.min(newTime - lastAnimationTime, 17));
+            lastAnimationTime = newTime;
+            animationTime = Math.min(1.0f, animationTime + dt / 320.0f);
             setAnimationIdicatorProgress(interpolator.getInterpolation(animationTime));
-            if (animationTime > 1.0f) {
-                animationTime = 1.0f;
-            }
             if (animationTime < 1.0f) {
-                AndroidUtilities.runOnUIThread(animationRunnable);
+                postOnAnimation(animationRunnable);
             } else {
                 animatingIndicator = false;
                 setEnabled(true);
@@ -1167,6 +1162,7 @@ public class FilterTabsView extends FrameLayout {
 
     public void stopAnimatingIndicator() {
         animatingIndicator = false;
+        removeCallbacks(animationRunnable);
     }
 
     BlurredBackgroundDrawable blurredBackgroundDrawable;
@@ -1190,16 +1186,17 @@ public class FilterTabsView extends FrameLayout {
         selectedTabId = tab.id;
 
         if (animatingIndicator) {
-            AndroidUtilities.cancelRunOnUIThread(animationRunnable);
+            removeCallbacks(animationRunnable);
             animatingIndicator = false;
         }
 
         animationTime = 0;
+        lastAnimationTime = SystemClock.elapsedRealtime();
         animatingIndicatorProgress = 0;
         animatingIndicator = true;
         setEnabled(false);
 
-        AndroidUtilities.runOnUIThread(animationRunnable, 16);
+        postOnAnimation(animationRunnable);
 
         if (delegate != null) {
             delegate.onPageSelected(tab, scrollingForward);
@@ -1628,7 +1625,7 @@ public class FilterTabsView extends FrameLayout {
             prevLayoutWidth = r - l;
             scrollingToChild = -1;
             if (animatingIndicator) {
-                AndroidUtilities.cancelRunOnUIThread(animationRunnable);
+                removeCallbacks(animationRunnable);
                 animatingIndicator = false;
                 setEnabled(true);
                 if (delegate != null) {

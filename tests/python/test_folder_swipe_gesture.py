@@ -9,6 +9,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 DIALOGS_ACTIVITY = ROOT / "TMessagesProj/src/main/java/org/telegram/ui/DialogsActivity.java"
 POLICY = ROOT / "TMessagesProj/src/main/java/org/telegram/messenger/fluxgram/FolderSwipeGesturePolicy.java"
+FILTER_TABS = ROOT / "TMessagesProj/src/main/java/org/telegram/ui/Components/FilterTabsView.java"
 
 
 class FolderSwipeGestureTest(unittest.TestCase):
@@ -79,6 +80,34 @@ class FolderSwipeGestureTest(unittest.TestCase):
         self.assertIn("getMeasuredWidth() >> 1", gesture)
         self.assertNotIn("getMeasuredWidth() / 3.0f", gesture)
         self.assertNotIn("Math.abs(velX) < 3500", gesture)
+
+    def test_folder_tab_animation_is_paced_by_display_frames(self):
+        source = FILTER_TABS.read_text()
+        animation = source.split("private final Runnable animationRunnable", 1)[1].split(
+            "private float animationValue", 1
+        )[0]
+        selection = source.split("public void scrollToTab(Tab tab, int position)", 1)[1].split(
+            "public void selectFirstTab()", 1
+        )[0]
+
+        self.assertIn("lastAnimationTime = newTime;", animation)
+        self.assertIn("postOnAnimation(animationRunnable);", animation)
+        self.assertNotIn("runOnUIThread(animationRunnable)", animation)
+        self.assertIn("lastAnimationTime = SystemClock.elapsedRealtime();", selection)
+        self.assertIn("removeCallbacks(animationRunnable);", selection)
+        self.assertIn("postOnAnimation(animationRunnable);", selection)
+
+    def test_tapped_folder_starts_on_the_selected_side(self):
+        source = DIALOGS_ACTIVITY.read_text()
+        selection = source.split(
+            "public void onPageSelected(FilterTabsView.Tab tab, boolean forward)", 1
+        )[1].split("public boolean canPerformActions()", 1)[0]
+
+        self.assertIn(
+            "setTranslationX(forward ? viewPages[0].getMeasuredWidth() : -viewPages[0].getMeasuredWidth())",
+            selection,
+        )
+        self.assertNotIn("setTranslationX(viewPages[0].getMeasuredWidth());", selection)
 
 
 if __name__ == "__main__":

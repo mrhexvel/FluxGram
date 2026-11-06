@@ -3732,7 +3732,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     }
                     viewPages[1].selectedType = tab.id;
                     viewPages[1].setVisibility(View.VISIBLE);
-                    viewPages[1].setTranslationX(viewPages[0].getMeasuredWidth());
+                    viewPages[1].setTranslationX(forward ? viewPages[0].getMeasuredWidth() : -viewPages[0].getMeasuredWidth());
                     showScrollbars(false);
                     switchToCurrentSelectedMode(true);
                     animatingForward = forward;
