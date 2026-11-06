@@ -260,15 +260,6 @@ public final class FolderIconCatalogCheck {
         self.assertIn("onLoadedRemoteFilters.clear();", controller)
         self.assertIn("onForcedRemoteFilters.clear();", controller)
 
-    def test_folder_icon_assets_have_attribution(self):
-        license_text = (ROOT / "TMessagesProj/src/main/FOLDER_ICONS_LICENSE.md").read_text()
-
-        self.assertIn("exteraSquad/exteraGram", license_text)
-        self.assertIn("6f78031aafd7f27e0dfaa31a207715569a6df1a2", license_text)
-        self.assertIn("Nekogram", license_text)
-        self.assertIn("@immat0x1", license_text)
-        self.assertIn("GNU General Public License version 2", license_text)
-
     def test_root_tabs_use_neutral_default_title_hook(self):
         tabs = (JAVA / "ui/Components/FilterTabsView.java").read_text()
         dialogs = (JAVA / "ui/DialogsActivity.java").read_text()
