@@ -230,6 +230,18 @@ public final class FolderIconCatalogCheck {
         self.assertIn("newFilterEmoticon = filter.emoticon", editor)
         self.assertIn("folderIconChanged ? newFilterEmoticon : refreshedFilter.emoticon", editor)
 
+    def test_folder_editor_refreshes_automatic_icon_before_name_gate(self):
+        editor = (JAVA / "ui/FilterCreateActivity.java").read_text()
+        fill_name = editor.split("private void fillFilterName()", 1)[1].split(
+            "private void updateFolderIcon()", 1
+        )[0]
+
+        automatic_icon = "newFilterEmoticon = FolderIconCatalog.resolveForFlags(newFilterFlags)"
+        name_gate = "if (!creatingNew || !TextUtils.isEmpty(newFilterName) && nameChangedManually)"
+        self.assertLess(fill_name.index(automatic_icon), fill_name.index(name_gate))
+        self.assertLess(fill_name.index("updateFolderIcon()"), fill_name.index(name_gate))
+        self.assertEqual(1, fill_name.count(automatic_icon))
+
     def test_legacy_icon_refresh_uses_immutable_save_snapshots(self):
         editor = (JAVA / "ui/FilterCreateActivity.java").read_text()
 

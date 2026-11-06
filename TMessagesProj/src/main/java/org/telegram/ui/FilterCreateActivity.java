@@ -936,6 +936,11 @@ public class FilterCreateActivity extends BaseFragment {
     }
 
     private void fillFilterName() {
+        if (creatingNew && !folderIconChangedManually) {
+            newFilterEmoticon = FolderIconCatalog.resolveForFlags(newFilterFlags);
+        }
+        updateFolderIcon();
+
         if (!creatingNew || !TextUtils.isEmpty(newFilterName) && nameChangedManually) {
             return;
         }
@@ -977,10 +982,6 @@ public class FilterCreateActivity extends BaseFragment {
             newName = "";
         }
         newFilterName = newName;
-        if (creatingNew && !folderIconChangedManually) {
-            newFilterEmoticon = FolderIconCatalog.resolveForFlags(newFilterFlags);
-            updateFolderIcon();
-        }
         if (folderTagsHeader != null) {
             folderTagsHeader.setPreviewText(AnimatedEmojiSpan.cloneSpans(newFilterName, -1, folderTagsHeader.getPreviewTextPaint().getFontMetricsInt(), .5f), false);
         }
