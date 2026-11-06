@@ -253,6 +253,25 @@ public final class FolderIconCatalogCheck {
         self.assertIn("new ArrayList<>(refreshedFilter.alwaysShow)", editor)
         self.assertIn("refreshedFilter.pinnedDialogs.clone()", editor)
 
+    def test_failed_legacy_refresh_rolls_back_fast_dialog_changes(self):
+        editor = (JAVA / "ui/FilterCreateActivity.java").read_text()
+        dialogs = (JAVA / "ui/DialogsActivity.java").read_text()
+
+        self.assertIn("static DialogFilterDialogsSnapshot captureDialogFilterDialogs", editor)
+        self.assertIn("rollbackSnapshot.captureApplied(filter)", editor)
+        self.assertIn("!success && rollbackSnapshot != null", editor)
+        self.assertIn("rollbackSnapshot.restoreIfApplied(filter, fragment)", editor)
+        self.assertIn("private boolean completed", editor)
+        self.assertIn("onComplete.run()", editor)
+        self.assertIn("!appliedAlwaysShow.equals(filter.alwaysShow)", editor)
+        self.assertIn("pinnedDialogsEqual(appliedPinnedDialogs, filter.pinnedDialogs)", editor)
+        self.assertIn("filter.alwaysShow = new ArrayList<>(alwaysShow)", editor)
+        self.assertNotIn("filter.pendingUnreadCount = pendingUnreadCount", editor)
+        self.assertNotIn("saveDialogFilter(filter, false, true)", editor)
+        self.assertIn("pendingDialogFilterRollbacks", dialogs)
+        self.assertGreaterEqual(dialogs.count("captureDialogFilterDialogs("), 6)
+        self.assertGreaterEqual(dialogs.count("null, rollbackSnapshot)"), 8)
+
     def test_forced_remote_refresh_is_not_lost_behind_an_active_load(self):
         controller = (JAVA / "messenger/MessagesController.java").read_text()
         completion = controller.split("private void completeRemoteFiltersLoad", 1)[1].split(
