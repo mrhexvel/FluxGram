@@ -144,6 +144,7 @@ public class FilterCreateActivity extends BaseFragment {
     private ImageView folderIconView;
     private boolean folderIconChangedManually;
     private boolean saving;
+    private DialogFilterEditorSnapshot legacyEditorSnapshot;
 
     private boolean canCreateLink() {
         return (
@@ -219,11 +220,24 @@ public class FilterCreateActivity extends BaseFragment {
         newFilterFlags = filter.flags;
         newFilterColor = filter.color;
         newAlwaysShow = new ArrayList<>(filter.alwaysShow);
+        newNeverShow = new ArrayList<>(filter.neverShow);
+        newPinned = filter.pinnedDialogs.clone();
+        if (!creatingNew && !filter.emoticonLoaded) {
+            legacyEditorSnapshot = new DialogFilterEditorSnapshot(
+                    newFilterFlags,
+                    filter.name,
+                    filter.entities,
+                    !newFilterAnimations,
+                    newFilterColor,
+                    newFilterEmoticon,
+                    newAlwaysShow,
+                    newNeverShow,
+                    newPinned
+            );
+        }
         if (alwaysShow != null) {
             newAlwaysShow.addAll(alwaysShow);
         }
-        newNeverShow = new ArrayList<>(filter.neverShow);
-        newPinned = filter.pinnedDialogs.clone();
     }
 
     private int requestingInvitesReqId;
@@ -1113,16 +1127,23 @@ public class FilterCreateActivity extends BaseFragment {
         }
         saving = true;
         checkDoneButton(true);
-        if (!creatingNew && !folderIconChangedManually && filter.emoticonLoaded) {
-            newFilterEmoticon = filter.emoticon;
-        }
+        String saveFilterEmoticon = !creatingNew && !folderIconChangedManually && filter.emoticonLoaded
+                ? filter.emoticon
+                : newFilterEmoticon;
+        DialogFilterEditorSnapshot editorSnapshot = legacyEditorSnapshot;
+        MessagesController.DialogFilter[] savedFilter = new MessagesController.DialogFilter[] { filter };
         final CharSequence[] parsedTitle = new CharSequence[] { newFilterName };
         final ArrayList<TLRPC.MessageEntity> entities = getMediaDataController().getEntities(parsedTitle, false);
-        saveFilterToServer(filter, newFilterFlags, newFilterEmoticon, folderIconChangedManually || creatingNew, true, parsedTitle[0].toString(), entities, !newFilterAnimations, newFilterColor, newAlwaysShow, newNeverShow, newPinned, creatingNew, false, hasUserChanged, true, progress, this, () -> {
+        saveFilterToServer(filter, newFilterFlags, saveFilterEmoticon, folderIconChangedManually || creatingNew, true, parsedTitle[0].toString(), entities, !newFilterAnimations, newFilterColor, newAlwaysShow, newNeverShow, newPinned, creatingNew, false, hasUserChanged, true, progress, this, () -> {
 
             saving = false;
             hasUserChanged = false;
             creatingNew = false;
+            if (editorSnapshot != null && legacyEditorSnapshot == editorSnapshot) {
+                legacyEditorSnapshot = null;
+                filter = savedFilter[0];
+                syncEditorStateFromFilter();
+            }
             checkDoneButton(true);
 
             getNotificationCenter().postNotificationName(NotificationCenter.dialogFiltersUpdated);
@@ -1133,10 +1154,44 @@ public class FilterCreateActivity extends BaseFragment {
         }, () -> {
             saving = false;
             checkDoneButton(true);
-        }, null);
+        }, editorSnapshot, savedFilter, null);
     }
 
-    private static void processAddFilter(MessagesController.DialogFilter filter, int newFilterFlags, String newFilterEmoticon, String newFilterName, ArrayList<TLRPC.MessageEntity> newFilterNameEntities, boolean newFilterNoanimate, int newFilterColor, ArrayList<Long> newAlwaysShow, ArrayList<Long> newNeverShow, boolean creatingNew, boolean atBegin, boolean hasUserChanged, boolean resetUnreadCounter, BaseFragment fragment, Runnable onFinish) {
+    private void syncEditorStateFromFilter() {
+        TextPaint paint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+        paint.setTextSize(dp(17));
+        newFilterName = new SpannableStringBuilder(filter.name);
+        newFilterName = Emoji.replaceEmoji(newFilterName, paint.getFontMetricsInt(), false);
+        newFilterName = MessageObject.replaceAnimatedEmoji(newFilterName, filter.entities, paint.getFontMetricsInt());
+        newFilterEmoticon = filter.emoticon;
+        newFilterAnimations = !filter.title_noanimate;
+        newFilterFlags = filter.flags;
+        newFilterColor = filter.color;
+        newAlwaysShow = new ArrayList<>(filter.alwaysShow);
+        newNeverShow = new ArrayList<>(filter.neverShow);
+        newPinned = filter.pinnedDialogs.clone();
+        folderIconChangedManually = false;
+        AnimatedEmojiDrawable.toggleAnimations(currentAccount, newFilterAnimations);
+        if (nameEditTextCell != null) {
+            nameEditTextCell.editTextEmoji.setText(newFilterName);
+        }
+        if (actionBar != null) {
+            Paint.FontMetricsInt fontMetricsInt = actionBar.getTitleFontMetricsInt();
+            CharSequence title = Emoji.replaceEmoji(filter.name, fontMetricsInt, false);
+            title = MessageObject.replaceAnimatedEmoji(title, filter.entities, fontMetricsInt);
+            actionBar.setTitle(title);
+            if (actionBar.getTitleTextView() != null) {
+                actionBar.getTitleTextView().setEmojiCacheType(newFilterAnimations ? AnimatedEmojiDrawable.CACHE_TYPE_MESSAGES : AnimatedEmojiDrawable.CACHE_TYPE_NOANIMATE_FOLDER);
+            }
+            if (actionBar.getTitleTextView2() != null) {
+                actionBar.getTitleTextView2().setEmojiCacheType(newFilterAnimations ? AnimatedEmojiDrawable.CACHE_TYPE_MESSAGES : AnimatedEmojiDrawable.CACHE_TYPE_NOANIMATE_FOLDER);
+            }
+        }
+        updateFolderIcon();
+        updateRows(false);
+    }
+
+    private static void processAddFilter(MessagesController.DialogFilter filter, int newFilterFlags, String newFilterEmoticon, String newFilterName, ArrayList<TLRPC.MessageEntity> newFilterNameEntities, boolean newFilterNoanimate, int newFilterColor, ArrayList<Long> newAlwaysShow, ArrayList<Long> newNeverShow, LongSparseIntArray newPinned, boolean creatingNew, boolean atBegin, boolean hasUserChanged, boolean resetUnreadCounter, BaseFragment fragment, Runnable onFinish) {
         if (filter.flags != newFilterFlags || hasUserChanged) {
             filter.pendingUnreadCount = -1;
             if (resetUnreadCounter) {
@@ -1151,6 +1206,7 @@ public class FilterCreateActivity extends BaseFragment {
         filter.color = newFilterColor;
         filter.neverShow = newNeverShow;
         filter.alwaysShow = newAlwaysShow;
+        filter.pinnedDialogs = newPinned.clone();
         filter.title_noanimate = newFilterNoanimate;
         if (creatingNew) {
             fragment.getMessagesController().addFilter(filter, atBegin);
@@ -1179,10 +1235,10 @@ public class FilterCreateActivity extends BaseFragment {
         if (rollbackSnapshot != null) {
             rollbackSnapshot.captureApplied(filter);
         }
-        saveFilterToServer(filter, newFilterFlags, filter.emoticon, false, false, newFilterName, newFilterNameEntities, newFilterNoanimate, newFilterColor, newAlwaysShow, newNeverShow, newPinned, creatingNew, atBegin, hasUserChanged, resetUnreadCounter, progress, fragment, onFinish, null, rollbackSnapshot);
+        saveFilterToServer(filter, newFilterFlags, filter.emoticon, false, false, newFilterName, newFilterNameEntities, newFilterNoanimate, newFilterColor, newAlwaysShow, newNeverShow, newPinned, creatingNew, atBegin, hasUserChanged, resetUnreadCounter, progress, fragment, onFinish, null, null, null, rollbackSnapshot);
     }
 
-    private static void saveFilterToServer(MessagesController.DialogFilter filter, int newFilterFlags, String newFilterEmoticon, boolean folderIconChanged, boolean editorSave, String newFilterName, ArrayList<TLRPC.MessageEntity> newFilterNameEntities, boolean newFilterNoanimate, int newFilterColor, ArrayList<Long> newAlwaysShow, ArrayList<Long> newNeverShow, LongSparseIntArray newPinned, boolean creatingNew, boolean atBegin, boolean hasUserChanged, boolean resetUnreadCounter, boolean progress, BaseFragment fragment, Runnable onFinish, Runnable onRefreshFailure, DialogFilterDialogsSnapshot rollbackSnapshot) {
+    private static void saveFilterToServer(MessagesController.DialogFilter filter, int newFilterFlags, String newFilterEmoticon, boolean folderIconChanged, boolean editorSave, String newFilterName, ArrayList<TLRPC.MessageEntity> newFilterNameEntities, boolean newFilterNoanimate, int newFilterColor, ArrayList<Long> newAlwaysShow, ArrayList<Long> newNeverShow, LongSparseIntArray newPinned, boolean creatingNew, boolean atBegin, boolean hasUserChanged, boolean resetUnreadCounter, boolean progress, BaseFragment fragment, Runnable onFinish, Runnable onRefreshFailure, DialogFilterEditorSnapshot editorSnapshot, MessagesController.DialogFilter[] savedFilter, DialogFilterDialogsSnapshot rollbackSnapshot) {
         if (fragment == null || fragment.getParentActivity() == null) {
             if (rollbackSnapshot != null && fragment != null) {
                 rollbackSnapshot.restoreIfApplied(filter, fragment);
@@ -1192,17 +1248,27 @@ public class FilterCreateActivity extends BaseFragment {
             }
             return;
         }
-        if (!creatingNew && !filter.emoticonLoaded) {
-            boolean flagsChanged = editorSave && filter.flags != newFilterFlags;
-            boolean titleChanged = editorSave && (!TextUtils.equals(filter.name, newFilterName)
-                    || !MediaDataController.entitiesEqual(filter.entities, newFilterNameEntities));
-            boolean noanimateChanged = editorSave && filter.title_noanimate != newFilterNoanimate;
-            boolean colorChanged = editorSave && filter.color != newFilterColor;
-            boolean dialogsChanged = editorSave
-                    ? !filter.alwaysShow.equals(newAlwaysShow)
-                            || !filter.neverShow.equals(newNeverShow)
-                            || !pinnedDialogsEqual(filter.pinnedDialogs, newPinned)
-                    : hasUserChanged;
+        if (!creatingNew && (editorSnapshot != null || !filter.emoticonLoaded)) {
+            boolean flagsChanged = editorSnapshot != null
+                    ? editorSnapshot.flags != newFilterFlags
+                    : editorSave && filter.flags != newFilterFlags;
+            boolean titleChanged = editorSnapshot != null
+                    ? !editorSnapshot.titleEquals(newFilterName, newFilterNameEntities)
+                    : editorSave && (!TextUtils.equals(filter.name, newFilterName)
+                            || !MediaDataController.entitiesEqual(filter.entities, newFilterNameEntities));
+            boolean noanimateChanged = editorSnapshot != null
+                    ? editorSnapshot.titleNoanimate != newFilterNoanimate
+                    : editorSave && filter.title_noanimate != newFilterNoanimate;
+            boolean colorChanged = editorSnapshot != null
+                    ? editorSnapshot.color != newFilterColor
+                    : editorSave && filter.color != newFilterColor;
+            boolean dialogsChanged = editorSnapshot != null
+                    ? !editorSnapshot.dialogsEqual(newAlwaysShow, newNeverShow, newPinned)
+                    : editorSave
+                            ? !filter.alwaysShow.equals(newAlwaysShow)
+                                    || !filter.neverShow.equals(newNeverShow)
+                                    || !pinnedDialogsEqual(filter.pinnedDialogs, newPinned)
+                            : hasUserChanged;
             ArrayList<TLRPC.MessageEntity> entitiesSnapshot = newFilterNameEntities == null
                     ? null
                     : new ArrayList<>(newFilterNameEntities);
@@ -1259,7 +1325,10 @@ public class FilterCreateActivity extends BaseFragment {
                 if (rollbackSnapshot != null) {
                     rollbackSnapshot.complete();
                 }
-                saveFilterToServer(refreshedFilter, mergedFlags, refreshedEmoticon, folderIconChanged, editorSave, mergedName, mergedEntities, mergedNoanimate, mergedColor, mergedAlwaysShow, mergedNeverShow, mergedPinned, false, atBegin, hasUserChanged, resetUnreadCounter, progress, fragment, onFinish, onRefreshFailure, rollbackSnapshot);
+                if (savedFilter != null) {
+                    savedFilter[0] = refreshedFilter;
+                }
+                saveFilterToServer(refreshedFilter, mergedFlags, refreshedEmoticon, folderIconChanged, editorSave, mergedName, mergedEntities, mergedNoanimate, mergedColor, mergedAlwaysShow, mergedNeverShow, mergedPinned, false, atBegin, hasUserChanged, resetUnreadCounter, progress, fragment, onFinish, onRefreshFailure, null, savedFilter, rollbackSnapshot);
             });
             return;
         }
@@ -1374,13 +1443,13 @@ public class FilterCreateActivity extends BaseFragment {
                 } catch (Exception e) {
                     FileLog.e(e);
                 }
-                processAddFilter(filter, newFilterFlags, newFilterEmoticon, newFilterName, newFilterNameEntities, newFilterNoanimate, newFilterColor, newAlwaysShow, newNeverShow, creatingNew, atBegin, hasUserChanged, resetUnreadCounter, fragment, onFinish);
+                processAddFilter(filter, newFilterFlags, newFilterEmoticon, newFilterName, newFilterNameEntities, newFilterNoanimate, newFilterColor, newAlwaysShow, newNeverShow, newPinned, creatingNew, atBegin, hasUserChanged, resetUnreadCounter, fragment, onFinish);
             } else if (onFinish != null) {
                 onFinish.run();
             }
         }));
         if (!progress) {
-            processAddFilter(filter, newFilterFlags, newFilterEmoticon, newFilterName, newFilterNameEntities, newFilterNoanimate, newFilterColor, newAlwaysShow, newNeverShow, creatingNew, atBegin, hasUserChanged, resetUnreadCounter, fragment, null);
+            processAddFilter(filter, newFilterFlags, newFilterEmoticon, newFilterName, newFilterNameEntities, newFilterNoanimate, newFilterColor, newAlwaysShow, newNeverShow, newPinned, creatingNew, atBegin, hasUserChanged, resetUnreadCounter, fragment, null);
         }
     }
 
@@ -1395,6 +1464,52 @@ public class FilterCreateActivity extends BaseFragment {
             }
         }
         return true;
+    }
+
+    private static boolean dialogIdsEqual(ArrayList<Long> first, ArrayList<Long> second) {
+        if (first.size() != second.size()) {
+            return false;
+        }
+        ArrayList<Long> firstSorted = new ArrayList<>(first);
+        ArrayList<Long> secondSorted = new ArrayList<>(second);
+        Collections.sort(firstSorted);
+        Collections.sort(secondSorted);
+        return firstSorted.equals(secondSorted);
+    }
+
+    private static final class DialogFilterEditorSnapshot {
+        private final int flags;
+        private final String name;
+        private final ArrayList<TLRPC.MessageEntity> entities;
+        private final boolean titleNoanimate;
+        private final int color;
+        private final String emoticon;
+        private final ArrayList<Long> alwaysShow;
+        private final ArrayList<Long> neverShow;
+        private final LongSparseIntArray pinnedDialogs;
+
+        private DialogFilterEditorSnapshot(int flags, String name, ArrayList<TLRPC.MessageEntity> entities, boolean titleNoanimate, int color, String emoticon, ArrayList<Long> alwaysShow, ArrayList<Long> neverShow, LongSparseIntArray pinnedDialogs) {
+            this.flags = flags;
+            this.name = name;
+            this.entities = entities == null ? null : new ArrayList<>(entities);
+            this.titleNoanimate = titleNoanimate;
+            this.color = color;
+            this.emoticon = emoticon;
+            this.alwaysShow = new ArrayList<>(alwaysShow);
+            this.neverShow = new ArrayList<>(neverShow);
+            this.pinnedDialogs = pinnedDialogs.clone();
+        }
+
+        private boolean titleEquals(String name, ArrayList<TLRPC.MessageEntity> entities) {
+            return TextUtils.equals(this.name, name)
+                    && MediaDataController.entitiesEqual(this.entities, entities);
+        }
+
+        private boolean dialogsEqual(ArrayList<Long> alwaysShow, ArrayList<Long> neverShow, LongSparseIntArray pinnedDialogs) {
+            return dialogIdsEqual(this.alwaysShow, alwaysShow)
+                    && dialogIdsEqual(this.neverShow, neverShow)
+                    && pinnedDialogsEqual(this.pinnedDialogs, pinnedDialogs);
+        }
     }
 
     static DialogFilterDialogsSnapshot captureDialogFilterDialogs(MessagesController.DialogFilter filter, Runnable onComplete) {
@@ -1465,38 +1580,27 @@ public class FilterCreateActivity extends BaseFragment {
     }
 
     private boolean hasChanges() {
+        DialogFilterEditorSnapshot editorSnapshot = legacyEditorSnapshot;
         hasUserChanged = false;
-        if (filter.alwaysShow.size() != newAlwaysShow.size()) {
-            hasUserChanged = true;
+        if (editorSnapshot != null) {
+            hasUserChanged = editorSnapshot.color != newFilterColor
+                    || !editorSnapshot.dialogsEqual(newAlwaysShow, newNeverShow, newPinned);
+        } else {
+            hasUserChanged = filter.color != newFilterColor
+                    || !dialogIdsEqual(filter.alwaysShow, newAlwaysShow)
+                    || !dialogIdsEqual(filter.neverShow, newNeverShow)
+                    || !pinnedDialogsEqual(filter.pinnedDialogs, newPinned);
         }
-        if (filter.neverShow.size() != newNeverShow.size()) {
-            hasUserChanged = true;
-        }
-        if (filter.color != newFilterColor) {
-            hasUserChanged = true;
-        }
-        if (!hasUserChanged) {
-            Collections.sort(filter.alwaysShow);
-            Collections.sort(newAlwaysShow);
-            if (!filter.alwaysShow.equals(newAlwaysShow)) {
-                hasUserChanged = true;
-            }
-            Collections.sort(filter.neverShow);
-            Collections.sort(newNeverShow);
-            if (!filter.neverShow.equals(newNeverShow)) {
-                hasUserChanged = true;
-            }
-        }
-        if (filter.title_noanimate != (!newFilterAnimations)) {
+        if ((editorSnapshot != null ? editorSnapshot.titleNoanimate : filter.title_noanimate) != (!newFilterAnimations)) {
             return true;
         }
-        if (!TextUtils.equals(filter.name, newFilterName)) {
+        if (!TextUtils.equals(editorSnapshot != null ? editorSnapshot.name : filter.name, newFilterName)) {
             return true;
         }
-        if (!TextUtils.equals(filter.emoticon, newFilterEmoticon)) {
+        if (!TextUtils.equals(editorSnapshot != null ? editorSnapshot.emoticon : filter.emoticon, newFilterEmoticon)) {
             return true;
         }
-        if (filter.flags != newFilterFlags) {
+        if ((editorSnapshot != null ? editorSnapshot.flags : filter.flags) != newFilterFlags) {
             return true;
         }
         return hasUserChanged;

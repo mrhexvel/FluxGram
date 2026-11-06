@@ -181,7 +181,7 @@ public final class FolderIconCatalogCheck {
         self.assertIn("newFilterEmoticon = filter.emoticon", editor)
         self.assertIn("FolderIconSelector.show", editor)
         self.assertIn("filter.emoticon = newFilterEmoticon", editor)
-        self.assertIn("TextUtils.equals(filter.emoticon, newFilterEmoticon)", editor)
+        self.assertIn("editorSnapshot.emoticon : filter.emoticon", editor)
         self.assertIn("GridLayout", selector)
         self.assertIn("FolderIconCatalog.size()", selector)
         self.assertIn("LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT", selector)
@@ -265,9 +265,9 @@ public final class FolderIconCatalogCheck {
     def test_legacy_refresh_merges_only_locally_changed_fields(self):
         editor = (JAVA / "ui/FilterCreateActivity.java").read_text()
 
-        self.assertIn("boolean flagsChanged = editorSave", editor)
-        self.assertIn("boolean titleChanged = editorSave", editor)
-        self.assertIn("boolean dialogsChanged = editorSave", editor)
+        self.assertIn("editorSnapshot != null\n                    ? editorSnapshot.flags", editor)
+        self.assertIn("editorSnapshot != null\n                    ? !editorSnapshot.titleEquals", editor)
+        self.assertIn("editorSnapshot != null\n                    ? !editorSnapshot.dialogsEqual", editor)
         self.assertIn("pinnedDialogsEqual(filter.pinnedDialogs, newPinned)", editor)
         self.assertIn("flagsChanged ? newFilterFlags : refreshedFilter.flags", editor)
         self.assertIn("titleChanged ? newFilterName : refreshedFilter.name", editor)
@@ -275,6 +275,23 @@ public final class FolderIconCatalogCheck {
         self.assertNotIn("filter.flags = newFilterFlags;\n            checkDoneButton(true);", editor)
         self.assertIn("new ArrayList<>(refreshedFilter.alwaysShow)", editor)
         self.assertIn("refreshedFilter.pinnedDialogs.clone()", editor)
+
+    def test_editor_opened_during_legacy_refresh_uses_opening_snapshot(self):
+        editor = (JAVA / "ui/FilterCreateActivity.java").read_text()
+
+        self.assertIn("private DialogFilterEditorSnapshot legacyEditorSnapshot", editor)
+        self.assertIn("if (!creatingNew && !filter.emoticonLoaded)", editor)
+        self.assertIn("legacyEditorSnapshot = new DialogFilterEditorSnapshot(", editor)
+        self.assertIn("editorSnapshot != null || !filter.emoticonLoaded", editor)
+        self.assertIn("editorSnapshot.flags != newFilterFlags", editor)
+        self.assertIn("!editorSnapshot.titleEquals(newFilterName, newFilterNameEntities)", editor)
+        self.assertIn("!editorSnapshot.dialogsEqual(newAlwaysShow, newNeverShow, newPinned)", editor)
+        self.assertIn("legacyEditorSnapshot == editorSnapshot", editor)
+        self.assertIn("syncEditorStateFromFilter()", editor)
+        self.assertIn("filter = savedFilter", editor)
+        self.assertIn("filter.pinnedDialogs = newPinned.clone()", editor)
+        self.assertNotIn("Collections.sort(filter.alwaysShow)", editor)
+        self.assertNotIn("Collections.sort(newAlwaysShow)", editor)
 
     def test_failed_legacy_refresh_rolls_back_fast_dialog_changes(self):
         editor = (JAVA / "ui/FilterCreateActivity.java").read_text()
