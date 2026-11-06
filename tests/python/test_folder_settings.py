@@ -174,6 +174,9 @@ public final class FolderIconCatalogCheck {
     def test_folder_editor_exposes_the_icon_selector(self):
         editor = (JAVA / "ui/FilterCreateActivity.java").read_text()
         selector = (JAVA / "ui/fluxgram/FolderIconSelector.java").read_text()
+        icon_block = editor.split("folderIconView = new ImageView", 1)[1].split(
+            "AnimatedEmojiDrawable.toggleAnimations", 1
+        )[0]
 
         self.assertIn("newFilterEmoticon = filter.emoticon", editor)
         self.assertIn("FolderIconSelector.show", editor)
@@ -184,6 +187,12 @@ public final class FolderIconCatalogCheck {
         self.assertIn("LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT", selector)
         self.assertNotIn("anchor.getX()", selector)
         self.assertIn("protected void onDraw(Canvas canvas)", selector)
+        self.assertIn("Gravity.CENTER_VERTICAL | Gravity.LEFT", icon_block)
+        self.assertIn("dp(56),\n                            editText.getPaddingTop()", editor)
+        self.assertNotIn(
+            "Gravity.CENTER_VERTICAL | (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT)",
+            icon_block,
+        )
 
     def test_selected_folder_icon_is_persisted(self):
         controller = (JAVA / "messenger/MessagesController.java").read_text()

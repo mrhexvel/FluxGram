@@ -1616,10 +1616,10 @@ public class FilterCreateActivity extends BaseFragment {
                     cell.addView(folderIconView, LayoutHelper.createFrame(
                             48,
                             48,
-                            Gravity.CENTER_VERTICAL | (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT),
-                            LocaleController.isRTL ? 0 : 8,
+                            Gravity.CENTER_VERTICAL | Gravity.LEFT,
+                            8,
                             0,
-                            LocaleController.isRTL ? 8 : 0,
+                            0,
                             0
                     ));
                     updateFolderIcon();
@@ -1649,9 +1649,9 @@ public class FilterCreateActivity extends BaseFragment {
                         }
                     });
                     editText.setPadding(
-                            LocaleController.isRTL ? dp(7) : dp(56),
+                            dp(56),
                             editText.getPaddingTop(),
-                            LocaleController.isRTL ? dp(56) : editText.getPaddingRight(),
+                            editText.getPaddingRight(),
                             editText.getPaddingBottom()
                     );
                     cell.editTextEmoji.getEditText().setImeOptions(EditorInfo.IME_ACTION_DONE | EditorInfo.IME_FLAG_NO_EXTRACT_UI);
