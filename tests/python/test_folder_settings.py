@@ -239,6 +239,20 @@ public final class FolderIconCatalogCheck {
         self.assertIn("if (saving)", editor)
         self.assertIn("createErrorBulletin(LocaleController.getString(R.string.UnknownError))", editor)
 
+    def test_legacy_refresh_merges_only_locally_changed_fields(self):
+        editor = (JAVA / "ui/FilterCreateActivity.java").read_text()
+
+        self.assertIn("boolean flagsChanged = editorSave", editor)
+        self.assertIn("boolean titleChanged = editorSave", editor)
+        self.assertIn("boolean dialogsChanged = editorSave", editor)
+        self.assertIn("pinnedDialogsEqual(filter.pinnedDialogs, newPinned)", editor)
+        self.assertIn("flagsChanged ? newFilterFlags : refreshedFilter.flags", editor)
+        self.assertIn("titleChanged ? newFilterName : refreshedFilter.name", editor)
+        self.assertIn("colorChanged ? newFilterColor : refreshedFilter.color", editor)
+        self.assertNotIn("filter.flags = newFilterFlags;\n            checkDoneButton(true);", editor)
+        self.assertIn("new ArrayList<>(refreshedFilter.alwaysShow)", editor)
+        self.assertIn("refreshedFilter.pinnedDialogs.clone()", editor)
+
     def test_forced_remote_refresh_is_not_lost_behind_an_active_load(self):
         controller = (JAVA / "messenger/MessagesController.java").read_text()
         completion = controller.split("private void completeRemoteFiltersLoad", 1)[1].split(

@@ -53,6 +53,7 @@ import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.Emoji;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
+import org.telegram.messenger.MediaDataController;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
@@ -1116,12 +1117,11 @@ public class FilterCreateActivity extends BaseFragment {
         }
         final CharSequence[] parsedTitle = new CharSequence[] { newFilterName };
         final ArrayList<TLRPC.MessageEntity> entities = getMediaDataController().getEntities(parsedTitle, false);
-        saveFilterToServer(filter, newFilterFlags, newFilterEmoticon, folderIconChangedManually || creatingNew, parsedTitle[0].toString(), entities, !newFilterAnimations, newFilterColor, newAlwaysShow, newNeverShow, newPinned, creatingNew, false, hasUserChanged, true, progress, this, () -> {
+        saveFilterToServer(filter, newFilterFlags, newFilterEmoticon, folderIconChangedManually || creatingNew, true, parsedTitle[0].toString(), entities, !newFilterAnimations, newFilterColor, newAlwaysShow, newNeverShow, newPinned, creatingNew, false, hasUserChanged, true, progress, this, () -> {
 
             saving = false;
             hasUserChanged = false;
             creatingNew = false;
-            filter.flags = newFilterFlags;
             checkDoneButton(true);
 
             getNotificationCenter().postNotificationName(NotificationCenter.dialogFiltersUpdated);
@@ -1171,10 +1171,10 @@ public class FilterCreateActivity extends BaseFragment {
     }
 
     public static void saveFilterToServer(MessagesController.DialogFilter filter, int newFilterFlags, String newFilterName, ArrayList<TLRPC.MessageEntity> newFilterNameEntities, boolean newFilterNoanimate, int newFilterColor, ArrayList<Long> newAlwaysShow, ArrayList<Long> newNeverShow, LongSparseIntArray newPinned, boolean creatingNew, boolean atBegin, boolean hasUserChanged, boolean resetUnreadCounter, boolean progress, BaseFragment fragment, Runnable onFinish) {
-        saveFilterToServer(filter, newFilterFlags, filter.emoticon, false, newFilterName, newFilterNameEntities, newFilterNoanimate, newFilterColor, newAlwaysShow, newNeverShow, newPinned, creatingNew, atBegin, hasUserChanged, resetUnreadCounter, progress, fragment, onFinish, null);
+        saveFilterToServer(filter, newFilterFlags, filter.emoticon, false, false, newFilterName, newFilterNameEntities, newFilterNoanimate, newFilterColor, newAlwaysShow, newNeverShow, newPinned, creatingNew, atBegin, hasUserChanged, resetUnreadCounter, progress, fragment, onFinish, null);
     }
 
-    private static void saveFilterToServer(MessagesController.DialogFilter filter, int newFilterFlags, String newFilterEmoticon, boolean folderIconChanged, String newFilterName, ArrayList<TLRPC.MessageEntity> newFilterNameEntities, boolean newFilterNoanimate, int newFilterColor, ArrayList<Long> newAlwaysShow, ArrayList<Long> newNeverShow, LongSparseIntArray newPinned, boolean creatingNew, boolean atBegin, boolean hasUserChanged, boolean resetUnreadCounter, boolean progress, BaseFragment fragment, Runnable onFinish, Runnable onRefreshFailure) {
+    private static void saveFilterToServer(MessagesController.DialogFilter filter, int newFilterFlags, String newFilterEmoticon, boolean folderIconChanged, boolean editorSave, String newFilterName, ArrayList<TLRPC.MessageEntity> newFilterNameEntities, boolean newFilterNoanimate, int newFilterColor, ArrayList<Long> newAlwaysShow, ArrayList<Long> newNeverShow, LongSparseIntArray newPinned, boolean creatingNew, boolean atBegin, boolean hasUserChanged, boolean resetUnreadCounter, boolean progress, BaseFragment fragment, Runnable onFinish, Runnable onRefreshFailure) {
         if (fragment == null || fragment.getParentActivity() == null) {
             if (onRefreshFailure != null) {
                 onRefreshFailure.run();
@@ -1182,6 +1182,16 @@ public class FilterCreateActivity extends BaseFragment {
             return;
         }
         if (!creatingNew && !filter.emoticonLoaded) {
+            boolean flagsChanged = editorSave && filter.flags != newFilterFlags;
+            boolean titleChanged = editorSave && (!TextUtils.equals(filter.name, newFilterName)
+                    || !MediaDataController.entitiesEqual(filter.entities, newFilterNameEntities));
+            boolean noanimateChanged = editorSave && filter.title_noanimate != newFilterNoanimate;
+            boolean colorChanged = editorSave && filter.color != newFilterColor;
+            boolean dialogsChanged = editorSave
+                    ? !filter.alwaysShow.equals(newAlwaysShow)
+                            || !filter.neverShow.equals(newNeverShow)
+                            || !pinnedDialogsEqual(filter.pinnedDialogs, newPinned)
+                    : hasUserChanged;
             ArrayList<TLRPC.MessageEntity> entitiesSnapshot = newFilterNameEntities == null
                     ? null
                     : new ArrayList<>(newFilterNameEntities);
@@ -1206,8 +1216,28 @@ public class FilterCreateActivity extends BaseFragment {
                     }
                     return;
                 }
+                int mergedFlags = flagsChanged ? newFilterFlags : refreshedFilter.flags;
+                String mergedName = titleChanged ? newFilterName : refreshedFilter.name;
+                ArrayList<TLRPC.MessageEntity> mergedEntities = titleChanged
+                        ? entitiesSnapshot
+                        : refreshedFilter.entities == null
+                                ? null
+                                : new ArrayList<>(refreshedFilter.entities);
+                boolean mergedNoanimate = noanimateChanged
+                        ? newFilterNoanimate
+                        : refreshedFilter.title_noanimate;
+                int mergedColor = colorChanged ? newFilterColor : refreshedFilter.color;
                 String refreshedEmoticon = folderIconChanged ? newFilterEmoticon : refreshedFilter.emoticon;
-                saveFilterToServer(refreshedFilter, newFilterFlags, refreshedEmoticon, folderIconChanged, newFilterName, entitiesSnapshot, newFilterNoanimate, newFilterColor, alwaysShowSnapshot, neverShowSnapshot, pinnedSnapshot, false, atBegin, hasUserChanged, resetUnreadCounter, progress, fragment, onFinish, onRefreshFailure);
+                ArrayList<Long> mergedAlwaysShow = dialogsChanged
+                        ? alwaysShowSnapshot
+                        : new ArrayList<>(refreshedFilter.alwaysShow);
+                ArrayList<Long> mergedNeverShow = dialogsChanged
+                        ? neverShowSnapshot
+                        : new ArrayList<>(refreshedFilter.neverShow);
+                LongSparseIntArray mergedPinned = dialogsChanged
+                        ? pinnedSnapshot
+                        : refreshedFilter.pinnedDialogs.clone();
+                saveFilterToServer(refreshedFilter, mergedFlags, refreshedEmoticon, folderIconChanged, editorSave, mergedName, mergedEntities, mergedNoanimate, mergedColor, mergedAlwaysShow, mergedNeverShow, mergedPinned, false, atBegin, hasUserChanged, resetUnreadCounter, progress, fragment, onFinish, onRefreshFailure);
             });
             return;
         }
@@ -1330,6 +1360,19 @@ public class FilterCreateActivity extends BaseFragment {
         if (!progress) {
             processAddFilter(filter, newFilterFlags, newFilterEmoticon, newFilterName, newFilterNameEntities, newFilterNoanimate, newFilterColor, newAlwaysShow, newNeverShow, creatingNew, atBegin, hasUserChanged, resetUnreadCounter, fragment, null);
         }
+    }
+
+    private static boolean pinnedDialogsEqual(LongSparseIntArray first, LongSparseIntArray second) {
+        if (first.size() != second.size()) {
+            return false;
+        }
+        for (int index = 0; index < first.size(); index++) {
+            long key = first.keyAt(index);
+            if (first.valueAt(index) != second.get(key, Integer.MIN_VALUE)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     @Override
