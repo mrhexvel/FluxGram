@@ -116,7 +116,8 @@ class AppearanceSettingsTest(unittest.TestCase):
         )[0]
         self.assertIn("!AppearanceSettings.usesGooeyAvatar(currentAccount)", update)
         self.assertIn("avatarGooey.setGooeyEnabled(false);", update)
-        self.assertIn("avatarGooey.setGooeyEnabled(pullUpProgress > 0", update)
+        self.assertIn("avatarGooey.setHideProgress(pullUpProgress);", update)
+        self.assertIn("setGooeyEnabled(progress > 0 && progress < 1);", gooey)
         self.assertNotIn("AppearanceSettings", gooey)
 
     def test_custom_chat_themes_toggle_controls_chat_theme_application(self):
@@ -358,10 +359,7 @@ class AppearanceSettingsTest(unittest.TestCase):
             JAVA
             / "ui/Components/blur3/drawable/BlurredBackgroundDrawable.java"
         ).read_text()
-        render_node = (
-            JAVA
-            / "ui/Components/blur3/drawable/BlurredBackgroundDrawableRenderNode.java"
-        ).read_text()
+        rim = (JAVA / "ui/Components/blur3/drawable/GlassRim.java").read_text()
 
         self.assertIn("GLASS_OUTLINE_GLARE = 0", settings)
         self.assertIn("GLASS_OUTLINE_SOLID = 1", settings)
@@ -379,11 +377,11 @@ class AppearanceSettingsTest(unittest.TestCase):
             main_tabs,
         )
         self.assertNotIn("AppearanceSettings", drawable)
-        self.assertNotIn("AppearanceSettings", render_node)
+        self.assertNotIn("AppearanceSettings", rim)
         self.assertIn("public static final int OUTLINE_GLARE = 0", drawable)
         self.assertIn("outlineStyle == OUTLINE_SOLID", drawable)
         self.assertIn("outlineStyle == OUTLINE_HIDDEN", drawable)
-        self.assertIn("outlineStyle == OUTLINE_SOLID", render_node)
+        self.assertIn("GlassRim.of(", drawable)
 
     def test_custom_settings_rows_follow_local_divider_policy(self):
         stealth = (JAVA / "ui/FluxGramStealthActivity.java").read_text()
@@ -441,19 +439,15 @@ class AppearanceSettingsTest(unittest.TestCase):
 
     def test_dialogs_blur_capture_is_coalesced_per_frame(self):
         source = (JAVA / "ui/DialogsActivity.java").read_text()
-        invalidate = source.split("private void blur3_InvalidateBlur()", 1)[1].split(
-            "private void blur3_CancelInvalidate()", 1
-        )[0]
-        update = source.split("private void blur3_UpdateBlur()", 1)[1].split(
+        engine = (JAVA / "utils/glass/GlassEngine.java").read_text()
+        invalidate = source.split("private void invalidateBlurCaptures(int flags)", 1)[1].split(
             "private int calculateListViewPaddingBottom()", 1
         )[0]
 
-        self.assertIn("owner.postOnAnimation(iBlur3InvalidateRunnable)", invalidate)
-        self.assertIn("if (iBlur3InvalidateOwner == owner)", invalidate)
-        self.assertNotIn("invalidateResultRenderNodes", invalidate)
-        self.assertIn("invalidateResultRenderNodes", update)
-        self.assertIn("blur3_CancelInvalidate();\n        super.clearViews();", source)
-        self.assertIn("blur3_CancelInvalidate();\n        super.onPause();", source)
+        self.assertIn("glassEngine.setGlassInvalidationListener(this::invalidateBlurCaptures)", source)
+        self.assertIn("scrollableViewNoiseSuppressor.invalidateResultRenderNodes", invalidate)
+        self.assertIn("private void onPostDraw()", engine)
+        self.assertIn("glassInvalidationListener.onGlassInvalidated(flags)", engine)
 
     def test_sender_avatars_are_owned_by_opt_in_cell(self):
         base = (JAVA / "ui/Cells/DialogCell.java").read_text()

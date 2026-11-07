@@ -29,7 +29,8 @@ class TransferSettingsTest(unittest.TestCase):
         activity = (JAVA / "ui/FluxGramSettingsActivity.java").read_text()
 
         self.assertEqual(1, operation.count("TransferSettings.resolveMinimumUploadChunkSize("))
-        self.assertIn("slowNetwork ? minUploadChunkSlowNetworkSize : minUploadChunkSize", operation)
+        self.assertIn("slowNetwork\n                        ? minUploadChunkSlowNetworkSize", operation)
+        self.assertIn("isBigFile ? minUploadChunkSizeBig : minUploadChunkSize", operation)
         self.assertIn("maxUploadingKBytes", operation)
         self.assertIn("initialRequestsCount", operation)
         self.assertIn("slowNetwork ? maxUploadingSlowNetworkKBytes : maxUploadingKBytes", operation)

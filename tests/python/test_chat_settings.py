@@ -375,6 +375,10 @@ class ChatSettingsTest(unittest.TestCase):
     def test_chat_activity_can_replace_message_tails_with_rounded_corners(self):
         chat = (JAVA / "ui/ChatActivity.java").read_text()
         message_cell = (JAVA / "ui/Cells/ChatMessageCell.java").read_text()
+        bot_buttons = (JAVA / "ui/Cells/ChatMessageBotButtons.java").read_text()
+        accessibility = (
+            JAVA / "ui/Cells/ChatMessageAccessibilityNodeProvider.java"
+        ).read_text()
         activity = (JAVA / "ui/FluxGramSettingsActivity.java").read_text()
 
         self.assertEqual(
@@ -384,7 +388,7 @@ class ChatSettingsTest(unittest.TestCase):
         self.assertNotIn("ChatSettings", message_cell)
         self.assertIn("private boolean drawMessageTail = true;", message_cell)
         self.assertIn("private boolean isMessageTailSuppressedByGroup()", message_cell)
-        self.assertIn("private boolean hasMessageTail()", message_cell)
+        self.assertIn("boolean hasMessageTail()", message_cell)
         self.assertIn("private boolean drawsMessageTail()", message_cell)
         self.assertIn("private boolean shouldUseMessageTailDrawable", message_cell)
         self.assertEqual(2, message_cell.count("shouldUseMessageTailDrawable("))
@@ -398,14 +402,11 @@ class ChatSettingsTest(unittest.TestCase):
             "if (drawMessageTail && transitionParams.changePinnedBottomProgress != 1f",
             message_cell,
         )
-        self.assertEqual(3, message_cell.count("hasMessageTail() ? 7 : 1"))
-        self.assertEqual(3, message_cell.count("getBotButtonTouchInset()"))
-        self.assertIn(
-            "return drawMessageTail ? (mediaBackground ? 1 : 7) : 1;",
-            message_cell,
-        )
+        self.assertEqual(2, message_cell.count("hasMessageTail() ? 7 : 1"))
+        self.assertEqual(2, bot_buttons.count("cell.hasMessageTail() ? 7 : 1"))
+        self.assertEqual(1, accessibility.count("cell.hasMessageTail() ? 7 : 1"))
         self.assertEqual(
-            3,
+            1,
             message_cell.count(
                 "currentMessageObject.isOutOwner() || !hasMessageTail() ? 11 : 17"
             ),
@@ -483,6 +484,9 @@ class ChatSettingsTest(unittest.TestCase):
     def test_chat_activity_can_hide_only_message_share_side_button(self):
         chat = (JAVA / "ui/ChatActivity.java").read_text()
         message_cell = (JAVA / "ui/Cells/ChatMessageCell.java").read_text()
+        accessibility = (
+            JAVA / "ui/Cells/ChatMessageAccessibilityNodeProvider.java"
+        ).read_text()
         message_object = (JAVA / "messenger/MessageObject.java").read_text()
         activity = (JAVA / "ui/FluxGramSettingsActivity.java").read_text()
 
@@ -503,13 +507,14 @@ class ChatSettingsTest(unittest.TestCase):
             message_cell,
         )
         self.assertGreaterEqual(
-            message_cell.count("isSideButtonAllowedByPresentation()"),
-            7,
+            message_cell.count("isSideButtonAllowedByPresentation()")
+            + accessibility.count("isSideButtonAllowedByPresentation()"),
+            8,
         )
-        self.assertIn("return null;", message_cell.split("virtualViewId == SHARE", 2)[2])
+        self.assertIn("return null;", accessibility.split("virtualViewId == SHARE", 1)[1])
         self.assertIn(
-            "virtualViewId == SHARE && !isSideButtonAllowedByPresentation()",
-            message_cell,
+            "virtualViewId == SHARE && cell.isSideButtonAllowedByPresentation()",
+            accessibility,
         )
         self.assertIn("drawSideButton == 2", message_cell)
         self.assertIn("drawSideButton == 3", message_cell)
@@ -1191,7 +1196,7 @@ class ChatSettingsTest(unittest.TestCase):
             "getActiveTextLayoutBlocks()",
             "getActiveTextWidth()",
             "getActiveTextHeight()",
-            "getActiveTextHeight(TransitionParams transitionParams)",
+            "getActiveTextHeight(ChatMessageTransitionParams transitionParams)",
             "getActiveTextXOffset()",
             "getActiveLastLineWidth()",
             "hasActiveCodeAtTop()",
@@ -1208,7 +1213,7 @@ class ChatSettingsTest(unittest.TestCase):
         self.assertNotIn("new MessageObject(", local_layout)
 
         cell_consumers = cell.split(
-            "private boolean isSideButtonAllowedByPresentation", 1
+            "boolean isSideButtonAllowedByPresentation", 1
         )[1]
         for shared_geometry in (
             "currentMessageObject.textLayoutBlocks",

@@ -229,22 +229,22 @@ class RootNavigationContractTest(unittest.TestCase):
 
     def test_settings_blur_sources_are_recorded_only_when_invalidated(self):
         settings = (JAVA / "ui/SettingsActivity.java").read_text()
+        simple_glass = (JAVA / "utils/glass/BaseFragmentSimpleGlass.java").read_text()
         draw = settings.split("protected void dispatchDraw(Canvas canvas)", 1)[1].split(
             "super.dispatchDraw(canvas)", 1
         )[0]
-        colors = settings.split("public void updateColors()", 1)[1].split(
-            "private boolean actionBarVisible", 1
-        )[0]
 
-        self.assertIn("iBlur3SourceGlassFrosted.needUpdateDisplayList(width, height) || iBlur3Invalidated", draw)
-        self.assertIn("iBlur3SourceGlass.needUpdateDisplayList(width, height) || iBlur3Invalidated", draw)
-        self.assertIn("private boolean iBlur3Invalidated = true;", settings)
-        self.assertIn("iBlur3Invalidated = true;", colors)
+        self.assertIn("updateAvatarHide();", draw)
+        self.assertIn("glassEngine.invalidate();", settings)
+        self.assertIn("glassEngine.setGlassInvalidationListener(this::invalidate)", simple_glass)
+        self.assertIn("glassCaptureSourceCanvas.invalidate();", simple_glass)
+        self.assertIn("return getBaseSimpleGlass().getGlassSource();", settings)
+        self.assertIn("return getBaseSimpleGlass().getFrostedGlassSource();", settings)
 
     def test_root_glass_capture_follows_only_page_translation(self):
         activity = (JAVA / "ui/MainTabsActivity.java").read_text()
-        glass = activity.split("iBlur3SourceTabGlass.setupRenderer", 1)[1].split(
-            "iBlur3SourceColor = new BlurredBackgroundSourceColor", 1
+        glass = activity.split("private GlassSourceRenderNode createTabSource", 1)[1].split(
+            "protected FrameLayout createContentView", 1
         )[0]
 
         self.assertIn("canvas.translate(fragmentPosition.left, fragmentPosition.top)", glass)

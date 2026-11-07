@@ -1166,11 +1166,11 @@ public class StoryViewer implements NotificationCenter.NotificationCenterDelegat
                             return (int) (getMeasuredHeight() - (position[1] + child.storyContainer.getMeasuredHeight()));
                         }
                     });
-                    NotificationCenter.getInstance(currentAccount).addObserver(StoryViewer.this, NotificationCenter.storiesListUpdated);
-                    NotificationCenter.getInstance(currentAccount).addObserver(StoryViewer.this, NotificationCenter.storiesUpdated);
-                    NotificationCenter.getInstance(currentAccount).addObserver(StoryViewer.this, NotificationCenter.articleClosed);
-                    NotificationCenter.getInstance(currentAccount).addObserver(StoryViewer.this, NotificationCenter.openArticle);
-                    NotificationCenter.getInstance(currentAccount).addObserver(StoryViewer.this, NotificationCenter.storyDeleted);
+                    NotificationCenter.getInstance(currentAccount).addWeakObserver(StoryViewer.this, NotificationCenter.storiesListUpdated);
+                    NotificationCenter.getInstance(currentAccount).addWeakObserver(StoryViewer.this, NotificationCenter.storiesUpdated);
+                    NotificationCenter.getInstance(currentAccount).addWeakObserver(StoryViewer.this, NotificationCenter.articleClosed);
+                    NotificationCenter.getInstance(currentAccount).addWeakObserver(StoryViewer.this, NotificationCenter.openArticle);
+                    NotificationCenter.getInstance(currentAccount).addWeakObserver(StoryViewer.this, NotificationCenter.storyDeleted);
                 }
 
                 @Override
@@ -2538,6 +2538,7 @@ public class StoryViewer implements NotificationCenter.NotificationCenterDelegat
             windowManager.removeView(windowView);
         }
         windowView = null;
+        destroyPages();
         isShowing = false;
         foundViewToClose = false;
         checkNavBarColor();
@@ -2631,6 +2632,7 @@ public class StoryViewer implements NotificationCenter.NotificationCenterDelegat
                                     windowManager.removeView(windowView);
                                 }
                                 windowView = null;
+                                destroyPages();
                             } catch (Exception e2) {
 
                             }
@@ -2650,6 +2652,13 @@ public class StoryViewer implements NotificationCenter.NotificationCenterDelegat
             openCloseAnimator.setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT);
             openCloseAnimator.start();
         }, 16);
+    }
+
+    // the next open() builds a new window and pager, so the old pages are never used again
+    private void destroyPages() {
+        if (storiesViewPager != null) {
+            storiesViewPager.onDestroy();
+        }
     }
 
     @Override

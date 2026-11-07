@@ -1,6 +1,7 @@
 package org.telegram.ui.Components;
 
 import android.content.Context;
+import android.graphics.Canvas;
 import android.graphics.drawable.Drawable;
 
 import androidx.annotation.Nullable;
@@ -19,6 +20,10 @@ public class ChatActivityEnterViewAnimatedIconView extends RLottieImageView
     private TransitState animatingState;
     private final int sizeDp;
     private long iconPackRevision = Long.MIN_VALUE;
+
+    private boolean formatMode;
+    private Drawable formatDrawable;
+    private final AnimatedFloat formatProgress = new AnimatedFloat(this, 0, 320, CubicBezierInterpolator.EASE_OUT_QUINT);
 
     private final Map<TransitState, RLottieDrawable> stateMap = new HashMap<TransitState, RLottieDrawable>() {
         @Nullable
@@ -134,6 +139,53 @@ public class ChatActivityEnterViewAnimatedIconView extends RLottieImageView
                 return R.drawable.msg_gif;
             default:
                 return 0;
+        }
+    }
+
+    public void setFormatMode(boolean format, boolean animated) {
+        if (formatMode == format) {
+            return;
+        }
+        formatMode = format;
+        if (!animated) {
+            formatProgress.set(format, true);
+        }
+        invalidate();
+    }
+
+    public boolean isFormatMode() {
+        return formatMode;
+    }
+
+    @Override
+    protected void onDraw(Canvas canvas) {
+        final float p = formatProgress.set(formatMode);
+        final float cx = getWidth() / 2f, cy = getHeight() / 2f;
+        if (p < 1) {
+            final boolean layer = p > 0;
+            if (layer) {
+                canvas.saveLayerAlpha(0, 0, getWidth(), getHeight(), (int) (0xFF * (1f - p)), Canvas.ALL_SAVE_FLAG);
+            } else {
+                canvas.save();
+            }
+            final float s = 0.4f + 0.6f * (1f - p);
+            canvas.scale(s, s, cx, cy);
+            super.onDraw(canvas);
+            canvas.restore();
+        }
+        if (p > 0) {
+            if (formatDrawable == null) {
+                formatDrawable = getContext().getResources().getDrawable(R.drawable.msg_edit).mutate();
+            }
+            final int w = formatDrawable.getIntrinsicWidth() / 2, h = formatDrawable.getIntrinsicHeight() / 2;
+            formatDrawable.setBounds((int) cx - w, (int) cy - h, (int) cx + w, (int) cy + h);
+            formatDrawable.setColorFilter(getColorFilter());
+            formatDrawable.setAlpha((int) (0xFF * p));
+            canvas.save();
+            final float s = 0.4f + 0.6f * p;
+            canvas.scale(s, s, cx, cy);
+            formatDrawable.draw(canvas);
+            canvas.restore();
         }
     }
 

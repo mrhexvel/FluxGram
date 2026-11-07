@@ -203,7 +203,7 @@ public final class FolderIconCatalogCheck {
 
         self.assertIn("public String emoticon;", controller)
         self.assertIn("public boolean emoticonLoaded = true", controller)
-        self.assertIn("LAST_DB_VERSION = 182", storage)
+        self.assertIn("LAST_DB_VERSION = 183", storage)
         self.assertIn("emoticon TEXT, emoticon_loaded INTEGER DEFAULT 1", storage)
         self.assertIn("emoticon, emoticon_loaded FROM dialog_filter", storage)
         self.assertIn("filter.emoticon = filtersCursor.stringValue(8)", storage)

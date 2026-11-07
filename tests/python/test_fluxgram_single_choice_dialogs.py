@@ -27,8 +27,11 @@ class FluxGramSingleChoiceDialogsTest(unittest.TestCase):
 
         self.assertIn("new AlertDialog.Builder(parentActivity, resourcesProvider)", helper)
         self.assertIn("new RadioColorCell(parentActivity, resourcesProvider)", helper)
-        self.assertIn("Theme.key_radioBackground, resourcesProvider", helper)
-        self.assertIn("Theme.key_dialogRadioBackgroundChecked, resourcesProvider", helper)
+        self.assertIn(
+            "bindRadioColorCell(cell, Theme.key_radioBackground, "
+            "Theme.key_dialogRadioBackgroundChecked, resourcesProvider)",
+            helper,
+        )
         self.assertIn("builder.getDismissRunnable().run()", helper)
         self.assertLess(
             helper.index("builder.getDismissRunnable().run()"),
