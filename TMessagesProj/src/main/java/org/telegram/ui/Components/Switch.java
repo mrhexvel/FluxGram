@@ -9,6 +9,7 @@
 package org.telegram.ui.Components;
 
 import android.animation.Animator;
+import android.animation.AnimatorSet;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.ObjectAnimator;
 import android.content.Context;
@@ -18,6 +19,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.ColorFilter;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.PixelFormat;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
@@ -29,11 +31,13 @@ import android.os.Build;
 import android.util.StateSet;
 import android.view.View;
 import android.view.accessibility.AccessibilityNodeInfo;
+import android.view.animation.PathInterpolator;
 
 import androidx.annotation.Keep;
 import androidx.core.graphics.ColorUtils;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.LocaleController;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.BaseCell;
 
@@ -91,6 +95,12 @@ public class Switch extends View implements Theme.Colorable {
     private Theme.ResourcesProvider resourcesProvider;
 
     private int overrideColorProgress;
+    private SwitchGeometry geometry;
+    private final SwitchGeometry.Resolved resolvedGeometry = new SwitchGeometry.Resolved();
+    private float materialThumbWidthDp;
+    private float materialThumbHeightDp;
+    private AnimatorSet materialThumbAnimator;
+    private static final PathInterpolator MATERIAL_SWITCH_INTERPOLATOR = createMaterialSwitchInterpolator();
 
     public interface OnCheckedChangeListener {
         void onCheckedChanged(Switch view, boolean isChecked);
@@ -112,6 +122,33 @@ public class Switch extends View implements Theme.Colorable {
         paint2.setStrokeWidth(AndroidUtilities.dp(2));
 
         setHapticFeedbackEnabled(true);
+    }
+
+    public void setGeometry(SwitchGeometry geometry) {
+        if (this.geometry == geometry) {
+            return;
+        }
+
+        this.geometry = geometry;
+        if (geometry == null) {
+            cancelMaterialThumbAnimator();
+        } else {
+            float diameter = isChecked
+                    ? geometry.getCheckedThumbDiameterDp()
+                    : geometry.getUncheckedThumbDiameterDp();
+            setMaterialThumbWidthDp(diameter);
+            setMaterialThumbHeightDp(diameter);
+        }
+        requestLayout();
+        invalidate();
+    }
+
+    private static PathInterpolator createMaterialSwitchInterpolator() {
+        Path path = new Path();
+        path.moveTo(0.0f, 0.0f);
+        path.cubicTo(0.05f, 0.0f, 0.133333f, 0.06f, 0.166666f, 0.4f);
+        path.cubicTo(0.208333f, 0.82f, 0.25f, 1.0f, 1.0f, 1.0f);
+        return new PathInterpolator(path);
     }
 
     @Keep
@@ -142,6 +179,34 @@ public class Switch extends View implements Theme.Colorable {
         return iconProgress;
     }
 
+    @Keep
+    public void setMaterialThumbWidthDp(float value) {
+        if (materialThumbWidthDp == value) {
+            return;
+        }
+        materialThumbWidthDp = value;
+        invalidate();
+    }
+
+    @Keep
+    public float getMaterialThumbWidthDp() {
+        return materialThumbWidthDp;
+    }
+
+    @Keep
+    public void setMaterialThumbHeightDp(float value) {
+        if (materialThumbHeightDp == value) {
+            return;
+        }
+        materialThumbHeightDp = value;
+        invalidate();
+    }
+
+    @Keep
+    public float getMaterialThumbHeightDp() {
+        return materialThumbHeightDp;
+    }
+
     private void cancelCheckAnimator() {
         if (checkAnimator != null) {
             checkAnimator.cancel();
@@ -156,6 +221,58 @@ public class Switch extends View implements Theme.Colorable {
         }
     }
 
+    private void cancelMaterialThumbAnimator() {
+        if (materialThumbAnimator != null) {
+            materialThumbAnimator.cancel();
+            materialThumbAnimator = null;
+        }
+    }
+
+    private AnimatorSet createMaterialThumbPhase(float width, float height, long duration, PathInterpolator interpolator) {
+        ObjectAnimator widthAnimator = ObjectAnimator.ofFloat(this, "materialThumbWidthDp", width);
+        ObjectAnimator heightAnimator = ObjectAnimator.ofFloat(this, "materialThumbHeightDp", height);
+        AnimatorSet phase = new AnimatorSet();
+        phase.playTogether(widthAnimator, heightAnimator);
+        phase.setDuration(duration);
+        phase.setInterpolator(interpolator);
+        return phase;
+    }
+
+    private void startMaterialThumbAnimator(AnimatorSet animator) {
+        cancelMaterialThumbAnimator();
+        materialThumbAnimator = animator;
+        materialThumbAnimator.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                if (materialThumbAnimator == animation) {
+                    materialThumbAnimator = null;
+                }
+            }
+        });
+        materialThumbAnimator.start();
+    }
+
+    private void animateMaterialThumbShape(boolean checked) {
+        AnimatorSet toMorph = createMaterialThumbPhase(
+                geometry.getMorphThumbWidthDp(),
+                geometry.getMorphThumbHeightDp(),
+                checked ? 150 : 100,
+                MATERIAL_SWITCH_INTERPOLATOR
+        );
+        float target = checked
+                ? geometry.getCheckedThumbDiameterDp()
+                : geometry.getUncheckedThumbDiameterDp();
+        AnimatorSet toTarget = createMaterialThumbPhase(
+                target,
+                target,
+                checked ? 100 : 150,
+                MATERIAL_SWITCH_INTERPOLATOR
+        );
+        AnimatorSet animator = new AnimatorSet();
+        animator.playSequentially(toMorph, toTarget);
+        startMaterialThumbAnimator(animator);
+    }
+
     public void setDrawIconType(int type) {
         drawIconType = type;
     }
@@ -165,6 +282,13 @@ public class Switch extends View implements Theme.Colorable {
             return;
         }
         drawRipple = value;
+        if (geometry != null) {
+            if (rippleDrawable != null) {
+                rippleDrawable.setState(StateSet.NOTHING);
+            }
+            invalidate();
+            return;
+        }
 
         if (rippleDrawable == null) {
             ripplePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -240,12 +364,18 @@ public class Switch extends View implements Theme.Colorable {
     }
 
     private void animateToCheckedState(boolean newCheckedState) {
+        if (geometry != null) {
+            cancelCheckAnimator();
+            animateMaterialThumbShape(newCheckedState);
+        }
         checkAnimator = ObjectAnimator.ofFloat(this, "progress", newCheckedState ? 1 : 0);
-        checkAnimator.setDuration(200);
+        checkAnimator.setDuration(geometry == null ? 200 : 250);
         checkAnimator.addListener(new AnimatorListenerAdapter() {
             @Override
             public void onAnimationEnd(Animator animation) {
-                checkAnimator = null;
+                if (checkAnimator == animation) {
+                    checkAnimator = null;
+                }
             }
         });
         checkAnimator.start();
@@ -273,6 +403,20 @@ public class Switch extends View implements Theme.Colorable {
     protected void onDetachedFromWindow() {
         super.onDetachedFromWindow();
         attachedToWindow = false;
+        if (geometry != null) {
+            cancelCheckAnimator();
+            setProgress(isChecked ? 1.0f : 0.0f);
+            cancelMaterialThumbAnimator();
+            float diameter = isChecked
+                    ? geometry.getCheckedThumbDiameterDp()
+                    : geometry.getUncheckedThumbDiameterDp();
+            setMaterialThumbWidthDp(diameter);
+            setMaterialThumbHeightDp(diameter);
+            drawRipple = false;
+            if (rippleDrawable != null) {
+                rippleDrawable.setState(StateSet.NOTHING);
+            }
+        }
     }
 
     public void setOnCheckedChangeListener(OnCheckedChangeListener listener) {
@@ -291,6 +435,14 @@ public class Switch extends View implements Theme.Colorable {
             } else {
                 cancelCheckAnimator();
                 setProgress(checked ? 1.0f : 0.0f);
+                if (geometry != null) {
+                    cancelMaterialThumbAnimator();
+                    float diameter = checked
+                            ? geometry.getCheckedThumbDiameterDp()
+                            : geometry.getUncheckedThumbDiameterDp();
+                    setMaterialThumbWidthDp(diameter);
+                    setMaterialThumbHeightDp(diameter);
+                }
             }
             if (onCheckedChangeListener != null) {
                 onCheckedChangeListener.onCheckedChanged(this, checked);
@@ -383,16 +535,54 @@ public class Switch extends View implements Theme.Colorable {
             return;
         }
 
-        float height = Math.min(AndroidUtilities.dpf2(20), getMeasuredHeight());
-        float width = Math.min(height * 1.75f, getMeasuredWidth());
-        height = Math.min(height, width / 1.75f);
+        float height;
+        float width;
+        float thumbRadius;
+        float thumbWidth;
+        float thumbHeight;
+        SwitchGeometry.Resolved materialGeometry = null;
+
+        if (geometry == null) {
+            height = Math.min(AndroidUtilities.dpf2(20), getMeasuredHeight());
+            width = Math.min(height * 1.75f, getMeasuredWidth());
+            height = Math.min(height, width / 1.75f);
+            thumbRadius = height * 0.385f;
+            thumbWidth = thumbRadius * 2.0f;
+            thumbHeight = thumbWidth;
+        } else {
+            float geometryProgress = LocaleController.isRTL
+                    ? 1.0f - progress
+                    : progress;
+            geometry.resolve(
+                    getMeasuredWidth(),
+                    getMeasuredHeight(),
+                    AndroidUtilities.density,
+                    geometryProgress,
+                    materialThumbWidthDp,
+                    materialThumbHeightDp,
+                    resolvedGeometry
+            );
+            materialGeometry = resolvedGeometry;
+            height = materialGeometry.getHeight();
+            width = materialGeometry.getWidth();
+            thumbRadius = materialGeometry.getThumbRadius();
+            thumbWidth = materialGeometry.getThumbWidth();
+            thumbHeight = materialGeometry.getThumbHeight();
+        }
 
         float radius = height / 2f;
-        float thumbRadius = height * 0.385f;
-        float x = (getMeasuredWidth() - width) / 2f;
-        float y = (getMeasuredHeight() - height) / 2f;
-        float tx = x + radius + (width - height) * progress;
-        float ty = getMeasuredHeight() / 2f;
+        float x = materialGeometry == null
+                ? (getMeasuredWidth() - width) / 2f
+                : materialGeometry.getX();
+        float y = materialGeometry == null
+                ? (getMeasuredHeight() - height) / 2f
+                : materialGeometry.getY();
+        float tx = materialGeometry == null
+                ? x + radius + (width - height) * progress
+                : materialGeometry.getThumbCenterX();
+        float ty = materialGeometry == null
+                ? getMeasuredHeight() / 2f
+                : materialGeometry.getThumbCenterY();
 
         int color1;
         int color2;
@@ -431,7 +621,14 @@ public class Switch extends View implements Theme.Colorable {
                 colorProgress = progress;
             }
 
-            color1 = processColor(Theme.getColor(trackColorKey, resourcesProvider));
+            int trackOutlineColor = processColor(Theme.getColor(trackColorKey, resourcesProvider));
+            color1 = materialGeometry == null
+                    ? trackOutlineColor
+                    : ColorUtils.blendARGB(
+                            processColor(Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider)),
+                            trackOutlineColor,
+                            0.16f
+                    );
             color2 = processColor(Theme.getColor(trackCheckedColorKey, resourcesProvider));
             if (a == 0 && iconDrawable != null && lastIconColor != (isChecked ? color2 : color1)) {
                 iconDrawable.setColorFilter(new PorterDuffColorFilter(lastIconColor = (isChecked ? color2 : color1), PorterDuff.Mode.MULTIPLY));
@@ -457,12 +654,31 @@ public class Switch extends View implements Theme.Colorable {
             rectF.set(x, y, x + width, y + height);
             canvasToDraw.drawRoundRect(rectF, radius, radius, paint);
 
-            if (a == 0 && rippleDrawable != null) {
+            if (materialGeometry != null && colorProgress < 1.0f) {
+                float outlineWidth = AndroidUtilities.dpf2(geometry.getTrackOutlineWidthDp());
+                paint2.setStrokeWidth(outlineWidth);
+                paint2.setColor(ColorUtils.setAlphaComponent(
+                        trackOutlineColor,
+                        Math.round(Color.alpha(trackOutlineColor) * (1.0f - colorProgress))
+                ));
+                float outlineInset = outlineWidth / 2.0f;
+                rectF.inset(outlineInset, outlineInset);
+                canvasToDraw.drawRoundRect(
+                        rectF,
+                        radius - outlineInset,
+                        radius - outlineInset,
+                        paint2
+                );
+                paint2.setColor(color);
+            }
+
+            if (a == 0 && materialGeometry == null && rippleDrawable != null) {
+                int rippleRadius = AndroidUtilities.dp(18);
                 rippleDrawable.setBounds(
-                        (int) (tx - AndroidUtilities.dp(18)),
-                        (int) (ty - AndroidUtilities.dp(18)),
-                        (int) (tx + AndroidUtilities.dp(18)),
-                        (int) (ty + AndroidUtilities.dp(18))
+                        (int) (tx - rippleRadius),
+                        (int) (ty - rippleRadius),
+                        (int) (tx + rippleRadius),
+                        (int) (ty + rippleRadius)
                 );
                 rippleDrawable.draw(canvasToDraw);
             } else if (a == 1) {
@@ -490,10 +706,12 @@ public class Switch extends View implements Theme.Colorable {
                 colorProgress = progress;
             }
 
-            color1 = processColor(Theme.getColor(thumbColorKey, resourcesProvider));
+            color1 = materialGeometry == null
+                    ? processColor(Theme.getColor(thumbColorKey, resourcesProvider))
+                    : processColor(Theme.getColor(trackColorKey, resourcesProvider));
             color2 = processColor(Theme.getColor(thumbCheckedColorKey, resourcesProvider));
 
-            if (thumbCheckedColorKey == Theme.key_windowBackgroundWhite) {
+            if (materialGeometry == null && thumbCheckedColorKey == Theme.key_windowBackgroundWhite) {
                 int accent = processColor(Theme.getColor(trackCheckedColorKey, resourcesProvider));
                 color2 = ColorUtils.blendARGB(accent, Color.BLACK, 0.72f);
             }
@@ -513,7 +731,17 @@ public class Switch extends View implements Theme.Colorable {
             alpha = (int) (a1 + (a2 - a1) * colorProgress);
             paint.setColor(((alpha & 0xff) << 24) | ((red & 0xff) << 16) | ((green & 0xff) << 8) | (blue & 0xff));
 
-            canvasToDraw.drawCircle(tx, ty, thumbRadius, paint);
+            if (materialGeometry == null) {
+                canvasToDraw.drawCircle(tx, ty, thumbRadius, paint);
+            } else {
+                rectF.set(
+                        tx - thumbWidth / 2.0f,
+                        ty - thumbHeight / 2.0f,
+                        tx + thumbWidth / 2.0f,
+                        ty + thumbHeight / 2.0f
+                );
+                canvasToDraw.drawRoundRect(rectF, thumbRadius, thumbRadius, paint);
+            }
 
             if (a == 0) {
                 if (iconDrawable != null) {

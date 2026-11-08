@@ -125,6 +125,7 @@ class MaterialStyleUiTest(unittest.TestCase):
             [
                 "messenger/ApplicationLoader.java",
                 "messenger/fluxgram/icons/MaterialSymbolsCatalog.java",
+                "ui/fluxgram/MaterialControlsStyle.java",
             ],
             sorted(consumers),
         )

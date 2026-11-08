@@ -76,6 +76,7 @@ import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalRecyclerView;
 import org.telegram.ui.fluxgram.FluxGramSettingsSections;
+import org.telegram.ui.fluxgram.MaterialControlsStyle;
 import org.telegram.ui.fluxgram.NavigationTransitionPolicy;
 
 import java.util.ArrayList;
@@ -347,6 +348,9 @@ public class FluxGramSettingsActivity extends BaseFragment {
         );
 
         listView.adapter.setApplyBackground(false);
+        listView.adapter.setCheckCellSwitchGeometry(
+                MaterialControlsStyle.switchGeometry(materialVisualStyle)
+        );
         if (section == PLUGINS || section == BUILT_IN_PLUGINS) {
             listView.setItemAnimator(null);
         }

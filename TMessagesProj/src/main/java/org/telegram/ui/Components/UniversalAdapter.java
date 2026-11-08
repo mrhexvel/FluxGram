@@ -129,6 +129,7 @@ public class UniversalAdapter extends AdapterWithDiffUtils {
     private boolean applyBackground = true;
     private boolean dividersEnabled = true;
     private boolean compactTextCells;
+    private SwitchGeometry checkCellSwitchGeometry;
     protected Utilities.Callback2<ArrayList<UItem>, UniversalAdapter> fillItems;
     private final Theme.ResourcesProvider resourcesProvider;
 
@@ -170,6 +171,10 @@ public class UniversalAdapter extends AdapterWithDiffUtils {
 
     public void setApplyBackground(boolean applyBackground) {
         this.applyBackground = applyBackground;
+    }
+
+    public void setCheckCellSwitchGeometry(SwitchGeometry geometry) {
+        checkCellSwitchGeometry = geometry;
     }
 
     public void setDividersEnabled(boolean dividersEnabled) {
@@ -447,6 +452,7 @@ public class UniversalAdapter extends AdapterWithDiffUtils {
             case VIEW_TYPE_CHECK:
             case VIEW_TYPE_CHECKRIPPLE:
                 TextCheckCell cell = new TextCheckCell(context, resourcesProvider);
+                cell.setSwitchGeometry(checkCellSwitchGeometry);
                 if (viewType == VIEW_TYPE_CHECKRIPPLE) {
                     cell.setDrawCheckRipple(true);
                     cell.setColors(Theme.key_windowBackgroundCheckText, Theme.key_switchTrackBlue, Theme.key_switchTrackBlueChecked, Theme.key_switchTrackBlueThumb, Theme.key_switchTrackBlueThumbChecked);
@@ -743,6 +749,7 @@ public class UniversalAdapter extends AdapterWithDiffUtils {
             case VIEW_TYPE_CHECK:
             case VIEW_TYPE_CHECKRIPPLE:
                 TextCheckCell checkCell = (TextCheckCell) holder.itemView;
+                checkCell.setSwitchGeometry(checkCellSwitchGeometry);
                 if (checkCell.itemId == item.id) {
                     checkCell.setChecked(item.checked);
                 }

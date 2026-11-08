@@ -213,6 +213,7 @@ class MaterialStylePolicyTest(unittest.TestCase):
                 "messenger/fluxgram/icons/MaterialSymbolsCatalog.java",
                 "ui/Components/FluxGramSettingsHeaderCell.java",
                 "ui/FluxGramSettingsActivity.java",
+                "ui/fluxgram/MaterialControlsStyle.java",
             ],
             sorted(consumers),
         )

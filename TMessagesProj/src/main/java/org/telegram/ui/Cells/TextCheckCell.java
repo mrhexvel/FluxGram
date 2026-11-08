@@ -41,6 +41,7 @@ import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.RLottieImageView;
 import org.telegram.ui.Components.Switch;
+import org.telegram.ui.Components.SwitchGeometry;
 
 import java.util.ArrayList;
 import java.util.Locale;
@@ -66,6 +67,7 @@ public class TextCheckCell extends FrameLayout {
     private Theme.ResourcesProvider resourcesProvider;
     ImageView imageView;
     private boolean isRTL;
+    private SwitchGeometry switchGeometry;
 
     public static final Property<TextCheckCell, Float> ANIMATION_PROGRESS = new AnimationProperties.FloatProperty<TextCheckCell>("animationProgress") {
         @Override
@@ -152,6 +154,16 @@ public class TextCheckCell extends FrameLayout {
         return checkBox;
     }
 
+    public void setSwitchGeometry(SwitchGeometry geometry) {
+        if (switchGeometry == geometry) {
+            return;
+        }
+
+        switchGeometry = geometry;
+        checkBox.setGeometry(geometry);
+        updateSwitchLayout(false);
+    }
+
     public void setIcon(int resId) {
         if (imageView == null) {
             imageView = new RLottieImageView(getContext());
@@ -223,16 +235,26 @@ public class TextCheckCell extends FrameLayout {
         }
         isRTL = LocaleController.isRTL;
 
+        updateSwitchLayout(true);
+    }
+
+    private void updateSwitchLayout(boolean rtlUpdate) {
+        int switchWidth = switchGeometry == null ? 37 : switchGeometry.getTrackWidthDp();
+        int switchHeight = switchGeometry == null ? 20 : switchGeometry.getTrackHeightDp();
+        int switchMargin = switchGeometry == null ? 22 : switchGeometry.getCellOuterMarginDp();
+        int textEndMargin = switchGeometry == null ? 70 : switchGeometry.getCellEndInsetDp();
+        int valueEndMargin = switchGeometry == null && rtlUpdate ? 64 : textEndMargin;
+
         textView.setGravity((LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL);
         removeView(textView);
-        addView(textView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.TOP, LocaleController.isRTL ? 70 : padding, 0, LocaleController.isRTL ? padding : 70, 0));
+        addView(textView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.TOP, LocaleController.isRTL ? textEndMargin : padding, 0, LocaleController.isRTL ? padding : textEndMargin, 0));
 
         valueTextView.setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT);
         removeView(valueTextView);
-        addView(valueTextView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.TOP, LocaleController.isRTL ? 64 : padding, 36, LocaleController.isRTL ? padding : 64, 0));
+        addView(valueTextView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.TOP, LocaleController.isRTL ? valueEndMargin : padding, 36, LocaleController.isRTL ? padding : valueEndMargin, 0));
 
         removeView(checkBox);
-        addView(checkBox, LayoutHelper.createFrame(37, 20, (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.CENTER_VERTICAL, 22, 0, 22, 0));
+        addView(checkBox, LayoutHelper.createFrame(switchWidth, switchHeight, (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.CENTER_VERTICAL, switchMargin, 0, switchMargin, 0));
     }
 
     public void setColors(int key, int switchKey, int switchKeyChecked, int switchThumb, int switchThumbChecked) {
@@ -255,7 +277,7 @@ public class TextCheckCell extends FrameLayout {
 
     @Override
     public void setPressed(boolean pressed) {
-        if (drawCheckRipple) {
+        if (drawCheckRipple && switchGeometry == null) {
             checkBox.setDrawRipple(pressed);
         }
         super.setPressed(pressed);
