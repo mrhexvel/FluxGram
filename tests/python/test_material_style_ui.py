@@ -120,6 +120,8 @@ class MaterialStyleUiTest(unittest.TestCase):
             if path.name in (
                 "MaterialStylePolicy.java",
                 "MaterialStyleSettings.java",
+                "MaterialVisualStyle.java",
+                "MaterialVisualStyleRuntime.java",
                 "FluxGramSettingsActivity.java",
             ):
                 continue

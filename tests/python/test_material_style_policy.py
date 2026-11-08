@@ -209,7 +209,7 @@ class MaterialStylePolicyTest(unittest.TestCase):
                 check=True,
             )
 
-    def test_policy_is_android_independent_and_consumers_are_limited_to_md2(self):
+    def test_policy_is_android_independent_and_consumers_are_limited_to_material_foundation(self):
         source = POLICY.read_text()
 
         self.assertNotIn("android.", source)
@@ -226,6 +226,8 @@ class MaterialStylePolicyTest(unittest.TestCase):
 
         self.assertEqual(
             [
+                "messenger/fluxgram/MaterialVisualStyle.java",
+                "messenger/fluxgram/MaterialVisualStyleRuntime.java",
                 "ui/FluxGramSettingsActivity.java",
             ],
             sorted(consumers),
