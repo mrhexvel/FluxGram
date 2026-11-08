@@ -14,9 +14,14 @@ public final class FluxGramSettingsSections {
         }
 
         int dividerStyle = AppearanceSettings.getSettingsDividerStyle(account);
+        boolean segmented = dividerStyle == AppearanceSettings.DIVIDER_SEGMENTS;
+        listView.adapter.setApplyBackground(false);
         listView.adapter.setDividersEnabled(dividerStyle == AppearanceSettings.DIVIDER_LINE);
         applyRadius(listView, AppearanceSettings.getSettingsSectionRadius(account));
-        listView.setSegmentedSections(dividerStyle == AppearanceSettings.DIVIDER_SEGMENTS);
+        listView.setDrawRemovedSectionBackgrounds(false);
+        listView.setClipRemovedItemsToNextStableChild(true);
+        listView.setLegacySections(segmented);
+        listView.setSegmentedSections(segmented);
     }
 
     public static boolean showsDividers(int account) {

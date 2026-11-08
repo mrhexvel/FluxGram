@@ -45,6 +45,7 @@ public final class FluxGramGhostModeActivity extends BaseFragment {
     private static final int BLACKLIST = 12;
 
     private UniversalRecyclerView listView;
+    private HeaderCell sectionLabel;
     private boolean expanded = false;
 
     @Override
@@ -85,15 +86,17 @@ public final class FluxGramGhostModeActivity extends BaseFragment {
                 + (hideReadReceipts ? 1 : 0) + (hideStoryViews ? 1 : 0)
                 + (automaticOffline ? 1 : 0);
 
-        HeaderCell label = new HeaderCell(getParentActivity(), 33, getResourceProvider());
-        label.setText(text(R.string.FluxGramGhostMode));
-        items.add(UItem.asCustomShadow(label, LayoutHelper.WRAP_CONTENT));
+        if (sectionLabel == null) {
+            sectionLabel = new HeaderCell(getParentActivity(), 33, getResourceProvider());
+        }
+        sectionLabel.setText(text(R.string.FluxGramGhostMode));
+        items.add(UItem.asCustomShadow(sectionLabel, LayoutHelper.WRAP_CONTENT));
         items.add(UItem.asExpandableSwitch(
                         ENABLED, text(R.string.FluxGramGhostMode), selected + "/5"
                 )
                 .setChecked(enabled)
                 .setCollapsed(!expanded)
-                .setClickCallback(view -> updateSettings(() -> GhostModeSettings.setEnabled(
+                .setClickCallback(view -> updateSettings(ENABLED, () -> GhostModeSettings.setEnabled(
                         currentAccount, !GhostModeSettings.isEnabled(currentAccount)
                 ))));
 
@@ -145,8 +148,9 @@ public final class FluxGramGhostModeActivity extends BaseFragment {
 
     private void onItemClick(UItem item, View view, int position, float x, float y) {
         if (item.id == ENABLED) {
+            boolean wasExpanded = expanded;
             expanded = !expanded;
-            listView.adapter.update(true);
+            updateExpandedRows(wasExpanded);
             return;
         }
 
@@ -162,27 +166,46 @@ public final class FluxGramGhostModeActivity extends BaseFragment {
         boolean checked = !item.checked;
 
         if (item.id == HIDE_ONLINE) {
-            updateSettings(() -> GhostModeSettings.setHidesOnline(currentAccount, checked));
+            updateSettings(item.id, () -> GhostModeSettings.setHidesOnline(currentAccount, checked));
         } else if (item.id == HIDE_TYPING) {
-            updateSettings(() -> GhostModeSettings.setHidesTyping(currentAccount, checked));
+            updateSettings(item.id, () -> GhostModeSettings.setHidesTyping(currentAccount, checked));
         } else if (item.id == HIDE_READ_RECEIPTS) {
-            updateSettings(() -> GhostModeSettings.setHidesReadReceipts(currentAccount, checked));
+            updateSettings(item.id, () -> GhostModeSettings.setHidesReadReceipts(currentAccount, checked));
         } else if (item.id == HIDE_STORY_VIEWS) {
-            updateSettings(() -> GhostModeSettings.setHidesStoryViews(currentAccount, checked));
+            updateSettings(item.id, () -> GhostModeSettings.setHidesStoryViews(currentAccount, checked));
         } else if (item.id == AUTOMATIC_OFFLINE) {
-            updateSettings(() -> GhostModeSettings.setUsesAutomaticOffline(currentAccount, checked));
+            updateSettings(item.id, () -> GhostModeSettings.setUsesAutomaticOffline(currentAccount, checked));
         } else if (item.id == READ_ON_ACTIONS) {
-            updateSettings(() -> GhostModeSettings.setReadsOnActions(currentAccount, checked));
+            updateSettings(item.id, () -> GhostModeSettings.setReadsOnActions(currentAccount, checked));
         } else if (item.id == USE_SEND_DELAY) {
-            updateSettings(() -> GhostModeSettings.setUsesSendDelay(currentAccount, checked));
+            updateSettings(item.id, () -> GhostModeSettings.setUsesSendDelay(currentAccount, checked));
         } else if (item.id == SUGGEST_FOR_STORIES) {
-            updateSettings(() -> GhostModeSettings.setSuggestsForStories(currentAccount, checked));
+            updateSettings(item.id, () -> GhostModeSettings.setSuggestsForStories(currentAccount, checked));
         } else {
             return;
         }
     }
 
-    private void updateSettings(Runnable mutation) {
+    private void updateExpandedRows(boolean wasExpanded) {
+        listView.stopScroll();
+        int enabledPosition = findItemPosition(ENABLED);
+        listView.adapter.updateWithoutNotify();
+
+        if (enabledPosition < 0) {
+            listView.adapter.notifyDataSetChanged();
+            return;
+        }
+
+        listView.adapter.notifyItemChanged(enabledPosition);
+
+        if (expanded && !wasExpanded) {
+            listView.adapter.notifyItemRangeInserted(enabledPosition + 1, 6);
+        } else if (!expanded && wasExpanded) {
+            listView.adapter.notifyItemRangeRemoved(enabledPosition + 1, 6);
+        }
+    }
+
+    private void updateSettings(int changedItemId, Runnable mutation) {
         boolean hiddenBefore = GhostModeSettings.shouldHideOnline(currentAccount);
         boolean automaticOfflineBefore = GhostModeSettings.shouldUseAutomaticOffline(currentAccount);
         mutation.run();
@@ -192,7 +215,18 @@ public final class FluxGramGhostModeActivity extends BaseFragment {
             MessagesController.getInstance(currentAccount).updateGhostModeOnlineStatus();
         }
 
-        listView.adapter.update(true);
+        listView.adapter.updateWithoutNotify();
+        notifyItemChanged(ENABLED);
+
+        if (changedItemId == ENABLED && expanded) {
+            int enabledPosition = findItemPosition(ENABLED);
+
+            if (enabledPosition >= 0) {
+                listView.adapter.notifyItemRangeChanged(enabledPosition + 1, 5);
+            }
+        } else if (changedItemId != ENABLED) {
+            notifyItemChanged(changedItemId);
+        }
     }
 
     private void showSilentSendModeDialog() {
@@ -210,7 +244,8 @@ public final class FluxGramGhostModeActivity extends BaseFragment {
                 selected,
                 (dialog, index) -> {
                     GhostModeSettings.setSilentSendMode(currentAccount, index);
-                    listView.adapter.update(true);
+                    listView.adapter.updateWithoutNotify();
+                    notifyItemChanged(SILENT_SEND_MODE);
                 },
                 getResourceProvider()
         ));
@@ -243,7 +278,8 @@ public final class FluxGramGhostModeActivity extends BaseFragment {
             } else {
                 GhostModeDialogScope.setBlacklist(account, new HashSet<>(dialogs));
             }
-            listView.adapter.update(false);
+            listView.adapter.updateWithoutNotify();
+            notifyItemChanged(whitelist ? WHITELIST : BLACKLIST);
         }, selected);
         picker.setSelectedContacts(selected);
         showDialog(picker);
@@ -282,6 +318,26 @@ public final class FluxGramGhostModeActivity extends BaseFragment {
         }
 
         return text(R.string.FluxGramGhostModeSendSilentlyNever);
+    }
+
+    private void notifyItemChanged(int itemId) {
+        int position = findItemPosition(itemId);
+
+        if (position >= 0) {
+            listView.adapter.notifyItemChanged(position);
+        }
+    }
+
+    private int findItemPosition(int itemId) {
+        for (int position = 0; position < listView.adapter.getItemCount(); position++) {
+            UItem item = listView.adapter.getItem(position);
+
+            if (item != null && item.id == itemId) {
+                return position;
+            }
+        }
+
+        return -1;
     }
 
     private String text(int resource) {

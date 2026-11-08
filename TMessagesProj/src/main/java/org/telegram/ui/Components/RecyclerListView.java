@@ -2715,11 +2715,31 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
 
     @Override
     public boolean drawChild(Canvas canvas, View child, long drawingTime) {
-        if (sectionsItemDecoration != null && !ignoreClipChild) {
-            canvas.save();
-            clipChild(canvas, child);
+        ViewHolder holder = getChildViewHolder(child);
+        boolean removed = holder != null && (holder.isRemoved() || holder.getAdapterPosition() == NO_POSITION);
+        if (clipRemovedItemsToNextStableChild && isAnimating() && removed) {
+            return true;
+        }
+
+        boolean disappearing = holder != null && child.getAlpha() < 0.99f;
+        View next = clipRemovedItemsToNextStableChild && isAnimating() && disappearing
+                ? findNextStableChild(getChildViewHolder(child)) : null;
+        if (next != null && next.getY() <= top(child)) {
+            return true;
+        }
+
+        boolean clipSection = sectionsItemDecoration != null && !ignoreClipChild;
+        boolean clipRemoved = next != null && bottom(child) > next.getY();
+        if (clipSection || clipRemoved) {
+            int save = canvas.save();
+            if (clipRemoved) {
+                canvas.clipRect(0, 0, getWidth(), next.getY());
+            }
+            if (clipSection) {
+                clipChild(canvas, child);
+            }
             boolean r = super.drawChild(canvas, child, drawingTime);
-            canvas.restore();
+            canvas.restoreToCount(save);
             return r;
         } else {
             return super.drawChild(canvas, child, drawingTime);
@@ -3313,6 +3333,8 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
     private float sectionRadius;
     private float[] sectionRadiusTop, sectionRadiusBottom;
     private boolean segmentedSections;
+    private boolean drawRemovedSectionBackgrounds = true;
+    private boolean clipRemovedItemsToNextStableChild;
     private int sectionPadding;
     private boolean sectionTopPadding;
     public boolean applyPaddingToSections = false;
@@ -3490,6 +3512,81 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
         this.segmentedSections = segmentedSections;
         invalidateItemDecorations();
         invalidate();
+    }
+
+    public void setDrawRemovedSectionBackgrounds(boolean drawRemovedSectionBackgrounds) {
+        if (this.drawRemovedSectionBackgrounds == drawRemovedSectionBackgrounds) {
+            return;
+        }
+
+        this.drawRemovedSectionBackgrounds = drawRemovedSectionBackgrounds;
+        invalidate();
+    }
+
+    public void setClipRemovedItemsToNextStableChild(boolean clipRemovedItemsToNextStableChild) {
+        this.clipRemovedItemsToNextStableChild = clipRemovedItemsToNextStableChild;
+    }
+
+    boolean shouldDrawRemovedSectionBackgrounds() {
+        return drawRemovedSectionBackgrounds;
+    }
+
+    private View findNextStableChild(ViewHolder holder) {
+        if (holder == null || (!holder.isRemoved() && holder.getAdapterPosition() != NO_POSITION
+                && holder.itemView.getAlpha() >= 0.99f)) {
+            return null;
+        }
+
+        View removed = holder.itemView;
+        View overlapping = null;
+        float overlappingTop = Float.MAX_VALUE;
+        for (int i = 0; i < getChildCount(); i++) {
+            View child = getChildAt(i);
+            ViewHolder childHolder = getChildViewHolder(child);
+            if (childHolder == null || childHolder.isRemoved()
+                    || childHolder.getAdapterPosition() == NO_POSITION || child.getAlpha() < 0.99f
+                    || bottom(child) <= top(removed) || top(child) >= bottom(removed)
+                    || top(child) >= overlappingTop) {
+                continue;
+            }
+
+            overlapping = child;
+            overlappingTop = top(child);
+        }
+        if (overlapping != null) {
+            return overlapping;
+        }
+
+        if (holder.mOldOldPosition != NO_POSITION) {
+            View next = null;
+            int nextOldPosition = Integer.MAX_VALUE;
+            for (int i = 0; i < getChildCount(); i++) {
+                View child = getChildAt(i);
+                ViewHolder childHolder = getChildViewHolder(child);
+                if (childHolder == null || childHolder.isRemoved()
+                        || childHolder.mOldOldPosition <= holder.mOldOldPosition
+                        || childHolder.mOldOldPosition >= nextOldPosition) {
+                    continue;
+                }
+
+                next = child;
+                nextOldPosition = childHolder.mOldOldPosition;
+            }
+            if (next != null) {
+                return next;
+            }
+        }
+
+        if (holder.mOldCompoundPosition >= 0) {
+            int nextPosition = (int) Math.ceil(holder.mOldCompoundPosition / 1000.0) + 1;
+            View next = findViewByPosition(nextPosition);
+            ViewHolder nextHolder = next == null ? null : getChildViewHolder(next);
+            if (nextHolder != null && !nextHolder.isRemoved()) {
+                return next;
+            }
+        }
+
+        return null;
     }
 
     public void setSections() {
@@ -3745,6 +3842,9 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
                 float from = top(child);
                 float to = bottom(child);
                 final ViewHolder viewHolder = getChildViewHolder(child);
+                if (viewHolder.isRemoved() && !drawRemovedSectionBackgrounds) {
+                    continue;
+                }
                 if (viewHolder.isRemoved() && child.getAlpha() < 1) {
                     View nextStableChild = null;
                     if (viewHolder != null && viewHolder.isRemoved() && viewHolder.mOldCompoundPosition >= 0) {
@@ -3844,6 +3944,24 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
             return false;
         }
 
+        ViewHolder holder = getChildViewHolder(view);
+        if (holder != null && holder.isRemoved() && holder.mOldOldPosition != NO_POSITION) {
+            int oldNeighborPosition = holder.mOldOldPosition + offset;
+            for (int i = 0; i < getChildCount(); i++) {
+                View child = getChildAt(i);
+                if (child == view || !sectionsItemDecoration.isSectionItem.run(child)) {
+                    continue;
+                }
+
+                ViewHolder childHolder = getChildViewHolder(child);
+                if (childHolder != null && childHolder.mOldOldPosition == oldNeighborPosition) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         int position = getChildAdapterPosition(view);
         int neighbor = position + offset;
 
@@ -3882,6 +4000,15 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
     }
 
     private void drawSegmentedSectionsBackgrounds(Canvas canvas) {
+        if (isAnimating()) {
+            drawSegmentedSectionsBackgrounds(canvas, false);
+            drawSegmentedSectionsBackgrounds(canvas, true);
+        } else {
+            drawSegmentedSectionsBackgrounds(canvas, null);
+        }
+    }
+
+    private void drawSegmentedSectionsBackgrounds(Canvas canvas, Boolean stablePass) {
         for (int i = 0; i < getChildCount(); i++) {
             View child = getChildAt(i);
 
@@ -3890,7 +4017,27 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
                 continue;
             }
 
+            ViewHolder holder = getChildViewHolder(child);
+            if (holder != null && holder.isRemoved() && !drawRemovedSectionBackgrounds) {
+                continue;
+            }
+            boolean stable = holder != null && !holder.isRemoved() && child.getAlpha() >= 0.99f;
+            if (stablePass != null && stablePass != stable) {
+                continue;
+            }
+
             if (setSegmentedSectionRect(child, AndroidUtilities.rectTmp)) {
+                if (holder != null && holder.isRemoved() && holder.mOldCompoundPosition >= 0) {
+                    View next = findNextStableChild(holder);
+                    if (next != null && AndroidUtilities.rectTmp.bottom > next.getY()
+                            && sectionsItemDecoration.isSectionItem.run(next)) {
+                        AndroidUtilities.rectTmp.bottom = next.getY();
+                        if (AndroidUtilities.rectTmp.bottom < AndroidUtilities.rectTmp.top) {
+                            continue;
+                        }
+                    }
+                }
+
                 drawSectionBackground.run(
                         canvas,
                         AndroidUtilities.rectTmp,

@@ -209,7 +209,7 @@ class MaterialStylePolicyTest(unittest.TestCase):
                 check=True,
             )
 
-    def test_policy_is_android_independent_and_has_no_production_consumer(self):
+    def test_policy_is_android_independent_and_consumers_are_limited_to_md2(self):
         source = POLICY.read_text()
 
         self.assertNotIn("android.", source)
@@ -222,9 +222,14 @@ class MaterialStylePolicyTest(unittest.TestCase):
                 continue
             source = path.read_text()
             if "MaterialStylePolicy" in source or "MaterialStyleSettings" in source:
-                consumers.append(path)
+                consumers.append(path.relative_to(JAVA).as_posix())
 
-        self.assertEqual([], consumers)
+        self.assertEqual(
+            [
+                "ui/FluxGramSettingsActivity.java",
+            ],
+            sorted(consumers),
+        )
 
     def test_storage_is_single_process_global_value(self):
         if not shutil.which("javac") or not shutil.which("java"):

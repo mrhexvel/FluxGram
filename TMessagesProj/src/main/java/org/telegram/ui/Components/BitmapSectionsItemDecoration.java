@@ -369,6 +369,9 @@ public class BitmapSectionsItemDecoration extends RecyclerView.ItemDecoration im
             float from = RecyclerListView.top(child);
             float to = RecyclerListView.bottom(child);
             final RecyclerView.ViewHolder holder = parent.getChildViewHolder(child);
+            if (holder != null && holder.isRemoved() && !parent.shouldDrawRemovedSectionBackgrounds()) {
+                continue;
+            }
             if (holder != null && holder.isRemoved() && child.getAlpha() < 1.0f) {
                 if (holder.mOldCompoundPosition >= 0) {
                     final int nextPosition = (int) Math.ceil(holder.mOldCompoundPosition / 1000.0) + 1;

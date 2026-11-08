@@ -52,7 +52,7 @@ class FluxGramSingleChoiceDialogsTest(unittest.TestCase):
             "showGlassOutlineStyleDialog",
         )
 
-        self.assertEqual(11, settings.count("AlertsCreator.createSingleChoiceDialog"))
+        self.assertEqual(12, settings.count("AlertsCreator.createSingleChoiceDialog"))
         for name in settings_dialogs:
             dialog = self.method(settings, name)
             self.assertEqual(1, dialog.count("AlertsCreator.createSingleChoiceDialog"), name)
