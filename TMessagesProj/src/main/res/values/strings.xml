@@ -11533,10 +11533,9 @@
     <string name="FluxGramMaterialDesign3">Material Design 3</string>
     <string name="FluxGramMaterialPreset">Style preset</string>
     <string name="FluxGramMaterialPresetTelegram">Telegram</string>
-    <string name="FluxGramMaterialPresetColorsIcons">Colors and icons</string>
+    <string name="FluxGramMaterialPresetIcons">Icons</string>
     <string name="FluxGramMaterialPresetBalanced">Balanced</string>
     <string name="FluxGramMaterialPresetAdvanced">Advanced</string>
-    <string name="FluxGramMaterialDynamicColors">Dynamic colors</string>
     <string name="FluxGramMaterialSymbols">Material Symbols</string>
     <string name="FluxGramMaterialNavigation">Navigation and floating button</string>
     <string name="FluxGramMaterialControls">Controls and text fields</string>
@@ -11547,8 +11546,6 @@
     <string name="FluxGramMaterialChatChrome">Chat header and message input</string>
     <string name="FluxGramMaterialMessageBubbles">Message bubbles</string>
     <string name="FluxGramMaterialProfile">Profile and information blocks</string>
-    <string name="FluxGramMaterialDynamicColorsPlatformInfo">Dynamic colors require Android 12 or newer. Telegram colors remain active on this device.</string>
-    <string name="FluxGramMaterialDynamicColorsThemeInfo">Dynamic colors are unavailable while a custom theme file is active. Switch to a built-in theme to use them.</string>
     <string name="FluxGramMaterialSaveError">Could not save the Material Design 3 selection.</string>
     <string name="FluxGramFontMode">Font mode</string>
     <string name="FluxGramFontModeInfo">This setting is global for all accounts. The preview shows the saved selection. Fully restart FluxGram to apply it to the interface.</string>

@@ -25,12 +25,11 @@ class MaterialStyleUiTest(unittest.TestCase):
         self.assertIn("UItem.asSettingsCell(\n                    MATERIAL_STYLE_EXPAND", appearance)
         self.assertIn("if (materialStyleExpanded)", appearance)
         self.assertIn("R.drawable.arrow_more", appearance)
-        self.assertIn("items.add(UItem.asShadow(materialInfo));", appearance)
-        self.assertIn("materialStyleExpanded\n                    && materialStyleState.getPreset()", appearance)
+        self.assertIn("items.add(UItem.asShadow(null));", appearance)
         self.assertNotIn("UItem.asHeader", appearance)
         self.assertNotIn("materialStylePreview", appearance)
 
-    def test_advanced_modules_are_conditional_and_availability_is_effective(self):
+    def test_advanced_modules_are_conditional_and_theme_independent(self):
         source = ACTIVITY.read_text()
         fill_items = source.split("private void fillItems", 1)[1]
         appearance = fill_items.split("if (section == APPEARANCE) {", 1)[1].split(
@@ -43,15 +42,10 @@ class MaterialStyleUiTest(unittest.TestCase):
         )
         self.assertIn("for (MaterialStylePolicy.Module module", appearance)
         self.assertIn("materialStyleState.getCustomModules().contains(module)", appearance)
-        self.assertIn("resolveMaterialStyleAvailability()", appearance)
-        self.assertIn("boolean available = requested || materialAvailability", appearance)
-        self.assertIn(".setEnabled(available)", appearance)
-        self.assertIn("MaterialStylePolicy.UnavailableReason.NONE", appearance)
-        self.assertIn("MaterialStylePolicy.UnavailableReason.PLATFORM", source)
-        self.assertIn("MaterialStylePolicy.UnavailableReason.CUSTOM_THEME", source)
-        self.assertIn("MaterialStylePolicy.create(", source)
-        self.assertIn("EnumSet.allOf(MaterialStylePolicy.Module.class)", source)
-        self.assertIn("if (requested || snapshot.getUnavailableReason(module)", source)
+        self.assertIn(".setEnabled(true)", appearance)
+        self.assertNotIn("DYNAMIC_COLORS", source)
+        self.assertNotIn("resolveMaterialStyleAvailability", source)
+        self.assertNotIn("Theme.getActiveTheme()", source)
 
     def test_preset_uses_telegram_single_choice_dialog(self):
         source = ACTIVITY.read_text()
@@ -62,14 +56,14 @@ class MaterialStyleUiTest(unittest.TestCase):
         self.assertIn("AlertsCreator.createSingleChoiceDialog", dialog)
         self.assertIn("getResourceProvider()", dialog)
         self.assertIn("MaterialStylePolicy.Preset.TELEGRAM", dialog)
-        self.assertIn("MaterialStylePolicy.Preset.COLORS_AND_ICONS", dialog)
+        self.assertIn("MaterialStylePolicy.Preset.ICONS", dialog)
         self.assertIn("MaterialStylePolicy.Preset.BALANCED", dialog)
         self.assertIn("MaterialStylePolicy.Preset.ADVANCED", dialog)
 
     def test_save_updates_only_material_rows_without_restart(self):
         source = ACTIVITY.read_text()
         apply_state = source.split("private void applyMaterialStyleState", 1)[1].split(
-            "private MaterialStylePolicy.EffectiveSnapshot resolveMaterialStyle", 1
+            "private int findItemPosition", 1
         )[0]
 
         self.assertIn("if (!MaterialStyleSettings.setState(state))", apply_state)
@@ -87,16 +81,15 @@ class MaterialStyleUiTest(unittest.TestCase):
         self.assertNotIn("confirmMaterialStyleRestart", source)
         self.assertNotIn("materialStyleRestartInProgress", source)
 
-    def test_custom_theme_detection_uses_only_file_path(self):
+    def test_material_style_does_not_inspect_or_refresh_theme(self):
         source = ACTIVITY.read_text()
-        resolver = source.split("private MaterialStylePolicy.EffectiveSnapshot resolveMaterialStyle", 1)[1].split(
-            "private String materialStylePresetOption", 1
+        apply_state = source.split("private void applyMaterialStyleState", 1)[1].split(
+            "private void updateMaterialStyleRows", 1
         )[0]
 
-        self.assertIn("Theme.getActiveTheme()", resolver)
-        self.assertIn("!TextUtils.isEmpty(theme.pathToFile)", resolver)
-        self.assertNotIn("assetName", resolver)
-        self.assertIn("Build.VERSION.SDK_INT", resolver)
+        self.assertNotIn("Theme.getActiveTheme()", source)
+        self.assertNotIn("Theme.refreshThemeColors()", apply_state)
+        self.assertNotIn("DYNAMIC_COLORS", source)
 
     def test_resources_are_localized(self):
         english = STRINGS.read_text()
@@ -105,9 +98,7 @@ class MaterialStyleUiTest(unittest.TestCase):
             "FluxGramMaterialDesign3",
             "FluxGramMaterialPreset",
             "FluxGramMaterialPresetAdvanced",
-            "FluxGramMaterialDynamicColors",
-            "FluxGramMaterialDynamicColorsPlatformInfo",
-            "FluxGramMaterialDynamicColorsThemeInfo",
+            "FluxGramMaterialPresetIcons",
         )
 
         for key in keys:

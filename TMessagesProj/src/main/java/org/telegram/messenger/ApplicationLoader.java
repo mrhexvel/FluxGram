@@ -31,7 +31,6 @@ import android.os.Handler;
 import android.os.PowerManager;
 import android.os.SystemClock;
 import android.telephony.TelephonyManager;
-import android.text.TextUtils;
 import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
@@ -57,7 +56,6 @@ import org.telegram.messenger.voip.VideoCapturerDevice;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.BaseFragment;
-import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.ForegroundDetector;
 import org.telegram.ui.Components.ItemOptions;
 import org.telegram.ui.IUpdateLayout;
@@ -296,13 +294,8 @@ public class ApplicationLoader extends Application {
                 SendMessagesHelper.getInstance(a).checkUnsentMessages();
             }
         }
-        Theme.ThemeInfo activeTheme = Theme.getActiveTheme();
-        boolean customFileTheme = activeTheme != null
-                && !TextUtils.isEmpty(activeTheme.pathToFile);
         MaterialVisualStyleRuntime.initialize(MaterialStylePolicy.resolve(
-                MaterialStyleSettings.getState(),
-                Build.VERSION.SDK_INT,
-                customFileTheme));
+                MaterialStyleSettings.getState()));
         IconPackRepository.initializeRuntime();
 
         PluginStorageMaintenance.initialize(applicationContext);

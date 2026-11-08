@@ -13,7 +13,7 @@ SETTINGS = JAVA / "messenger/fluxgram/MaterialStyleSettings.java"
 
 
 class MaterialStylePolicyTest(unittest.TestCase):
-    def test_policy_presets_codec_and_availability(self):
+    def test_policy_presets_codec_and_legacy_dynamic_color_bit(self):
         if not shutil.which("javac") or not shutil.which("java"):
             self.skipTest("java and javac are required")
 
@@ -29,22 +29,19 @@ class MaterialStylePolicyTest(unittest.TestCase):
                 import org.telegram.messenger.fluxgram.MaterialStylePolicy.Module;
                 import org.telegram.messenger.fluxgram.MaterialStylePolicy.Preset;
                 import org.telegram.messenger.fluxgram.MaterialStylePolicy.State;
-                import org.telegram.messenger.fluxgram.MaterialStylePolicy.UnavailableReason;
 
                 public final class MaterialStylePolicyCheck {
                     public static void main(String[] args) {
                         checkPresets();
                         checkCustomState();
-                        checkAvailability();
+                        checkLegacyDynamicColorBit();
                         checkCodec();
                         checkImmutability();
                     }
 
                     private static void checkPresets() {
                         EffectiveSnapshot telegram = MaterialStylePolicy.resolve(
-                                MaterialStylePolicy.defaults(),
-                                36,
-                                false
+                                MaterialStylePolicy.defaults()
                         );
                         require(telegram.getPreset() == Preset.TELEGRAM);
                         require(telegram.getRequestedModules().isEmpty());
@@ -52,18 +49,16 @@ class MaterialStylePolicyTest(unittest.TestCase):
 
                         State colors = MaterialStylePolicy.selectPreset(
                                 MaterialStylePolicy.defaults(),
-                                Preset.COLORS_AND_ICONS
+                                Preset.ICONS
                         );
-                        EffectiveSnapshot colorsSnapshot = MaterialStylePolicy.resolve(colors, 36, false);
+                        EffectiveSnapshot colorsSnapshot = MaterialStylePolicy.resolve(colors);
                         require(colorsSnapshot.getRequestedModules().equals(setOf(
-                                Module.DYNAMIC_COLORS,
                                 Module.MATERIAL_SYMBOLS
                         )));
 
                         State balanced = MaterialStylePolicy.selectPreset(colors, Preset.BALANCED);
-                        EffectiveSnapshot balancedSnapshot = MaterialStylePolicy.resolve(balanced, 36, false);
+                        EffectiveSnapshot balancedSnapshot = MaterialStylePolicy.resolve(balanced);
                         require(balancedSnapshot.getRequestedModules().equals(setOf(
-                                Module.DYNAMIC_COLORS,
                                 Module.MATERIAL_SYMBOLS,
                                 Module.NAVIGATION,
                                 Module.CONTROLS,
@@ -84,53 +79,39 @@ class MaterialStylePolicyTest(unittest.TestCase):
                         require(temporaryPreset.getCustomModules().equals(custom.getCustomModules()));
 
                         State restored = MaterialStylePolicy.selectPreset(temporaryPreset, Preset.ADVANCED);
-                        EffectiveSnapshot restoredSnapshot = MaterialStylePolicy.resolve(restored, 36, false);
+                        EffectiveSnapshot restoredSnapshot = MaterialStylePolicy.resolve(restored);
                         require(restoredSnapshot.getRequestedModules().equals(setOf(
                                 Module.MOTION,
                                 Module.PROFILE
                         )));
 
-                        State colors = MaterialStylePolicy.selectPreset(custom, Preset.COLORS_AND_ICONS);
+                        State colors = MaterialStylePolicy.selectPreset(custom, Preset.ICONS);
                         State edited = MaterialStylePolicy.setModuleEnabled(
                                 colors,
                                 Module.MATERIAL_SYMBOLS,
                                 false
                         );
                         require(edited.getPreset() == Preset.ADVANCED);
-                        require(edited.getCustomModules().equals(setOf(Module.DYNAMIC_COLORS)));
+                        require(edited.getCustomModules().isEmpty());
 
                         State nullModule = MaterialStylePolicy.setModuleEnabled(colors, null, true);
                         require(nullModule.equals(colors));
                     }
 
-                    private static void checkAvailability() {
-                        State colors = MaterialStylePolicy.selectPreset(
-                                MaterialStylePolicy.defaults(),
-                                Preset.COLORS_AND_ICONS
-                        );
-                        EffectiveSnapshot oldPlatform = MaterialStylePolicy.resolve(colors, 30, true);
-                        require(oldPlatform.isRequested(Module.DYNAMIC_COLORS));
-                        require(!oldPlatform.isEnabled(Module.DYNAMIC_COLORS));
-                        require(oldPlatform.isEnabled(Module.MATERIAL_SYMBOLS));
-                        require(oldPlatform.getUnavailableReason(Module.DYNAMIC_COLORS)
-                                == UnavailableReason.PLATFORM);
-
-                        EffectiveSnapshot customTheme = MaterialStylePolicy.resolve(colors, 31, true);
-                        require(customTheme.isRequested(Module.DYNAMIC_COLORS));
-                        require(!customTheme.isEnabled(Module.DYNAMIC_COLORS));
-                        require(customTheme.getUnavailableReason(Module.DYNAMIC_COLORS)
-                                == UnavailableReason.CUSTOM_THEME);
-
-                        EffectiveSnapshot available = MaterialStylePolicy.resolve(colors, 31, false);
-                        require(available.isEnabled(Module.DYNAMIC_COLORS));
-                        require(available.getUnavailableReason(Module.DYNAMIC_COLORS)
-                                == UnavailableReason.NONE);
+                    private static void checkLegacyDynamicColorBit() {
+                        State decoded = MaterialStylePolicy.decode("1:3:601");
+                        require(decoded.getPreset() == Preset.ADVANCED);
+                        require(decoded.getCustomModules().equals(setOf(
+                                Module.MESSAGE_BUBBLES,
+                                Module.PROFILE
+                        )));
+                        require(MaterialStylePolicy.encode(decoded).equals("1:3:600"));
                     }
 
                     private static void checkCodec() {
                         State state = MaterialStylePolicy.create(
                                 Preset.ADVANCED,
-                                setOf(Module.DYNAMIC_COLORS, Module.MESSAGE_BUBBLES, Module.PROFILE)
+                                setOf(Module.MESSAGE_BUBBLES, Module.PROFILE)
                         );
                         String encoded = MaterialStylePolicy.encode(state);
                         require(MaterialStylePolicy.decode(encoded).equals(state));
@@ -156,7 +137,7 @@ class MaterialStylePolicyTest(unittest.TestCase):
                         for (String value : invalid) {
                             State fallback = MaterialStylePolicy.decode(value);
                             require(fallback.equals(MaterialStylePolicy.defaults()));
-                            require(MaterialStylePolicy.resolve(fallback, 36, false)
+                            require(MaterialStylePolicy.resolve(fallback)
                                     .getEffectiveModules().isEmpty());
                         }
                     }
@@ -168,7 +149,7 @@ class MaterialStylePolicyTest(unittest.TestCase):
                                 input
                         );
                         input.add(Module.PROFILE);
-                        EffectiveSnapshot snapshot = MaterialStylePolicy.resolve(state, 36, false);
+                        EffectiveSnapshot snapshot = MaterialStylePolicy.resolve(state);
 
                         require(state.getCustomModules().equals(setOf(Module.CONTROLS)));
                         requireThrows(() -> state.getCustomModules().add(Module.LISTS));

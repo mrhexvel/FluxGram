@@ -79,7 +79,6 @@ import org.telegram.ui.fluxgram.FluxGramSettingsSections;
 import org.telegram.ui.fluxgram.NavigationTransitionPolicy;
 
 import java.util.ArrayList;
-import java.util.EnumSet;
 import java.util.HashMap;
 
 public class FluxGramSettingsActivity extends BaseFragment {
@@ -259,7 +258,7 @@ public class FluxGramSettingsActivity extends BaseFragment {
         int title = R.string.FluxGramSettings;
         MaterialStylePolicy.State savedMaterialStyle = MaterialStyleSettings.getState();
         materialVisualStyle = MaterialVisualStyleRuntime.initialize(
-                resolveMaterialStyle(savedMaterialStyle)
+                MaterialStylePolicy.resolve(savedMaterialStyle)
         );
 
         if (section == GENERAL) {
@@ -519,8 +518,6 @@ public class FluxGramSettingsActivity extends BaseFragment {
 
         if (section == APPEARANCE) {
             appearancePreview.update(false);
-            MaterialStylePolicy.EffectiveSnapshot materialAvailability =
-                    resolveMaterialStyleAvailability();
             String materialPreset = materialStylePresetOption(materialStyleState.getPreset());
             addSectionLabel(items, R.string.FluxGramMaterialDesign3);
             UItem materialStyleExpand = UItem.asSettingsCell(
@@ -546,22 +543,16 @@ public class FluxGramSettingsActivity extends BaseFragment {
                 if (materialStyleState.getPreset() == MaterialStylePolicy.Preset.ADVANCED) {
                     for (MaterialStylePolicy.Module module : MaterialStylePolicy.Module.values()) {
                         boolean requested = materialStyleState.getCustomModules().contains(module);
-                        boolean available = requested || materialAvailability.getUnavailableReason(module)
-                                == MaterialStylePolicy.UnavailableReason.NONE;
                         items.add(UItem.asCheck(
                                         materialStyleModuleId(module),
                                         LocaleController.getString(materialStyleModuleTitle(module))
                                 ).setChecked(requested)
-                                .setEnabled(available));
+                                .setEnabled(true));
                     }
                 }
             }
 
-            String materialInfo = materialStyleExpanded
-                    && materialStyleState.getPreset() == MaterialStylePolicy.Preset.ADVANCED
-                    ? materialStyleInfo(materialAvailability)
-                    : null;
-            items.add(UItem.asShadow(materialInfo));
+            items.add(UItem.asShadow(null));
             addSectionLabel(items, R.string.FluxGramFontsAndEmoji);
             items.add(UItem.asButton(
                     FONTS,
@@ -1483,20 +1474,13 @@ public class FluxGramSettingsActivity extends BaseFragment {
                 MaterialStylePolicy.Module module = MaterialStylePolicy.Module.values()[
                         item.id - MATERIAL_STYLE_MODULE_FIRST
                         ];
-                MaterialStylePolicy.EffectiveSnapshot snapshot =
-                        resolveMaterialStyleAvailability();
-
                 boolean requested = materialStyleState.getCustomModules().contains(module);
-
-                if (requested || snapshot.getUnavailableReason(module)
-                        == MaterialStylePolicy.UnavailableReason.NONE) {
-                    boolean enabled = !requested;
-                    applyMaterialStyleState(MaterialStylePolicy.setModuleEnabled(
-                            materialStyleState,
-                            module,
-                            enabled
-                    ), item.id);
-                }
+                boolean enabled = !requested;
+                applyMaterialStyleState(MaterialStylePolicy.setModuleEnabled(
+                        materialStyleState,
+                        module,
+                        enabled
+                ), item.id);
             } else if (item.id == FONTS) {
                 presentFragment(new FluxGramFontSettingsActivity());
             } else if (item.id == INTERFACE_ICONS) {
@@ -1906,7 +1890,7 @@ public class FluxGramSettingsActivity extends BaseFragment {
     private void showMaterialStylePresetDialog() {
         MaterialStylePolicy.Preset[] presets = {
                 MaterialStylePolicy.Preset.TELEGRAM,
-                MaterialStylePolicy.Preset.COLORS_AND_ICONS,
+                MaterialStylePolicy.Preset.ICONS,
                 MaterialStylePolicy.Preset.BALANCED,
                 MaterialStylePolicy.Preset.ADVANCED
         };
@@ -1963,8 +1947,6 @@ public class FluxGramSettingsActivity extends BaseFragment {
         int newModuleCount = materialStyleModuleCount(materialStyleState, materialStyleExpanded);
         boolean oldPresetVisible = wasExpanded;
         boolean newPresetVisible = materialStyleExpanded;
-        String oldInfo = materialStyleInfo(previousState, wasExpanded);
-        String newInfo = materialStyleInfo(materialStyleState, materialStyleExpanded);
 
         listView.adapter.updateWithoutNotify();
 
@@ -2010,23 +1992,12 @@ public class FluxGramSettingsActivity extends BaseFragment {
                 }
             }
         }
-
-        if (!TextUtils.equals(oldInfo, newInfo)) {
-            listView.adapter.notifyItemChanged(expandPosition + 1 + newModuleCount
-                    + (newPresetVisible ? 1 : 0));
-        }
     }
 
     private int materialStyleModuleCount(MaterialStylePolicy.State state, boolean expanded) {
         return expanded && state.getPreset() == MaterialStylePolicy.Preset.ADVANCED
                 ? MaterialStylePolicy.Module.values().length
                 : 0;
-    }
-
-    private String materialStyleInfo(MaterialStylePolicy.State state, boolean expanded) {
-        return expanded && state.getPreset() == MaterialStylePolicy.Preset.ADVANCED
-                ? materialStyleInfo(resolveMaterialStyleAvailability())
-                : null;
     }
 
     private int findItemPosition(int itemId) {
@@ -2041,25 +2012,9 @@ public class FluxGramSettingsActivity extends BaseFragment {
         return -1;
     }
 
-    private MaterialStylePolicy.EffectiveSnapshot resolveMaterialStyle(
-            MaterialStylePolicy.State state
-    ) {
-        Theme.ThemeInfo theme = Theme.getActiveTheme();
-        boolean customFileTheme = theme != null && !TextUtils.isEmpty(theme.pathToFile);
-
-        return MaterialStylePolicy.resolve(state, Build.VERSION.SDK_INT, customFileTheme);
-    }
-
-    private MaterialStylePolicy.EffectiveSnapshot resolveMaterialStyleAvailability() {
-        return resolveMaterialStyle(MaterialStylePolicy.create(
-                MaterialStylePolicy.Preset.ADVANCED,
-                EnumSet.allOf(MaterialStylePolicy.Module.class)
-        ));
-    }
-
     private String materialStylePresetOption(MaterialStylePolicy.Preset preset) {
-        if (preset == MaterialStylePolicy.Preset.COLORS_AND_ICONS) {
-            return LocaleController.getString(R.string.FluxGramMaterialPresetColorsIcons);
+        if (preset == MaterialStylePolicy.Preset.ICONS) {
+            return LocaleController.getString(R.string.FluxGramMaterialPresetIcons);
         }
         if (preset == MaterialStylePolicy.Preset.BALANCED) {
             return LocaleController.getString(R.string.FluxGramMaterialPresetBalanced);
@@ -2077,8 +2032,6 @@ public class FluxGramSettingsActivity extends BaseFragment {
 
     private int materialStyleModuleTitle(MaterialStylePolicy.Module module) {
         switch (module) {
-            case DYNAMIC_COLORS:
-                return R.string.FluxGramMaterialDynamicColors;
             case MATERIAL_SYMBOLS:
                 return R.string.FluxGramMaterialSymbols;
             case NAVIGATION:
@@ -2102,21 +2055,6 @@ public class FluxGramSettingsActivity extends BaseFragment {
             default:
                 throw new IllegalArgumentException();
         }
-    }
-
-    private String materialStyleInfo(MaterialStylePolicy.EffectiveSnapshot snapshot) {
-        MaterialStylePolicy.UnavailableReason reason = snapshot.getUnavailableReason(
-                MaterialStylePolicy.Module.DYNAMIC_COLORS
-        );
-
-        if (reason == MaterialStylePolicy.UnavailableReason.PLATFORM) {
-            return LocaleController.getString(R.string.FluxGramMaterialDynamicColorsPlatformInfo);
-        }
-        if (reason == MaterialStylePolicy.UnavailableReason.CUSTOM_THEME) {
-            return LocaleController.getString(R.string.FluxGramMaterialDynamicColorsThemeInfo);
-        }
-
-        return null;
     }
 
     private String dividerStyleOption(int style) {

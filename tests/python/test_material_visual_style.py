@@ -47,9 +47,7 @@ class MaterialVisualStyleTest(unittest.TestCase):
                                 MaterialStylePolicy.create(
                                         Preset.ADVANCED,
                                         EnumSet.of(Module.SURFACES, Module.LISTS, Module.MOTION)
-                                ),
-                                36,
-                                false
+                                )
                         );
                         MaterialVisualStyle.Snapshot style = MaterialVisualStyle.resolve(effective);
                         require(style.isEnabled(Module.SURFACES));
@@ -68,7 +66,7 @@ class MaterialVisualStyleTest(unittest.TestCase):
 
                         requireConcurrentInitialization(effective);
                         MaterialVisualStyle.Snapshot repeated = MaterialVisualStyleRuntime.initialize(
-                                MaterialStylePolicy.resolve(MaterialStylePolicy.defaults(), 36, false)
+                                MaterialStylePolicy.resolve(MaterialStylePolicy.defaults())
                         );
                         require(MaterialVisualStyleRuntime.getSnapshot() == repeated);
                     }
@@ -171,9 +169,7 @@ class MaterialVisualStyleTest(unittest.TestCase):
                             MaterialStylePolicy.EffectiveSnapshot first
                     ) {
                         MaterialStylePolicy.EffectiveSnapshot second = MaterialStylePolicy.resolve(
-                                MaterialStylePolicy.create(Preset.ADVANCED, EnumSet.of(Module.CONTROLS)),
-                                36,
-                                false
+                                MaterialStylePolicy.create(Preset.ADVANCED, EnumSet.of(Module.CONTROLS))
                         );
                         CountDownLatch ready = new CountDownLatch(16);
                         CountDownLatch start = new CountDownLatch(1);
@@ -286,7 +282,7 @@ class MaterialVisualStyleTest(unittest.TestCase):
         activity = ACTIVITY.read_text()
         header = HEADER.read_text()
         self.assertIn("MaterialVisualStyleRuntime.initialize(", activity)
-        self.assertIn("resolveMaterialStyle(savedMaterialStyle)", activity)
+        self.assertIn("MaterialStylePolicy.resolve(savedMaterialStyle)", activity)
         self.assertIn("header.getPreferredHeightDp()", activity)
         self.assertIn("MaterialStylePolicy.Module.SURFACES", header)
         self.assertIn("MaterialVisualStyle.ShapeRole.EXTRA_LARGE", header)

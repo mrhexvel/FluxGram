@@ -2,16 +2,17 @@ package org.telegram.messenger.fluxgram;
 
 import java.util.Collection;
 import java.util.Collections;
-import java.util.EnumMap;
 import java.util.EnumSet;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
 public final class MaterialStylePolicy {
     private static final String FORMAT_VERSION = "1";
     private static final int MAX_ENCODED_LENGTH = 64;
-    private static final long KNOWN_MODULE_MASK = (1L << Module.values().length) - 1L;
+    private static final long LEGACY_DYNAMIC_COLORS_MASK = 1L;
+    private static final long KNOWN_MODULE_MASK = LEGACY_DYNAMIC_COLORS_MASK | moduleMask(
+            EnumSet.allOf(Module.class)
+    );
 
     private MaterialStylePolicy() {
     }
@@ -50,30 +51,13 @@ public final class MaterialStylePolicy {
         return new State(Preset.ADVANCED, modules);
     }
 
-    public static EffectiveSnapshot resolve(
-            State state,
-            int platformApi,
-            boolean customFileTheme
-    ) {
+    public static EffectiveSnapshot resolve(State state) {
         State normalized = normalizeState(state);
         EnumSet<Module> requested = normalized.preset == Preset.ADVANCED
                 ? copyModules(normalized.customModules)
                 : modulesForPreset(normalized.preset);
-        EnumSet<Module> effective = copyModules(requested);
-        EnumMap<Module, UnavailableReason> unavailable =
-                new EnumMap<>(Module.class);
 
-        if (requested.contains(Module.DYNAMIC_COLORS)) {
-            if (platformApi < 31) {
-                effective.remove(Module.DYNAMIC_COLORS);
-                unavailable.put(Module.DYNAMIC_COLORS, UnavailableReason.PLATFORM);
-            } else if (customFileTheme) {
-                effective.remove(Module.DYNAMIC_COLORS);
-                unavailable.put(Module.DYNAMIC_COLORS, UnavailableReason.CUSTOM_THEME);
-            }
-        }
-
-        return new EffectiveSnapshot(normalized.preset, requested, effective, unavailable);
+        return new EffectiveSnapshot(normalized.preset, requested);
     }
 
     public static String encode(State state) {
@@ -135,12 +119,11 @@ public final class MaterialStylePolicy {
     }
 
     private static EnumSet<Module> modulesForPreset(Preset preset) {
-        if (preset == Preset.COLORS_AND_ICONS) {
-            return EnumSet.of(Module.DYNAMIC_COLORS, Module.MATERIAL_SYMBOLS);
+        if (preset == Preset.ICONS) {
+            return EnumSet.of(Module.MATERIAL_SYMBOLS);
         }
         if (preset == Preset.BALANCED) {
             return EnumSet.of(
-                    Module.DYNAMIC_COLORS,
                     Module.MATERIAL_SYMBOLS,
                     Module.NAVIGATION,
                     Module.CONTROLS,
@@ -221,7 +204,7 @@ public final class MaterialStylePolicy {
 
     public enum Preset {
         TELEGRAM(0),
-        COLORS_AND_ICONS(1),
+        ICONS(1),
         BALANCED(2),
         ADVANCED(3);
 
@@ -233,7 +216,6 @@ public final class MaterialStylePolicy {
     }
 
     public enum Module {
-        DYNAMIC_COLORS(0),
         MATERIAL_SYMBOLS(1),
         NAVIGATION(2),
         CONTROLS(3),
@@ -250,12 +232,6 @@ public final class MaterialStylePolicy {
         Module(int bit) {
             this.bit = bit;
         }
-    }
-
-    public enum UnavailableReason {
-        NONE,
-        PLATFORM,
-        CUSTOM_THEME
     }
 
     public static final class State {
@@ -299,20 +275,14 @@ public final class MaterialStylePolicy {
         private final Preset preset;
         private final Set<Module> requestedModules;
         private final Set<Module> effectiveModules;
-        private final Map<Module, UnavailableReason> unavailableReasons;
 
         private EffectiveSnapshot(
                 Preset preset,
-                Collection<Module> requestedModules,
-                Collection<Module> effectiveModules,
-                Map<Module, UnavailableReason> unavailableReasons
+                Collection<Module> requestedModules
         ) {
             this.preset = preset;
             this.requestedModules = immutableModules(requestedModules);
-            this.effectiveModules = immutableModules(effectiveModules);
-            this.unavailableReasons = Collections.unmodifiableMap(
-                    new EnumMap<>(unavailableReasons)
-            );
+            this.effectiveModules = immutableModules(requestedModules);
         }
 
         public Preset getPreset() {
@@ -333,12 +303,6 @@ public final class MaterialStylePolicy {
 
         public boolean isEnabled(Module module) {
             return effectiveModules.contains(module);
-        }
-
-        public UnavailableReason getUnavailableReason(Module module) {
-            UnavailableReason reason = unavailableReasons.get(module);
-
-            return reason == null ? UnavailableReason.NONE : reason;
         }
     }
 

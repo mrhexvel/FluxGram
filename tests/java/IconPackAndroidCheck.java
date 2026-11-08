@@ -479,9 +479,7 @@ public final class IconPackAndroidCheck {
         MaterialVisualStyleRuntime.initialize(MaterialStylePolicy.resolve(
                 MaterialStylePolicy.create(
                         MaterialStylePolicy.Preset.ADVANCED,
-                        Collections.singleton(MaterialStylePolicy.Module.MATERIAL_SYMBOLS)),
-                31,
-                false));
+                        Collections.singleton(MaterialStylePolicy.Module.MATERIAL_SYMBOLS))));
         IconPackRuntime.clear();
         require(IconPackRuntime.resolve(resources, 6) == null);
         require(IconPackRuntime.resolve(resources, 4) == null);
