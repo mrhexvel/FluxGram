@@ -8,6 +8,9 @@ import android.widget.ImageView;
 
 import com.caverock.androidsvg.SVG;
 
+import org.telegram.messenger.fluxgram.MaterialStylePolicy;
+import org.telegram.messenger.fluxgram.MaterialVisualStyleRuntime;
+
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collections;
@@ -44,6 +47,15 @@ public final class IconPackAndroidCheck {
         require(IconPackBuiltIns.targetResourceName(
                 "external.pack",
                 "msg_delete") == null);
+        require(MaterialSymbolsCatalog.targetResourceName("msg_add")
+                .equals("fluxgram_material_add_24"));
+        require(MaterialSymbolsCatalog.targetResourceName("tabs_chats_24")
+                .equals("fluxgram_material_chat_24"));
+        require(MaterialSymbolsCatalog.targetResourceName("tabs_chats_active_24")
+                .equals("fluxgram_material_chat_filled_24"));
+        require(MaterialSymbolsCatalog.targetResourceName("msg_download") == null);
+        require(MaterialSymbolsCatalog.isAutoMirrored("msg_forward"));
+        require(!MaterialSymbolsCatalog.isAutoMirrored("msg_share"));
 
         for (int i = 0; i < NAMES.length; i++) {
             require(catalog.contains(NAMES[i]));
@@ -463,6 +475,54 @@ public final class IconPackAndroidCheck {
 
         require(IconPackRuntime.clear());
         require(IconPackRuntime.resolve(resources, 1) == null);
+
+        MaterialVisualStyleRuntime.initialize(MaterialStylePolicy.resolve(
+                MaterialStylePolicy.create(
+                        MaterialStylePolicy.Preset.ADVANCED,
+                        Collections.singleton(MaterialStylePolicy.Module.MATERIAL_SYMBOLS)),
+                31,
+                false));
+        IconPackRuntime.clear();
+        require(IconPackRuntime.resolve(resources, 6) == null);
+        require(IconPackRuntime.resolve(resources, 4) == null);
+        store.resolveCount = 0;
+        require(IconPackRuntime.rebuild(
+                resources,
+                store,
+                Arrays.asList(first, second),
+                Collections.emptyList()));
+        Drawable materialDrawable = IconPackRuntime.resolve(resources, 6);
+        require(materialDrawable instanceof BitmapDrawable);
+        require(materialDrawable.isAutoMirrored());
+        require(IconPackRuntime.resolve(resources, 4) == null);
+        require(store.resolveCount == 0);
+
+        ImageView namedImageView = new ImageView(resources);
+        require(IconPackRuntime.clear());
+        IconPackRuntime.setImageResource(
+                namedImageView,
+                "fab_compose_small",
+                14);
+        require(namedImageView.resourceId == 14);
+        require(IconPackRuntime.rebuild(
+                resources,
+                store,
+                Arrays.asList(first, second),
+                Collections.emptyList()));
+        IconPackRuntime.refreshUi();
+        require(namedImageView.drawable instanceof BitmapDrawable);
+
+        require(IconPackRuntime.clear());
+        require(IconPackRuntime.resolve(resources, 1) == null);
+        store.resolveCount = 0;
+        require(IconPackRuntime.rebuild(
+                resources,
+                store,
+                Arrays.asList(first, second),
+                Collections.singletonList("first.pack")));
+        require(IconPackRuntime.resolve(resources, 1) instanceof BitmapDrawable);
+        require(store.resolveCount > 0);
+        require(store.lastResolved == first);
     }
 
     private static void require(boolean value) {

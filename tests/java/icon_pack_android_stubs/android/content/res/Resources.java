@@ -44,6 +44,17 @@ public class Resources {
         register("msg_share", 12);
         register("chats_saved", 13);
         register("filled_understood", 14);
+        register("fluxgram_material_add_24", 100);
+        register("fluxgram_material_content_copy_24", 101);
+        register("fluxgram_material_delete_24", 102);
+        register("fluxgram_material_edit_24", 103);
+        register("fluxgram_material_forward_24", 104);
+        register("fluxgram_material_search_24", 105);
+        register("fluxgram_material_settings_24", 106);
+        register("fluxgram_material_share_24", 107);
+        register("fluxgram_material_chat_24", 108);
+        register("fluxgram_material_chat_filled_24", 109);
+        register("fluxgram_material_edit_square_24", 110);
     }
 
     public DisplayMetrics getDisplayMetrics() {
@@ -101,6 +112,13 @@ public class Resources {
             @Override
             public int getIntrinsicHeight() {
                 return Math.round((id == 11 ? 18 : 24) * scale);
+            }
+
+            @Override
+            public void draw(android.graphics.Canvas canvas) {
+                if (id >= 100) {
+                    canvas.markVisible();
+                }
             }
         };
     }

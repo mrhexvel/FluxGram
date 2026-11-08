@@ -125,6 +125,7 @@ android {
     ndkVersion "27.2.12479018"
 
     sourceSets.main.res.srcDirs += 'src/main/res-solar'
+    sourceSets.main.res.srcDirs += 'src/main/res-material-symbols'
 
 
     externalNativeBuild {

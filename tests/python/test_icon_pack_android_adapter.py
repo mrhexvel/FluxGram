@@ -23,8 +23,12 @@ class IconPackAndroidAdapterTest(unittest.TestCase):
                     str(ICONS / "IconPackAndroidCatalog.java"),
                     str(ICONS / "IconPackAndroidDrawableDecoder.java"),
                     str(ICONS / "IconPackBuiltIns.java"),
+                    str(ICONS / "MaterialSymbolsCatalog.java"),
                     str(ICONS / "IconPackResources.java"),
                     str(ICONS / "IconPackRuntime.java"),
+                    str(ROOT / "TMessagesProj/src/main/java/org/telegram/messenger/fluxgram/MaterialStylePolicy.java"),
+                    str(ROOT / "TMessagesProj/src/main/java/org/telegram/messenger/fluxgram/MaterialVisualStyle.java"),
+                    str(ROOT / "TMessagesProj/src/main/java/org/telegram/messenger/fluxgram/MaterialVisualStyleRuntime.java"),
                     str(ROOT / "tests/java/IconPackAndroidCheck.java"),
                 ]
             )
@@ -70,6 +74,11 @@ class IconPackAndroidAdapterTest(unittest.TestCase):
         self.assertIn("source.recycle()", runtime)
         self.assertIn("IconPackAndroidCatalog.hasVisiblePixels(result)", runtime)
         self.assertIn("IconPackBuiltIns.targetResourceName", runtime)
+        self.assertIn("MaterialSymbolsCatalog.targetResourceName", runtime)
+        self.assertLess(
+            runtime.index("for (String id : plan.activeIds)"),
+            runtime.index("if (plan.materialSymbolsEnabled)"),
+        )
         resolve_paths = runtime.split("public static Drawable resolve", 1)[1].split("static boolean rebuild", 1)[0]
         self.assertNotIn("store.resolve", resolve_paths)
         self.assertNotIn("IconPackAndroidDrawableDecoder", resolve_paths)
@@ -83,6 +92,34 @@ class IconPackAndroidAdapterTest(unittest.TestCase):
         build = (ROOT / "TMessagesProj/build.gradle").read_text()
         self.assertIn("com.caverock:androidsvg-aar:1.4", build)
         self.assertIn("src/main/res-solar", build)
+        self.assertIn("src/main/res-material-symbols", build)
+
+        material_catalog = (ICONS / "MaterialSymbolsCatalog.java").read_text()
+        material_resources = ROOT / "TMessagesProj/src/main/res-material-symbols/drawable"
+        expected_material = {
+            "msg_add": "fluxgram_material_add_24",
+            "msg_copy": "fluxgram_material_content_copy_24",
+            "msg_delete": "fluxgram_material_delete_24",
+            "msg_edit": "fluxgram_material_edit_24",
+            "msg_forward": "fluxgram_material_forward_24",
+            "msg_search": "fluxgram_material_search_24",
+            "msg_settings": "fluxgram_material_settings_24",
+            "msg_share": "fluxgram_material_share_24",
+            "tabs_chats_24": "fluxgram_material_chat_24",
+            "tabs_chats_active_24": "fluxgram_material_chat_filled_24",
+            "fab_compose_small": "fluxgram_material_edit_square_24",
+        }
+
+        for semantic_name, target_name in expected_material.items():
+            self.assertIn(f'entries.put("{semantic_name}"', material_catalog)
+            resource = (material_resources / f"{target_name}.xml").read_text()
+            self.assertNotIn("?attr/colorControlNormal", resource)
+            self.assertIn('@android:color/white', resource)
+
+        self.assertNotIn("fluxgram.material", (ICONS / "IconPackBuiltIns.java").read_text())
+        provenance = (ROOT / "TMessagesProj/src/main/material-symbols/PROVENANCE.md").read_text()
+        self.assertIn("10ecc14790612ca8fd164e3f4ffe9c16fc50d5b7", provenance)
+        self.assertIn("Apache License 2.0", provenance)
 
         application = (ROOT / "TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java").read_text()
         activity = (ROOT / "TMessagesProj/src/main/java/org/telegram/ui/BasePermissionsActivity.java").read_text()
@@ -124,9 +161,10 @@ class IconPackAndroidAdapterTest(unittest.TestCase):
         self.assertIn('IconPackRuntime.resolve(headerItem.getResources(), "boosts")', chat)
         self.assertIn("new RLottieDrawable(R.raw.boosts", chat)
         self.assertIn(
-            'IconPackRuntime.resolve(floatingButton3.getResources(), "fab_compose_small")',
+            '"fab_compose_small",\n                        R.drawable.filled_fab_compose_32',
             dialogs,
         )
+        self.assertIn("IconPackRuntime.setImageResource(\n                        floatingButton3.imageView", dialogs)
         self.assertIn("usesFluxGramRootDialogsAppearance()", dialogs)
         self.assertIn("floatingButton3.setImageResource(R.drawable.filled_fab_compose_32)", dialogs)
         self.assertIn('IconPackRuntime.resolve(other.getResources(), "boosts")', topics)

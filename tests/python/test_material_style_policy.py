@@ -226,8 +226,10 @@ class MaterialStylePolicyTest(unittest.TestCase):
 
         self.assertEqual(
             [
+                "messenger/ApplicationLoader.java",
                 "messenger/fluxgram/MaterialVisualStyle.java",
                 "messenger/fluxgram/MaterialVisualStyleRuntime.java",
+                "messenger/fluxgram/icons/MaterialSymbolsCatalog.java",
                 "ui/Components/FluxGramSettingsHeaderCell.java",
                 "ui/FluxGramSettingsActivity.java",
             ],

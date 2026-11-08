@@ -114,7 +114,7 @@ class MaterialStyleUiTest(unittest.TestCase):
             self.assertIn(f'name="{key}"', english)
             self.assertIn(f'name="{key}"', russian)
 
-    def test_no_production_theme_or_renderer_reads_material_state(self):
+    def test_production_material_state_consumers_are_bounded(self):
         consumers = []
         for path in JAVA.rglob("*.java"):
             if path.name in (
@@ -130,7 +130,13 @@ class MaterialStyleUiTest(unittest.TestCase):
             if "MaterialStylePolicy" in source or "MaterialStyleSettings" in source:
                 consumers.append(path.relative_to(JAVA).as_posix())
 
-        self.assertEqual([], consumers)
+        self.assertEqual(
+            [
+                "messenger/ApplicationLoader.java",
+                "messenger/fluxgram/icons/MaterialSymbolsCatalog.java",
+            ],
+            sorted(consumers),
+        )
 
 
 if __name__ == "__main__":

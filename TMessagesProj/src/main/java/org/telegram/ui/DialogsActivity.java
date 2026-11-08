@@ -9230,16 +9230,17 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         }
 
         if (initialDialogsType == DIALOGS_TYPE_WIDGET) {
+            IconPackRuntime.unbindImageView(floatingButton3.imageView);
             floatingButton3.setImageResource(R.drawable.floating_check);
             floatingButton3.setContentDescription(LocaleController.getString(R.string.Done));
         } else {
-            Drawable composeDrawable = usesFluxGramRootDialogsAppearance()
-                    ? IconPackRuntime.resolve(floatingButton3.getResources(), "fab_compose_small")
-                    : null;
-
-            if (composeDrawable != null) {
-                floatingButton3.imageView.setImageDrawable(composeDrawable);
+            if (usesFluxGramRootDialogsAppearance()) {
+                IconPackRuntime.setImageResource(
+                        floatingButton3.imageView,
+                        "fab_compose_small",
+                        R.drawable.filled_fab_compose_32);
             } else {
+                IconPackRuntime.unbindImageView(floatingButton3.imageView);
                 floatingButton3.setImageResource(R.drawable.filled_fab_compose_32);
             }
 

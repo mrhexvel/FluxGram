@@ -275,6 +275,8 @@ class MaterialVisualStyleTest(unittest.TestCase):
 
         self.assertEqual(
             [
+                "org/telegram/messenger/ApplicationLoader.java",
+                "org/telegram/messenger/fluxgram/icons/MaterialSymbolsCatalog.java",
                 "org/telegram/ui/Components/FluxGramSettingsHeaderCell.java",
                 "org/telegram/ui/FluxGramSettingsActivity.java",
             ],

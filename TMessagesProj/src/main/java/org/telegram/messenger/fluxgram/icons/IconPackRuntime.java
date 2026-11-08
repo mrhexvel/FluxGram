@@ -59,7 +59,14 @@ public final class IconPackRuntime {
         }
 
         try {
-            return new BitmapDrawable(resources, bitmap);
+            BitmapDrawable drawable = new BitmapDrawable(resources, bitmap);
+            Resolution resolution = current.resolutions.get(demand);
+
+            if (resolution != null) {
+                drawable.setAutoMirrored(resolution.autoMirrored);
+            }
+
+            return drawable;
         } catch (RuntimeException | OutOfMemoryError error) {
             recordDemand(demand);
 
@@ -83,7 +90,14 @@ public final class IconPackRuntime {
         }
 
         try {
-            return new BitmapDrawable(resources, bitmap);
+            BitmapDrawable drawable = new BitmapDrawable(resources, bitmap);
+            Resolution resolution = current.resolutions.get(demand);
+
+            if (resolution != null) {
+                drawable.setAutoMirrored(resolution.autoMirrored);
+            }
+
+            return drawable;
         } catch (RuntimeException | OutOfMemoryError error) {
             recordDemand(demand);
 
@@ -139,6 +153,31 @@ public final class IconPackRuntime {
         trackImageResource(imageView, drawableId);
     }
 
+    public static void setImageResource(
+            ImageView imageView,
+            String resourceName,
+            int fallbackDrawableId) {
+        if (imageView == null
+                || !IconPackManifest.isValidResourceName(resourceName)
+                || fallbackDrawableId == 0) {
+            unbindImageView(imageView);
+
+            return;
+        }
+
+        applyImageResource(imageView, resourceName, fallbackDrawableId);
+
+        synchronized (imageBindings) {
+            imageBindings.put(
+                    imageView,
+                    new ImageBinding(
+                            fallbackDrawableId,
+                            resourceName,
+                            imageView.getDrawable(),
+                            null));
+        }
+    }
+
     public static void trackImageResource(ImageView imageView, int drawableId) {
         if (imageView == null || drawableId == 0) {
             unbindImageView(imageView);
@@ -149,7 +188,7 @@ public final class IconPackRuntime {
         synchronized (imageBindings) {
             imageBindings.put(
                     imageView,
-                    new ImageBinding(drawableId, imageView.getDrawable(), null));
+                    new ImageBinding(drawableId, null, imageView.getDrawable(), null));
         }
     }
 
@@ -165,6 +204,7 @@ public final class IconPackRuntime {
 
         ImageBinding binding = new ImageBinding(
                 drawableId,
+                null,
                 imageView.getDrawable(),
                 animationTarget);
 
@@ -238,7 +278,14 @@ public final class IconPackRuntime {
                 continue;
             }
 
-            applyImageResource(imageView, binding.drawableId);
+            if (binding.resourceName != null) {
+                applyImageResource(
+                        imageView,
+                        binding.resourceName,
+                        binding.drawableId);
+            } else {
+                applyImageResource(imageView, binding.drawableId);
+            }
 
             synchronized (imageBindings) {
                 if (imageBindings.get(imageView) == binding) {
@@ -260,6 +307,19 @@ public final class IconPackRuntime {
             imageView.setImageDrawable(drawable);
         } else {
             imageView.setImageResource(drawableId);
+        }
+    }
+
+    private static void applyImageResource(
+            ImageView imageView,
+            String resourceName,
+            int fallbackDrawableId) {
+        Drawable drawable = resolve(imageView.getResources(), resourceName);
+
+        if (drawable != null) {
+            imageView.setImageDrawable(drawable);
+        } else {
+            imageView.setImageResource(fallbackDrawableId);
         }
     }
 
@@ -546,7 +606,7 @@ public final class IconPackRuntime {
                 }
 
                 if (bitmap != null && isCached(source, bitmap)) {
-                    return new Resolution(source);
+                    return new Resolution(source, false);
                 }
 
                 continue;
@@ -583,7 +643,40 @@ public final class IconPackRuntime {
             }
 
             if (bitmap != null && isCached(source, bitmap)) {
-                return new Resolution(source);
+                return new Resolution(source, false);
+            }
+        }
+
+        if (plan.materialSymbolsEnabled) {
+            String targetName = MaterialSymbolsCatalog.targetResourceName(resourceName);
+            int targetId = targetName == null ? 0 : plan.catalog.drawableId(targetName);
+
+            if (targetId != 0) {
+                String source = MaterialSymbolsCatalog.source(
+                        resourceName,
+                        targetId,
+                        plan.densityDpi,
+                        width,
+                        height);
+                Bitmap bitmap = cached(source);
+
+                if (bitmap == null) {
+                    Drawable drawable = originalDrawable(
+                            plan.resources,
+                            targetId,
+                            plan.densityDpi);
+                    bitmap = render(drawable, width, height, plan.densityDpi);
+
+                    if (bitmap != null) {
+                        cache(source, bitmap);
+                    }
+                }
+
+                if (bitmap != null && isCached(source, bitmap)) {
+                    return new Resolution(
+                            source,
+                            MaterialSymbolsCatalog.isAutoMirrored(resourceName));
+                }
             }
         }
 
@@ -771,13 +864,19 @@ public final class IconPackRuntime {
 
     private static final class ImageBinding {
         private final int drawableId;
+        private final String resourceName;
         private final long runtimeRevision;
         private WeakReference<Drawable> drawable;
         private WeakReference<Drawable> animationTarget;
         private boolean refreshPending;
 
-        private ImageBinding(int drawableId, Drawable drawable, Drawable animationTarget) {
+        private ImageBinding(
+                int drawableId,
+                String resourceName,
+                Drawable drawable,
+                Drawable animationTarget) {
             this.drawableId = drawableId;
+            this.resourceName = resourceName;
             this.runtimeRevision = revision;
             this.drawable = new WeakReference<>(drawable);
             this.animationTarget = animationTarget == null
@@ -791,6 +890,7 @@ public final class IconPackRuntime {
         private final IconPackStore store;
         private final Map<String, IconPackStore.Installed> externalById;
         private final List<String> activeIds;
+        private final boolean materialSymbolsEnabled;
         private final IconPackAndroidCatalog catalog;
         private final int densityDpi;
         private final int fallbackSize;
@@ -806,6 +906,7 @@ public final class IconPackRuntime {
             this.store = store;
             this.externalById = Collections.unmodifiableMap(new HashMap<>(externalById));
             this.activeIds = Collections.unmodifiableList(new ArrayList<>(activeIds));
+            this.materialSymbolsEnabled = MaterialSymbolsCatalog.isEnabled();
             this.catalog = new IconPackAndroidCatalog(resources);
             this.densityDpi = resources.getDisplayMetrics().densityDpi;
             this.fallbackSize = Math.max(1, Math.round(FALLBACK_ICON_SIZE_DP * densityDpi
@@ -838,6 +939,7 @@ public final class IconPackRuntime {
                     Collections.emptySet(),
                     Snapshot.empty());
         }
+
     }
 
     private static final class Demand {
@@ -872,9 +974,11 @@ public final class IconPackRuntime {
 
     private static final class Resolution {
         private final String source;
+        private final boolean autoMirrored;
 
-        private Resolution(String source) {
+        private Resolution(String source, boolean autoMirrored) {
             this.source = source;
+            this.autoMirrored = autoMirrored;
         }
     }
 
