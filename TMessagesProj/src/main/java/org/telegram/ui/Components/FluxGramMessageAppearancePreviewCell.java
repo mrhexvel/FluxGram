@@ -32,6 +32,7 @@ public final class FluxGramMessageAppearancePreviewCell extends FrameLayout {
             int account,
             INavigationLayout navigationLayout,
             Theme.ResourcesProvider resourcesProvider,
+            SliderGeometry sliderGeometry,
             Runnable onSettingChanged
     ) {
         super(context);
@@ -82,6 +83,7 @@ public final class FluxGramMessageAppearancePreviewCell extends FrameLayout {
         ));
 
         seekBar = new SeekBarView(context, true, resourcesProvider);
+        seekBar.setSliderGeometry(sliderGeometry);
         seekBar.setReportChanges(true);
         seekBar.setDelegate(new SeekBarView.SeekBarViewDelegate() {
             @Override
@@ -110,7 +112,7 @@ public final class FluxGramMessageAppearancePreviewCell extends FrameLayout {
         seekBar.setColors(color(Theme.key_switchTrack), color(Theme.key_switchTrackChecked));
         addView(seekBar, LayoutHelper.createFrame(
                 LayoutHelper.MATCH_PARENT,
-                44,
+                sliderGeometry == null ? 44 : 48,
                 Gravity.TOP,
                 6,
                 68,
@@ -130,7 +132,7 @@ public final class FluxGramMessageAppearancePreviewCell extends FrameLayout {
                 LayoutHelper.WRAP_CONTENT,
                 Gravity.TOP | Gravity.FILL_HORIZONTAL,
                 0,
-                112,
+                sliderGeometry == null ? 112 : 116,
                 0,
                 0
         ));

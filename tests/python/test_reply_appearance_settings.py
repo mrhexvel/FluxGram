@@ -271,7 +271,7 @@ class ReplyAppearanceSettingsTest(unittest.TestCase):
         self.assertIn("messageAppearancePreviewContainer.addView(messageAppearancePreview", activity)
         self.assertIn("new SeekBarView", combined_preview)
         self.assertNotIn("FluxGramStickerSize));", combined_preview)
-        self.assertIn("112,", combined_preview)
+        self.assertIn("sliderGeometry == null ? 112 : 116", combined_preview)
         self.assertIn("new FluxGramStickerPreviewCell(", combined_preview)
         drag = combined_preview.split(
             "public void onSeekBarDrag(boolean stop, float progress)", 1

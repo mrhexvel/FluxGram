@@ -73,6 +73,7 @@ import org.telegram.ui.Components.FluxGramSettingsHeaderCell;
 import org.telegram.ui.Components.FluxGramStickerShapeCell;
 import org.telegram.ui.Components.ItemOptions;
 import org.telegram.ui.Components.LayoutHelper;
+import org.telegram.ui.Components.SliderGeometry;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalRecyclerView;
 import org.telegram.ui.fluxgram.FluxGramSettingsSections;
@@ -197,6 +198,7 @@ public class FluxGramSettingsActivity extends BaseFragment {
     private FluxGramStickerShapeCell stickerShapeCell;
     private MaterialStylePolicy.State materialStyleState;
     private MaterialVisualStyle.Snapshot materialVisualStyle;
+    private SliderGeometry sliderGeometry;
     private boolean materialStyleExpanded;
     private boolean replyAppearanceExpanded;
     private boolean destroyed;
@@ -261,6 +263,7 @@ public class FluxGramSettingsActivity extends BaseFragment {
         materialVisualStyle = MaterialVisualStyleRuntime.initialize(
                 MaterialStylePolicy.resolve(savedMaterialStyle)
         );
+        sliderGeometry = MaterialControlsStyle.sliderGeometry(materialVisualStyle);
 
         if (section == GENERAL) {
             title = R.string.FluxGramGeneral;
@@ -304,18 +307,21 @@ public class FluxGramSettingsActivity extends BaseFragment {
                     context,
                     currentAccount,
                     getResourceProvider(),
+                    sliderGeometry,
                     this::onAvatarGeometryChanged
             );
             fabShapePreview = new FluxGramFabShapePreviewCell(
                     context,
                     currentAccount,
                     getResourceProvider(),
+                    sliderGeometry,
                     this::scheduleAppearanceRebuild
             );
             sectionRadiusCell = new FluxGramSectionRadiusCell(
                     context,
                     currentAccount,
                     getResourceProvider(),
+                    sliderGeometry,
                     radius -> FluxGramSettingsSections.applyRadius(listView, radius)
             );
             folderPreview = new FluxGramFolderPreviewCell(
@@ -328,6 +334,7 @@ public class FluxGramSettingsActivity extends BaseFragment {
                     currentAccount,
                     parentLayout,
                     getResourceProvider(),
+                    sliderGeometry,
                     this::rebuildChatPresentation
             );
             stickerShapeCell = new FluxGramStickerShapeCell(
@@ -622,15 +629,24 @@ public class FluxGramSettingsActivity extends BaseFragment {
             items.add(UItem.asShadow(null));
             addSectionLabel(items, R.string.FluxGramRounding);
             avatarGeometryPreview.update();
-            items.add(UItem.asCustom(avatarGeometryPreview, 222));
+            items.add(UItem.asCustom(
+                    avatarGeometryPreview,
+                    sliderGeometry == null ? 222 : 226
+            ));
             items.add(UItem.asCheck(
                     UNIFIED_AVATAR_RADIUS,
                     LocaleController.getString(R.string.FluxGramUnifiedAvatarRadius)
             ).setChecked(AppearanceSettings.usesUnifiedAvatarRadius(currentAccount)));
             fabShapePreview.update();
-            items.add(UItem.asCustom(fabShapePreview, 104));
+            items.add(UItem.asCustom(
+                    fabShapePreview,
+                    sliderGeometry == null ? 104 : 108
+            ));
             sectionRadiusCell.update();
-            items.add(UItem.asCustom(sectionRadiusCell, 104));
+            items.add(UItem.asCustom(
+                    sectionRadiusCell,
+                    sliderGeometry == null ? 104 : 108
+            ));
             items.add(UItem.asButton(
                     SETTINGS_DIVIDER_STYLE,
                     LocaleController.getString(R.string.FluxGramDividerStyle),

@@ -42,6 +42,7 @@ public final class FluxGramAvatarGeometryPreviewCell extends FrameLayout {
             Context context,
             int account,
             Theme.ResourcesProvider resourcesProvider,
+            SliderGeometry sliderGeometry,
             Runnable onSettingChanged
     ) {
         super(context);
@@ -116,6 +117,7 @@ public final class FluxGramAvatarGeometryPreviewCell extends FrameLayout {
         ));
 
         seekBar = new SeekBarView(context, true, resourcesProvider);
+        seekBar.setSliderGeometry(sliderGeometry);
         seekBar.setReportChanges(true);
         seekBar.setSeparatorsCount(AvatarGeometry.MAX_CORNER_RADIUS + 1);
         seekBar.setDelegate(new SeekBarView.SeekBarViewDelegate() {
@@ -146,7 +148,7 @@ public final class FluxGramAvatarGeometryPreviewCell extends FrameLayout {
         });
         addView(seekBar, LayoutHelper.createFrame(
                 LayoutHelper.MATCH_PARENT,
-                44,
+                sliderGeometry == null ? 44 : 48,
                 Gravity.TOP,
                 6,
                 65,
@@ -160,7 +162,7 @@ public final class FluxGramAvatarGeometryPreviewCell extends FrameLayout {
                 89,
                 Gravity.TOP | Gravity.FILL_HORIZONTAL,
                 21,
-                112,
+                sliderGeometry == null ? 112 : 116,
                 21,
                 0
         ));

@@ -261,7 +261,7 @@ class AppearanceSettingsTest(unittest.TestCase):
         self.assertNotIn("addSectionLabel(items, R.string.FluxGramFloatingButton);", activity)
         self.assertIn("R.string.FluxGramFloatingButton", preview)
         self.assertNotIn("new FragmentFloatingButton", preview)
-        self.assertIn("UItem.asCustom(fabShapePreview, 104)", activity)
+        self.assertIn("sliderGeometry == null ? 104 : 108", activity)
         self.assertIn("setSeparatorsCount(AppearanceSettings.MAX_FAB_CORNER_RADIUS + 1)", preview)
         self.assertIn("AppearanceSettings.setFabCornerRadius(account, radius);", preview)
         self.assertIn("if (stop)", preview)
@@ -430,10 +430,9 @@ class AppearanceSettingsTest(unittest.TestCase):
             "addSectionLabel(items, R.string.FluxGramRounding);", 1
         )[1].split("addSectionLabel(items, R.string.FluxGramGlass);", 1)[0]
 
-        self.assertIn("UItem.asCustom(avatarGeometryPreview, 222)", rounding)
+        self.assertIn("sliderGeometry == null ? 222 : 226", rounding)
         self.assertIn("UItem.asCheck(\n                    UNIFIED_AVATAR_RADIUS", rounding)
-        self.assertIn("UItem.asCustom(fabShapePreview, 104)", rounding)
-        self.assertIn("UItem.asCustom(sectionRadiusCell, 104)", rounding)
+        self.assertEqual(2, rounding.count("sliderGeometry == null ? 104 : 108"))
         self.assertIn("SETTINGS_DIVIDER_STYLE", rounding)
         self.assertEqual(1, rounding.count("UItem.asShadow(null)"))
         self.assertNotIn("addSectionLabel", rounding)

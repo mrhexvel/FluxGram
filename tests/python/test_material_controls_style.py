@@ -15,10 +15,12 @@ CHECK_BOX = JAVA / "ui/Components/CheckBoxBase.java"
 CHECK_BOX_2 = JAVA / "ui/Components/CheckBox2.java"
 CHECK_BOX_CELL = JAVA / "ui/Cells/CheckBoxCell.java"
 CHECK_BOX_GEOMETRY = JAVA / "ui/Components/CheckBoxGeometry.java"
+SLIDER_GEOMETRY = JAVA / "ui/Components/SliderGeometry.java"
 RADIO_BUTTON = JAVA / "ui/Components/RadioButton.java"
 RADIO_COLOR_CELL = JAVA / "ui/Cells/RadioColorCell.java"
 SWITCH = JAVA / "ui/Components/Switch.java"
 SWITCH_GEOMETRY = JAVA / "ui/Components/SwitchGeometry.java"
+SEEK_BAR = JAVA / "ui/Components/SeekBarView.java"
 TEXT_CHECK = JAVA / "ui/Cells/TextCheckCell.java"
 UNIVERSAL_ADAPTER = JAVA / "ui/Components/UniversalAdapter.java"
 SETTINGS = JAVA / "ui/FluxGramSettingsActivity.java"
@@ -37,6 +39,7 @@ class MaterialControlsStyleTest(unittest.TestCase):
                 import org.telegram.messenger.fluxgram.MaterialStylePolicy;
                 import org.telegram.messenger.fluxgram.MaterialVisualStyle;
                 import org.telegram.ui.Components.CheckBoxGeometry;
+                import org.telegram.ui.Components.SliderGeometry;
                 import org.telegram.ui.Components.SwitchGeometry;
                 import org.telegram.ui.fluxgram.MaterialControlsStyle;
 
@@ -66,6 +69,22 @@ class MaterialControlsStyleTest(unittest.TestCase):
                         require(checkBoxGeometry == MaterialControlsStyle.checkBoxGeometry(
                                 style(MaterialStylePolicy.Module.CONTROLS)
                         ));
+
+                        SliderGeometry sliderGeometry = MaterialControlsStyle.sliderGeometry(
+                                style(MaterialStylePolicy.Module.CONTROLS)
+                        );
+                        require(sliderGeometry != null);
+                        require(sliderGeometry.getTrackHeightDp() == 16);
+                        require(sliderGeometry.getThumbWidthDp() == 4);
+                        require(sliderGeometry.getThumbHeightDp() == 36);
+                        require(sliderGeometry.getThumbTrackGapDp() == 6);
+                        require(sliderGeometry.getTrackInsideCornerRadiusDp() == 2);
+                        require(sliderGeometry.getStopIndicatorSizeDp() == 4);
+                        require(sliderGeometry.getPressedThumbWidthRatio() == 0.5f);
+                        require(sliderGeometry == MaterialControlsStyle.sliderGeometry(
+                                style(MaterialStylePolicy.Module.CONTROLS)
+                        ));
+                        require(MaterialControlsStyle.sliderGeometry(icons) == null);
 
                         SwitchGeometry geometry = MaterialControlsStyle.switchGeometry(
                                 style(MaterialStylePolicy.Module.CONTROLS)
@@ -178,6 +197,7 @@ class MaterialControlsStyleTest(unittest.TestCase):
                     str(POLICY),
                     str(STYLE),
                     str(CHECK_BOX_GEOMETRY),
+                    str(SLIDER_GEOMETRY),
                     str(SWITCH_GEOMETRY),
                     str(ADAPTER),
                     str(check),
@@ -197,12 +217,14 @@ class MaterialControlsStyleTest(unittest.TestCase):
         radio_button = RADIO_BUTTON.read_text()
         radio_color_cell = RADIO_COLOR_CELL.read_text()
         switch = SWITCH.read_text()
+        seek_bar = SEEK_BAR.read_text()
         text_check = TEXT_CHECK.read_text()
         universal = UNIVERSAL_ADAPTER.read_text()
         settings = SETTINGS.read_text()
 
         self.assertIn("new SwitchGeometry(", adapter)
         self.assertIn("new CheckBoxGeometry(", adapter)
+        self.assertIn("new SliderGeometry(", adapter)
         self.assertIn("MaterialStylePolicy.Module.CONTROLS", adapter)
         self.assertIn("MaterialVisualStyle.ShapeRole.FULL", adapter)
         self.assertNotIn("MaterialStyleSettings", adapter)
@@ -248,6 +270,15 @@ class MaterialControlsStyleTest(unittest.TestCase):
         self.assertIn("LocaleController.isRTL", switch)
         self.assertIn("info.setClassName(\"android.widget.Switch\")", switch)
 
+        self.assertIn("setSliderGeometry(SliderGeometry geometry)", seek_bar)
+        self.assertIn("if (sliderGeometry != null)", seek_bar)
+        self.assertIn("drawSliderGeometry(canvas, thumbX)", seek_bar)
+        self.assertIn("sliderGeometry.getPressedThumbWidthRatio()", seek_bar)
+        self.assertIn("sliderGeometry.getStopIndicatorSizeDp()", seek_bar)
+        self.assertIn("gap -= (thumbWidth - pressedThumbWidth) / 2.0f", seek_bar)
+        self.assertIn("sliderGeometry != null && LocaleController.isRTL", seek_bar)
+        self.assertIn("Math.abs(stopIndicatorX - centerX) > gap + thumbWidth / 2.0f", seek_bar)
+
         self.assertIn("setSwitchGeometry(SwitchGeometry geometry)", text_check)
         self.assertIn("switchGeometry == null ? 37", text_check)
         self.assertIn("switchGeometry == null ? 20", text_check)
@@ -274,6 +305,11 @@ class MaterialControlsStyleTest(unittest.TestCase):
             "MaterialControlsStyle.checkBoxGeometry(materialVisualStyle)",
             settings,
         )
+        self.assertIn(
+            "MaterialControlsStyle.sliderGeometry(materialVisualStyle)",
+            settings,
+        )
+        self.assertEqual(settings.count("sliderGeometry,"), 4)
 
 
 if __name__ == "__main__":

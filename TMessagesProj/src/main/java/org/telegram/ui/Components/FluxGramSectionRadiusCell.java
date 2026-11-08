@@ -33,6 +33,7 @@ public final class FluxGramSectionRadiusCell extends FrameLayout {
             Context context,
             int account,
             Theme.ResourcesProvider resourcesProvider,
+            SliderGeometry sliderGeometry,
             Utilities.Callback<Integer> onRadiusChanged
     ) {
         super(context);
@@ -99,6 +100,7 @@ public final class FluxGramSectionRadiusCell extends FrameLayout {
         ));
 
         seekBar = new SeekBarView(context, true, resourcesProvider);
+        seekBar.setSliderGeometry(sliderGeometry);
         seekBar.setReportChanges(true);
         seekBar.setSeparatorsCount(AppearanceSettings.MAX_SETTINGS_SECTION_RADIUS + 1);
         seekBar.setDelegate(new SeekBarView.SeekBarViewDelegate() {
@@ -129,7 +131,7 @@ public final class FluxGramSectionRadiusCell extends FrameLayout {
         });
         addView(seekBar, LayoutHelper.createFrame(
                 LayoutHelper.MATCH_PARENT,
-                44,
+                sliderGeometry == null ? 44 : 48,
                 Gravity.TOP,
                 6,
                 59,

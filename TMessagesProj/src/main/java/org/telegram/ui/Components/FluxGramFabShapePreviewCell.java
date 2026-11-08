@@ -33,6 +33,7 @@ public final class FluxGramFabShapePreviewCell extends FrameLayout {
             Context context,
             int account,
             Theme.ResourcesProvider resourcesProvider,
+            SliderGeometry sliderGeometry,
             Runnable onSettingChanged
     ) {
         super(context);
@@ -99,6 +100,7 @@ public final class FluxGramFabShapePreviewCell extends FrameLayout {
         ));
 
         seekBar = new SeekBarView(context, true, resourcesProvider);
+        seekBar.setSliderGeometry(sliderGeometry);
         seekBar.setReportChanges(true);
         seekBar.setSeparatorsCount(AppearanceSettings.MAX_FAB_CORNER_RADIUS + 1);
         seekBar.setDelegate(new SeekBarView.SeekBarViewDelegate() {
@@ -126,7 +128,7 @@ public final class FluxGramFabShapePreviewCell extends FrameLayout {
         });
         addView(seekBar, LayoutHelper.createFrame(
                 LayoutHelper.MATCH_PARENT,
-                44,
+                sliderGeometry == null ? 44 : 48,
                 Gravity.TOP,
                 6,
                 59,

@@ -40,6 +40,7 @@ import androidx.core.graphics.ColorUtils;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.Emoji;
 import org.telegram.messenger.FileLog;
+import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.Utilities;
@@ -94,6 +95,10 @@ public class SeekBarView extends FrameLayout implements Theme.Colorable {
     private int transitionThumbX;
     private int separatorsCount;
     private int lineWidthDp = 3;
+    private SliderGeometry sliderGeometry;
+    private final Path sliderGeometryPath = new Path();
+    private final float[] sliderGeometryRadii = new float[8];
+    private final RectF sliderGeometryCornerRect = new RectF();
 
     private boolean twoSided;
     private final Theme.ResourcesProvider resourcesProvider;
@@ -280,7 +285,7 @@ public class SeekBarView extends FrameLayout implements Theme.Colorable {
                             setSeekBarDrag(false, -Math.max(0.01f, 1.0f - (w - thumbX) / w));
                         }
                     } else {
-                        setSeekBarDrag(true, (float) thumbX / (float) (getMeasuredWidth() - selectorWidth));
+                        setSeekBarDrag(true, progressForThumbX(thumbX));
                     }
                 }
                 if (Build.VERSION.SDK_INT >= 21 && hoverDrawable != null) {
@@ -339,7 +344,7 @@ public class SeekBarView extends FrameLayout implements Theme.Colorable {
                                 setSeekBarDrag(false, -Math.max(0.01f, 1.0f - (w - thumbX) / w));
                             }
                         } else {
-                            setSeekBarDrag(false, (float) thumbX / (float) (getMeasuredWidth() - selectorWidth));
+                            setSeekBarDrag(false, progressForThumbX(thumbX));
                         }
                     }
                     if (Build.VERSION.SDK_INT >= 21 && hoverDrawable != null) {
@@ -361,6 +366,11 @@ public class SeekBarView extends FrameLayout implements Theme.Colorable {
         lineWidthDp = dp;
     }
 
+    public void setSliderGeometry(SliderGeometry geometry) {
+        sliderGeometry = geometry;
+        invalidate();
+    }
+
     int lastValue;
     private void setSeekBarDrag(boolean stop, float progress) {
         if (delegate != null) {
@@ -379,7 +389,12 @@ public class SeekBarView extends FrameLayout implements Theme.Colorable {
         if (getMeasuredWidth() == 0) {
             return progressToSet;
         }
-        return thumbX / (float) (getMeasuredWidth() - selectorWidth);
+        return progressForThumbX(thumbX);
+    }
+
+    private float progressForThumbX(int thumbX) {
+        float progress = thumbX / (float) (getMeasuredWidth() - selectorWidth);
+        return sliderGeometry != null && LocaleController.isRTL ? 1.0f - progress : progress;
     }
 
     public void setProgress(float progress) {
@@ -402,6 +417,9 @@ public class SeekBarView extends FrameLayout implements Theme.Colorable {
                 newThumbX = (int) Math.ceil(cx + w / 2 * progress);
             }
         } else {
+            if (sliderGeometry != null && LocaleController.isRTL) {
+                progress = 1.0f - progress;
+            }
             newThumbX = (int) Math.ceil((getMeasuredWidth() - selectorWidth) * progress);
         }
         if (thumbX != newThumbX) {
@@ -462,6 +480,11 @@ public class SeekBarView extends FrameLayout implements Theme.Colorable {
         } else if (delegate != null && delegate.needVisuallyDivideSteps()) {
             float step = (getMeasuredWidth() - selectorWidth) / ((float) delegate.getStepsCount() - 1f);
             thumbX = (int) (Math.round((thumbX) / step) * step);
+        }
+        if (sliderGeometry != null) {
+            drawSliderGeometry(canvas, thumbX);
+            drawTimestampLabel(canvas);
+            return;
         }
         int y = (getMeasuredHeight() - thumbSize) / 2;
         innerPaint1.setColor(getThemedColor(Theme.key_player_progressBackground));
@@ -551,6 +574,129 @@ public class SeekBarView extends FrameLayout implements Theme.Colorable {
         if (needInvalidate) {
             postInvalidateOnAnimation();
         }
+    }
+
+    private void drawSliderGeometry(Canvas canvas, int thumbX) {
+        float centerY = getMeasuredHeight() / 2.0f;
+        float centerX = thumbX + selectorWidth / 2.0f;
+        float trackHeight = AndroidUtilities.dpf2(sliderGeometry.getTrackHeightDp());
+        float outerRadius = trackHeight / 2.0f;
+        float innerRadius = AndroidUtilities.dpf2(sliderGeometry.getTrackInsideCornerRadiusDp());
+        float thumbWidth = AndroidUtilities.dpf2(sliderGeometry.getThumbWidthDp());
+        float thumbHeight = AndroidUtilities.dpf2(sliderGeometry.getThumbHeightDp());
+        float gap = AndroidUtilities.dpf2(sliderGeometry.getThumbTrackGapDp());
+
+        if (pressed) {
+            float pressedThumbWidth = thumbWidth * sliderGeometry.getPressedThumbWidthRatio();
+            gap -= (thumbWidth - pressedThumbWidth) / 2.0f;
+            thumbWidth = pressedThumbWidth;
+        }
+
+        float trackLeft = selectorWidth / 2.0f - outerRadius;
+        float trackRight = getMeasuredWidth() - selectorWidth / 2.0f + outerRadius;
+        float trackTop = centerY - trackHeight / 2.0f;
+        float trackBottom = centerY + trackHeight / 2.0f;
+        float activeRight = centerX - gap;
+        float inactiveLeft = centerX + gap;
+        float startStopX = selectorWidth / 2.0f;
+        float endStopX = getMeasuredWidth() - selectorWidth / 2.0f;
+        float startRadius = Math.min(
+                outerRadius,
+                Math.max(centerX - startStopX, innerRadius)
+        );
+        float endRadius = Math.min(
+                outerRadius,
+                Math.max(endStopX - centerX, innerRadius)
+        );
+        boolean isRtl = LocaleController.isRTL;
+
+        if (isRtl) {
+            if (activeRight - trackLeft > outerRadius - gap) {
+                rect.set(trackLeft, trackTop, activeRight, trackBottom);
+                drawSliderGeometryTrack(canvas, rect, innerPaint1, startRadius, innerRadius);
+            }
+
+            if (inactiveLeft < trackRight) {
+                rect.set(inactiveLeft, trackTop, trackRight, trackBottom);
+                drawSliderGeometryTrack(canvas, rect, outerPaint1, innerRadius, endRadius);
+            }
+        } else {
+            if (activeRight > trackLeft) {
+                rect.set(trackLeft, trackTop, activeRight, trackBottom);
+                drawSliderGeometryTrack(canvas, rect, outerPaint1, startRadius, innerRadius);
+            }
+
+            if (trackRight - inactiveLeft > outerRadius - gap) {
+                rect.set(inactiveLeft, trackTop, trackRight, trackBottom);
+                drawSliderGeometryTrack(canvas, rect, innerPaint1, innerRadius, endRadius);
+            }
+        }
+
+        float stopIndicatorSize = AndroidUtilities.dpf2(sliderGeometry.getStopIndicatorSizeDp());
+        float stopIndicatorX = isRtl ? startStopX : endStopX;
+        if (stopIndicatorSize > 0
+                && Math.abs(stopIndicatorX - centerX) > gap + thumbWidth / 2.0f) {
+            canvas.drawCircle(stopIndicatorX, centerY, stopIndicatorSize / 2.0f, outerPaint1);
+        }
+
+        rect.set(
+                centerX - thumbWidth / 2.0f,
+                centerY - thumbHeight / 2.0f,
+                centerX + thumbWidth / 2.0f,
+                centerY + thumbHeight / 2.0f
+        );
+        canvas.drawRoundRect(rect, thumbWidth / 2.0f, thumbWidth / 2.0f, outerPaint1);
+    }
+
+    private void drawSliderGeometryTrack(
+            Canvas canvas,
+            RectF bounds,
+            Paint paint,
+            float leftRadius,
+            float rightRadius
+    ) {
+        sliderGeometryRadii[0] = leftRadius;
+        sliderGeometryRadii[1] = leftRadius;
+        sliderGeometryRadii[2] = rightRadius;
+        sliderGeometryRadii[3] = rightRadius;
+        sliderGeometryRadii[4] = rightRadius;
+        sliderGeometryRadii[5] = rightRadius;
+        sliderGeometryRadii[6] = leftRadius;
+        sliderGeometryRadii[7] = leftRadius;
+        sliderGeometryPath.reset();
+        if (bounds.width() >= leftRadius + rightRadius) {
+            sliderGeometryPath.addRoundRect(bounds, sliderGeometryRadii, Path.Direction.CW);
+            canvas.drawPath(sliderGeometryPath, paint);
+            return;
+        }
+
+        float minimumRadius = Math.min(leftRadius, rightRadius);
+        float maximumRadius = Math.max(leftRadius, rightRadius);
+        sliderGeometryPath.addRoundRect(bounds, minimumRadius, minimumRadius, Path.Direction.CW);
+        canvas.save();
+        canvas.clipPath(sliderGeometryPath);
+        if (leftRadius > rightRadius) {
+            sliderGeometryCornerRect.set(
+                    bounds.left,
+                    bounds.top,
+                    bounds.left + 2.0f * maximumRadius,
+                    bounds.bottom
+            );
+        } else {
+            sliderGeometryCornerRect.set(
+                    bounds.right - 2.0f * maximumRadius,
+                    bounds.top,
+                    bounds.right,
+                    bounds.bottom
+            );
+        }
+        canvas.drawRoundRect(
+                sliderGeometryCornerRect,
+                maximumRadius,
+                maximumRadius,
+                paint
+        );
+        canvas.restore();
     }
 
     private ArrayList<Pair<Float, CharSequence>> timestamps;
