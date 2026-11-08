@@ -12,6 +12,8 @@ JAVA = SOURCE_ROOT / "org/telegram"
 POLICY = JAVA / "messenger/fluxgram/MaterialStylePolicy.java"
 STYLE = JAVA / "messenger/fluxgram/MaterialVisualStyle.java"
 RUNTIME = JAVA / "messenger/fluxgram/MaterialVisualStyleRuntime.java"
+ACTIVITY = JAVA / "ui/FluxGramSettingsActivity.java"
+HEADER = JAVA / "ui/Components/FluxGramSettingsHeaderCell.java"
 
 
 class MaterialVisualStyleTest(unittest.TestCase):
@@ -255,7 +257,7 @@ class MaterialVisualStyleTest(unittest.TestCase):
                 check=True,
             )
 
-    def test_foundation_has_no_android_or_production_consumer(self):
+    def test_foundation_stays_android_independent_and_pilot_is_bounded(self):
         for path in (STYLE, RUNTIME):
             source = path.read_text()
             self.assertNotIn("android.", source)
@@ -271,7 +273,33 @@ class MaterialVisualStyleTest(unittest.TestCase):
             if "MaterialVisualStyle" in source or "MaterialVisualStyleRuntime" in source:
                 consumers.append(path.relative_to(SOURCE_ROOT).as_posix())
 
-        self.assertEqual([], consumers)
+        self.assertEqual(
+            [
+                "org/telegram/ui/Components/FluxGramSettingsHeaderCell.java",
+                "org/telegram/ui/FluxGramSettingsActivity.java",
+            ],
+            sorted(consumers),
+        )
+
+        activity = ACTIVITY.read_text()
+        header = HEADER.read_text()
+        self.assertIn("MaterialVisualStyleRuntime.initialize(", activity)
+        self.assertIn("resolveMaterialStyle(savedMaterialStyle)", activity)
+        self.assertIn("header.getPreferredHeightDp()", activity)
+        self.assertIn("MaterialStylePolicy.Module.SURFACES", header)
+        self.assertIn("MaterialVisualStyle.ShapeRole.EXTRA_LARGE", header)
+        self.assertIn("MaterialVisualStyle.TypographyRole.TITLE_LARGE", header)
+        self.assertIn("MaterialVisualStyle.TypographyRole.BODY_MEDIUM", header)
+        self.assertIn("materialSurface ? iconShape.getRadiusDp() : 24", header)
+        self.assertIn("materialSurface ? titleTypography.getSizeSp() : 25", header)
+        self.assertIn("materialSurface ? bodyTypography.getSizeSp() : 13", header)
+        self.assertIn("view.getTextPaint().getFontMetricsInt(null)", header)
+        self.assertIn("Math.max(rolePixels, fontPixels)", header)
+        self.assertIn("icon instanceof AdaptiveIconDrawable", header)
+        self.assertIn("adaptiveIcon.getBackground()", header)
+        self.assertIn("adaptiveIcon.getForeground()", header)
+        self.assertIn("Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)", header)
+        self.assertIn("layers.draw(new Canvas(bitmap))", header)
 
 
 if __name__ == "__main__":

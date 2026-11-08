@@ -228,6 +228,7 @@ class MaterialStylePolicyTest(unittest.TestCase):
             [
                 "messenger/fluxgram/MaterialVisualStyle.java",
                 "messenger/fluxgram/MaterialVisualStyleRuntime.java",
+                "ui/Components/FluxGramSettingsHeaderCell.java",
                 "ui/FluxGramSettingsActivity.java",
             ],
             sorted(consumers),

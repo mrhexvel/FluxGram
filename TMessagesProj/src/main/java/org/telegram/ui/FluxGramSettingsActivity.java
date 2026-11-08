@@ -33,6 +33,8 @@ import org.telegram.messenger.fluxgram.FontSettings;
 import org.telegram.messenger.fluxgram.GeneralSettings;
 import org.telegram.messenger.fluxgram.MaterialStylePolicy;
 import org.telegram.messenger.fluxgram.MaterialStyleSettings;
+import org.telegram.messenger.fluxgram.MaterialVisualStyle;
+import org.telegram.messenger.fluxgram.MaterialVisualStyleRuntime;
 import org.telegram.messenger.fluxgram.MessageActionExecutor;
 import org.telegram.messenger.fluxgram.MessageGestureSettings;
 import org.telegram.messenger.fluxgram.NavigationSettings;
@@ -194,6 +196,7 @@ public class FluxGramSettingsActivity extends BaseFragment {
     private FrameLayout messageAppearancePreviewContainer;
     private FluxGramStickerShapeCell stickerShapeCell;
     private MaterialStylePolicy.State materialStyleState;
+    private MaterialVisualStyle.Snapshot materialVisualStyle;
     private boolean materialStyleExpanded;
     private boolean replyAppearanceExpanded;
     private boolean destroyed;
@@ -254,6 +257,10 @@ public class FluxGramSettingsActivity extends BaseFragment {
     @Override
     public View createView(Context context) {
         int title = R.string.FluxGramSettings;
+        MaterialStylePolicy.State savedMaterialStyle = MaterialStyleSettings.getState();
+        materialVisualStyle = MaterialVisualStyleRuntime.initialize(
+                resolveMaterialStyle(savedMaterialStyle)
+        );
 
         if (section == GENERAL) {
             title = R.string.FluxGramGeneral;
@@ -289,7 +296,7 @@ public class FluxGramSettingsActivity extends BaseFragment {
                     context, currentAccount, parentLayout, getResourceProvider()
             );
         } else if (section == APPEARANCE) {
-            materialStyleState = MaterialStyleSettings.getState();
+            materialStyleState = savedMaterialStyle;
             appearancePreview = new FluxGramChatListPreviewCell(
                     context, currentAccount, getResourceProvider()
             );
@@ -371,8 +378,10 @@ public class FluxGramSettingsActivity extends BaseFragment {
 
     private void fillItems(ArrayList<UItem> items) {
         if (section == HOME) {
-            items.add(UItem.asCustomShadow(new FluxGramSettingsHeaderCell(
-                    getParentActivity(), getResourceProvider()), 220));
+            FluxGramSettingsHeaderCell header = new FluxGramSettingsHeaderCell(
+                    getParentActivity(), getResourceProvider(), materialVisualStyle
+            );
+            items.add(UItem.asCustomShadow(header, header.getPreferredHeightDp()));
             addSectionLabel(items, R.string.FluxGramPrivacy);
             items.add(UItem.asButton(
                     GHOST_MODE,

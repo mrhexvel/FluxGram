@@ -122,6 +122,7 @@ class MaterialStyleUiTest(unittest.TestCase):
                 "MaterialStyleSettings.java",
                 "MaterialVisualStyle.java",
                 "MaterialVisualStyleRuntime.java",
+                "FluxGramSettingsHeaderCell.java",
                 "FluxGramSettingsActivity.java",
             ):
                 continue
