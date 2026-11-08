@@ -129,6 +129,7 @@ public class UniversalAdapter extends AdapterWithDiffUtils {
     private boolean applyBackground = true;
     private boolean dividersEnabled = true;
     private boolean compactTextCells;
+    private CheckBoxGeometry roundCheckBoxGeometry;
     private SwitchGeometry checkCellSwitchGeometry;
     protected Utilities.Callback2<ArrayList<UItem>, UniversalAdapter> fillItems;
     private final Theme.ResourcesProvider resourcesProvider;
@@ -175,6 +176,10 @@ public class UniversalAdapter extends AdapterWithDiffUtils {
 
     public void setCheckCellSwitchGeometry(SwitchGeometry geometry) {
         checkCellSwitchGeometry = geometry;
+    }
+
+    public void setRoundCheckBoxGeometry(CheckBoxGeometry geometry) {
+        roundCheckBoxGeometry = geometry;
     }
 
     public void setDividersEnabled(boolean dividersEnabled) {
@@ -600,6 +605,7 @@ public class UniversalAdapter extends AdapterWithDiffUtils {
                 }
                 CheckBoxCell checkBoxCell = new CheckBoxCell(context, checkBoxType, 21, true, resourcesProvider);
                 checkBoxCell.getCheckBoxRound().setColor(Theme.key_switch2TrackChecked, Theme.key_radioBackground, Theme.key_checkboxCheck);
+                checkBoxCell.setCheckBoxGeometry(roundCheckBoxGeometry);
                 view = checkBoxCell;
                 break;
             case VIEW_TYPE_SHADOW_COLLAPSE_BUTTON:
@@ -1078,6 +1084,7 @@ public class UniversalAdapter extends AdapterWithDiffUtils {
             case VIEW_TYPE_ROUND_GROUP_CHECKBOX:
             case VIEW_TYPE_USER_GROUP_CHECKBOX:
                 CheckBoxCell checkBoxCell = (CheckBoxCell) holder.itemView;
+                checkBoxCell.setCheckBoxGeometry(roundCheckBoxGeometry);
                 checkBoxCell.setPad(item.pad);
                 checkBoxCell.setText(item.text, "", item.checked, divider, checkBoxCell.itemId == item.id);
                 checkBoxCell.itemId = item.id;

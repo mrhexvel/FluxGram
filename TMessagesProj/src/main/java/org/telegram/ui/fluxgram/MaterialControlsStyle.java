@@ -2,9 +2,19 @@ package org.telegram.ui.fluxgram;
 
 import org.telegram.messenger.fluxgram.MaterialStylePolicy;
 import org.telegram.messenger.fluxgram.MaterialVisualStyle;
+import org.telegram.ui.Components.CheckBoxGeometry;
 import org.telegram.ui.Components.SwitchGeometry;
 
 public final class MaterialControlsStyle {
+    private static final CheckBoxGeometry CHECK_BOX_GEOMETRY = new CheckBoxGeometry(
+            18,
+            2,
+            2,
+            0.6f,
+            350,
+            150,
+            50
+    );
     private static final SwitchGeometry SWITCH_GEOMETRY = new SwitchGeometry(
             44,
             24,
@@ -20,9 +30,25 @@ public final class MaterialControlsStyle {
     private MaterialControlsStyle() {
     }
 
-    public static SwitchGeometry switchGeometry(MaterialVisualStyle.Snapshot style) {
-        if (style == null || !style.isEnabled(MaterialStylePolicy.Module.CONTROLS)) {
+    public static CheckBoxGeometry checkBoxGeometry(MaterialVisualStyle.Snapshot style) {
+        if (!usesMaterialControls(style)) {
             return null;
+        }
+
+        return CHECK_BOX_GEOMETRY;
+    }
+
+    public static SwitchGeometry switchGeometry(MaterialVisualStyle.Snapshot style) {
+        if (!usesMaterialControls(style)) {
+            return null;
+        }
+
+        return SWITCH_GEOMETRY;
+    }
+
+    private static boolean usesMaterialControls(MaterialVisualStyle.Snapshot style) {
+        if (style == null || !style.isEnabled(MaterialStylePolicy.Module.CONTROLS)) {
+            return false;
         }
 
         MaterialVisualStyle.Shape shape = style.getShape(
@@ -30,6 +56,6 @@ public final class MaterialControlsStyle {
                 MaterialVisualStyle.ShapeRole.FULL
         );
 
-        return shape != null && shape.isFull() ? SWITCH_GEOMETRY : null;
+        return shape != null && shape.isFull();
     }
 }

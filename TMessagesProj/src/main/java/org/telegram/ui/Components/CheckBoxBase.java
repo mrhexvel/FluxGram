@@ -19,6 +19,7 @@ import android.graphics.RectF;
 import android.graphics.Shader;
 import android.text.TextPaint;
 import android.view.View;
+import android.view.animation.LinearInterpolator;
 
 import androidx.annotation.Keep;
 import androidx.core.graphics.ColorUtils;
@@ -26,6 +27,7 @@ import androidx.core.graphics.ColorUtils;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.GenericProvider;
 import org.telegram.messenger.LocaleController;
+import org.telegram.messenger.Utilities;
 import org.telegram.ui.ActionBar.MessageDrawable;
 import org.telegram.ui.ActionBar.Theme;
 
@@ -39,6 +41,8 @@ public class CheckBoxBase {
     private Paint checkPaint;
     public float checkScale = 1.0f;
     private Paint backgroundPaint;
+    private final Paint geometryPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint geometryOutlinePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private TextPaint textPaint;
     private static Paint forbidPaint;
 
@@ -74,6 +78,8 @@ public class CheckBoxBase {
     private boolean forbidden;
     private float progress;
     private ObjectAnimator checkAnimator;
+    private ObjectAnimator geometryFadeAnimator;
+    private float geometryFillAlpha;
 
     private boolean isChecked;
 
@@ -84,6 +90,7 @@ public class CheckBoxBase {
     private int strokeBackgroundWidth = -1;
     private float customRadius = 0;
     private float customRadiusFactor = 1;
+    private CheckBoxGeometry geometry;
 
     private int backgroundColor;
 
@@ -186,6 +193,18 @@ public class CheckBoxBase {
         invalidate();
     }
 
+    public void setGeometry(CheckBoxGeometry geometry) {
+        if (this.geometry == geometry) {
+            return;
+        }
+
+        cancelCheckAnimator();
+        this.geometry = geometry;
+        geometryFillAlpha = isChecked ? 1.0f : 0.0f;
+        setProgress(isChecked ? 1.0f : 0.0f);
+        invalidate();
+    }
+
     public void setDrawUnchecked(boolean value) {
         if (drawUnchecked == value) {
             return;
@@ -273,10 +292,44 @@ public class CheckBoxBase {
             checkAnimator.cancel();
             checkAnimator = null;
         }
+        if (geometryFadeAnimator != null) {
+            geometryFadeAnimator.cancel();
+            geometryFadeAnimator = null;
+        }
+    }
+
+    @Keep
+    public void setGeometryFillAlpha(float value) {
+        if (geometryFillAlpha == value) {
+            return;
+        }
+
+        geometryFillAlpha = value;
+        invalidate();
+    }
+
+    @Keep
+    public float getGeometryFillAlpha() {
+        return geometryFillAlpha;
     }
 
     public long animationDuration = 200;
     private void animateToCheckedState(boolean newCheckedState) {
+        if (geometry != null) {
+            cancelCheckAnimator();
+            geometryFadeAnimator = ObjectAnimator.ofFloat(
+                    this,
+                    "geometryFillAlpha",
+                    newCheckedState ? 1.0f : 0.0f
+            );
+            geometryFadeAnimator.setInterpolator(new LinearInterpolator());
+            geometryFadeAnimator.setDuration(Math.max(1, (long) (
+                    geometry.getFadeDurationMs()
+                            * Math.abs((newCheckedState ? 1.0f : 0.0f) - geometryFillAlpha)
+            )));
+            geometryFadeAnimator.start();
+        }
+
         checkAnimator = ObjectAnimator.ofFloat(this, "progress", newCheckedState ? 1 : 0);
         checkAnimator.addListener(new AnimatorListenerAdapter() {
             @Override
@@ -289,8 +342,20 @@ public class CheckBoxBase {
                 }
             }
         });
-        checkAnimator.setInterpolator(CubicBezierInterpolator.EASE_OUT);
-        checkAnimator.setDuration(animationDuration);
+        if (geometry == null) {
+            checkAnimator.setInterpolator(CubicBezierInterpolator.EASE_OUT);
+            checkAnimator.setDuration(animationDuration);
+        } else {
+            checkAnimator.setInterpolator(newCheckedState
+                    ? CubicBezierInterpolator.EmphasizedDecelerate
+                    : CubicBezierInterpolator.EmphasizedAccelerate);
+            long duration = newCheckedState
+                    ? geometry.getCheckDurationMs()
+                    : geometry.getUncheckDurationMs();
+            checkAnimator.setDuration(Math.max(1, (long) (duration * Math.abs(
+                    (newCheckedState ? 1.0f : 0.0f) - progress
+            ))));
+        }
         checkAnimator.start();
     }
 
@@ -381,6 +446,11 @@ public class CheckBoxBase {
             }
         }
         if (checked == isChecked) {
+            if (geometry != null && !animated) {
+                cancelCheckAnimator();
+                setGeometryFillAlpha(checked ? 1.0f : 0.0f);
+                setProgress(checked ? 1.0f : 0.0f);
+            }
             return;
         }
         isChecked = checked;
@@ -389,11 +459,19 @@ public class CheckBoxBase {
             animateToCheckedState(checked);
         } else {
             cancelCheckAnimator();
+            if (geometry != null) {
+                setGeometryFillAlpha(checked ? 1.0f : 0.0f);
+            }
             setProgress(checked ? 1.0f : 0.0f);
         }
     }
 
     public void draw(Canvas canvas) {
+        if (geometry != null) {
+            drawGeometry(canvas);
+            return;
+        }
+
         float rad = dp(size / 2);
         float outerRad = rad;
         if (backgroundType == 12 || backgroundType == 13) {
@@ -653,6 +731,83 @@ public class CheckBoxBase {
         if (cutCheck) {
             canvas.restore();
         }
+    }
+
+    private void drawGeometry(Canvas canvas) {
+        float cx = bounds.centerX();
+        float cy = bounds.centerY();
+        float containerSize = dp(geometry.getContainerSizeDp());
+        float cornerRadius = dp(geometry.getCornerRadiusDp());
+        float outlineWidth = dp(geometry.getOutlineWidthDp());
+        float halfSize = containerSize / 2.0f;
+
+        geometryOutlinePaint.setStyle(Paint.Style.STROKE);
+        geometryOutlinePaint.setStrokeWidth(outlineWidth);
+        geometryOutlinePaint.setColor(getThemedColor(background2ColorKey));
+        float outlineInset = outlineWidth / 2.0f;
+        rect.set(
+                cx - halfSize + outlineInset,
+                cy - halfSize + outlineInset,
+                cx + halfSize - outlineInset,
+                cy + halfSize - outlineInset
+        );
+        canvas.drawRoundRect(
+                rect,
+                Math.max(0, cornerRadius - outlineInset),
+                Math.max(0, cornerRadius - outlineInset),
+                geometryOutlinePaint
+        );
+
+        if (progress <= 0) {
+            return;
+        }
+
+        float fadeProgress = Utilities.clamp(geometryFillAlpha, 1.0f, 0.0f);
+        float scale = geometry.getTransitionScale()
+                + (1.0f - geometry.getTransitionScale()) * progress;
+        float scaledHalfSize = halfSize * scale;
+
+        geometryPaint.setStyle(Paint.Style.FILL);
+        geometryPaint.setColor(getThemedColor(backgroundColorKey));
+        geometryPaint.setAlpha((int) (255 * fadeProgress));
+        canvas.drawRoundRect(
+                cx - scaledHalfSize,
+                cy - scaledHalfSize,
+                cx + scaledHalfSize,
+                cy + scaledHalfSize,
+                cornerRadius * scale,
+                cornerRadius * scale,
+                geometryPaint
+        );
+        geometryPaint.setAlpha(255);
+
+        if (fadeProgress <= 0) {
+            return;
+        }
+
+        float iconScale = scale;
+        path.reset();
+        path.moveTo(cx - dp(2.0f) * iconScale, cy + dp(2.2f) * iconScale);
+        path.lineTo(cx - dp(4.6f) * iconScale, cy - dp(0.4f) * iconScale);
+        path.lineTo(cx - dp(6.0f) * iconScale, cy + dp(1.0f) * iconScale);
+        path.lineTo(cx - dp(2.0f) * iconScale, cy + dp(5.0f) * iconScale);
+        path.lineTo(cx + dp(6.0f) * iconScale, cy - dp(3.0f) * iconScale);
+        path.lineTo(cx + dp(4.6f) * iconScale, cy - dp(4.4f) * iconScale);
+        path.close();
+
+        int restoreCount = canvas.save();
+        float iconLeft = cx - dp(6.0f) * iconScale;
+        canvas.clipRect(
+                iconLeft,
+                cy - dp(5.0f) * iconScale,
+                iconLeft + dp(12.0f) * iconScale * progress,
+                cy + dp(5.5f) * iconScale
+        );
+        geometryPaint.setColor(getThemedColor(checkColorKey));
+        geometryPaint.setAlpha((int) (255 * fadeProgress));
+        canvas.drawPath(path, geometryPaint);
+        geometryPaint.setAlpha(255);
+        canvas.restoreToCount(restoreCount);
     }
 
     public void setCirclePaintProvider(GenericProvider<Void, Paint> circlePaintProvider) {

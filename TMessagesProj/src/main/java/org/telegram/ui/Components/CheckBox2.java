@@ -51,6 +51,10 @@ public class CheckBox2 extends View {
         return checkBoxBase;
     }
 
+    public void setGeometry(CheckBoxGeometry geometry) {
+        checkBoxBase.setGeometry(geometry);
+    }
+
     public void setNum(int num) {
         checkBoxBase.setNum(num);
     }

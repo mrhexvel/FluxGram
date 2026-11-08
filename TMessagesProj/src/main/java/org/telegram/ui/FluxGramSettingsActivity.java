@@ -348,6 +348,9 @@ public class FluxGramSettingsActivity extends BaseFragment {
         );
 
         listView.adapter.setApplyBackground(false);
+        listView.adapter.setRoundCheckBoxGeometry(
+                MaterialControlsStyle.checkBoxGeometry(materialVisualStyle)
+        );
         listView.adapter.setCheckCellSwitchGeometry(
                 MaterialControlsStyle.switchGeometry(materialVisualStyle)
         );

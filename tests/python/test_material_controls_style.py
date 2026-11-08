@@ -11,6 +11,12 @@ JAVA = ROOT / "TMessagesProj/src/main/java/org/telegram"
 POLICY = JAVA / "messenger/fluxgram/MaterialStylePolicy.java"
 STYLE = JAVA / "messenger/fluxgram/MaterialVisualStyle.java"
 ADAPTER = JAVA / "ui/fluxgram/MaterialControlsStyle.java"
+CHECK_BOX = JAVA / "ui/Components/CheckBoxBase.java"
+CHECK_BOX_2 = JAVA / "ui/Components/CheckBox2.java"
+CHECK_BOX_CELL = JAVA / "ui/Cells/CheckBoxCell.java"
+CHECK_BOX_GEOMETRY = JAVA / "ui/Components/CheckBoxGeometry.java"
+RADIO_BUTTON = JAVA / "ui/Components/RadioButton.java"
+RADIO_COLOR_CELL = JAVA / "ui/Cells/RadioColorCell.java"
 SWITCH = JAVA / "ui/Components/Switch.java"
 SWITCH_GEOMETRY = JAVA / "ui/Components/SwitchGeometry.java"
 TEXT_CHECK = JAVA / "ui/Cells/TextCheckCell.java"
@@ -30,6 +36,7 @@ class MaterialControlsStyleTest(unittest.TestCase):
                 import java.util.EnumSet;
                 import org.telegram.messenger.fluxgram.MaterialStylePolicy;
                 import org.telegram.messenger.fluxgram.MaterialVisualStyle;
+                import org.telegram.ui.Components.CheckBoxGeometry;
                 import org.telegram.ui.Components.SwitchGeometry;
                 import org.telegram.ui.fluxgram.MaterialControlsStyle;
 
@@ -43,6 +50,22 @@ class MaterialControlsStyleTest(unittest.TestCase):
                                 MaterialStylePolicy.Module.MATERIAL_SYMBOLS
                         );
                         require(MaterialControlsStyle.switchGeometry(icons) == null);
+                        require(MaterialControlsStyle.checkBoxGeometry(icons) == null);
+
+                        CheckBoxGeometry checkBoxGeometry = MaterialControlsStyle.checkBoxGeometry(
+                                style(MaterialStylePolicy.Module.CONTROLS)
+                        );
+                        require(checkBoxGeometry != null);
+                        require(checkBoxGeometry.getContainerSizeDp() == 18);
+                        require(checkBoxGeometry.getCornerRadiusDp() == 2);
+                        require(checkBoxGeometry.getOutlineWidthDp() == 2);
+                        require(checkBoxGeometry.getTransitionScale() == 0.6f);
+                        require(checkBoxGeometry.getCheckDurationMs() == 350);
+                        require(checkBoxGeometry.getUncheckDurationMs() == 150);
+                        require(checkBoxGeometry.getFadeDurationMs() == 50);
+                        require(checkBoxGeometry == MaterialControlsStyle.checkBoxGeometry(
+                                style(MaterialStylePolicy.Module.CONTROLS)
+                        ));
 
                         SwitchGeometry geometry = MaterialControlsStyle.switchGeometry(
                                 style(MaterialStylePolicy.Module.CONTROLS)
@@ -154,6 +177,7 @@ class MaterialControlsStyleTest(unittest.TestCase):
                     str(root),
                     str(POLICY),
                     str(STYLE),
+                    str(CHECK_BOX_GEOMETRY),
                     str(SWITCH_GEOMETRY),
                     str(ADAPTER),
                     str(check),
@@ -167,17 +191,40 @@ class MaterialControlsStyleTest(unittest.TestCase):
 
     def test_switch_consumer_is_bounded_and_defaults_are_preserved(self):
         adapter = ADAPTER.read_text()
+        check_box = CHECK_BOX.read_text()
+        check_box_2 = CHECK_BOX_2.read_text()
+        check_box_cell = CHECK_BOX_CELL.read_text()
+        radio_button = RADIO_BUTTON.read_text()
+        radio_color_cell = RADIO_COLOR_CELL.read_text()
         switch = SWITCH.read_text()
         text_check = TEXT_CHECK.read_text()
         universal = UNIVERSAL_ADAPTER.read_text()
         settings = SETTINGS.read_text()
 
         self.assertIn("new SwitchGeometry(", adapter)
+        self.assertIn("new CheckBoxGeometry(", adapter)
         self.assertIn("MaterialStylePolicy.Module.CONTROLS", adapter)
         self.assertIn("MaterialVisualStyle.ShapeRole.FULL", adapter)
         self.assertNotIn("MaterialStyleSettings", adapter)
         self.assertNotIn("Theme", adapter)
         self.assertNotIn("android.", adapter)
+
+        self.assertIn("setGeometry(CheckBoxGeometry geometry)", check_box)
+        self.assertIn("drawGeometry(Canvas canvas)", check_box)
+        self.assertIn("CubicBezierInterpolator.EmphasizedDecelerate", check_box)
+        self.assertIn("CubicBezierInterpolator.EmphasizedAccelerate", check_box)
+        self.assertIn("geometry.getFadeDurationMs()", check_box)
+        self.assertIn("geometryFadeAnimator.setInterpolator(new LinearInterpolator())", check_box)
+        self.assertIn("if (geometry != null && !animated)", check_box)
+        self.assertIn("private final Paint geometryPaint", check_box)
+        self.assertIn("private final Paint geometryOutlinePaint", check_box)
+        self.assertIn("setGeometry(CheckBoxGeometry geometry)", check_box_2)
+        self.assertIn("setCheckBoxGeometry(CheckBoxGeometry geometry)", check_box_cell)
+
+        self.assertIn("private int size = AndroidUtilities.dp(16)", radio_button)
+        self.assertIn("paint.setStrokeWidth(AndroidUtilities.dp(2))", radio_button)
+        self.assertIn("size / 4", radio_button)
+        self.assertIn("radioButton.setSize(AndroidUtilities.dp(20))", radio_color_cell)
 
         self.assertIn("if (geometry == null)", switch)
         self.assertIn("height * 0.385f", switch)
@@ -213,12 +260,18 @@ class MaterialControlsStyleTest(unittest.TestCase):
         self.assertIn("checkBox.setDrawRipple(pressed)", text_check)
 
         self.assertIn("setCheckCellSwitchGeometry(SwitchGeometry geometry)", universal)
+        self.assertIn("setRoundCheckBoxGeometry(CheckBoxGeometry geometry)", universal)
+        self.assertIn("checkBoxCell.setCheckBoxGeometry(roundCheckBoxGeometry)", universal)
         self.assertIn("checkCell.setSwitchGeometry(checkCellSwitchGeometry)", universal)
         self.assertNotIn("MaterialStylePolicy", universal)
         self.assertNotIn("MaterialVisualStyle", universal)
 
         self.assertIn(
             "MaterialControlsStyle.switchGeometry(materialVisualStyle)",
+            settings,
+        )
+        self.assertIn(
+            "MaterialControlsStyle.checkBoxGeometry(materialVisualStyle)",
             settings,
         )
 

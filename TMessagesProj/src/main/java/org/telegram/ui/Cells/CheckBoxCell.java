@@ -47,6 +47,7 @@ import org.telegram.ui.Components.AnimatedTextView;
 import org.telegram.ui.Components.AvatarDrawable;
 import org.telegram.ui.Components.BackupImageView;
 import org.telegram.ui.Components.CheckBox2;
+import org.telegram.ui.Components.CheckBoxGeometry;
 import org.telegram.ui.Components.CheckBoxSquare;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.LayoutHelper;
@@ -506,6 +507,12 @@ public class CheckBoxCell extends FrameLayout {
             checkBoxRound.setChecked(checked, animated);
         } else {
             checkBoxSquare.setChecked(checked, animated);
+        }
+    }
+
+    public void setCheckBoxGeometry(CheckBoxGeometry geometry) {
+        if (checkBoxRound != null) {
+            checkBoxRound.setGeometry(geometry);
         }
     }
 
