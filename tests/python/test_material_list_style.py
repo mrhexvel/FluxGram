@@ -155,7 +155,9 @@ class MaterialListStyleTest(unittest.TestCase):
         self.assertEqual(
             [
                 "ui/Components/FluxGramFolderPreviewCell.java",
+                "ui/Components/FluxGramPluginFilterCell.java",
                 "ui/DialogsActivity.java",
+                "ui/FluxGramSettingsActivity.java",
             ],
             sorted(consumers),
         )

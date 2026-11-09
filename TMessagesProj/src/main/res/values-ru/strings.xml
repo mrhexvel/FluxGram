@@ -699,6 +699,10 @@
     <string name="FluxGramPluginsHomeDisabled">Расширения · сейчас выключены</string>
     <string name="FluxGramPluginSystem">Система плагинов</string>
     <string name="FluxGramInstalledPlugins">Установленные плагины</string>
+    <string name="FluxGramPluginFilterAll">Все</string>
+    <string name="FluxGramPluginFilterEnabled">Включённые</string>
+    <string name="FluxGramPluginFilterDisabled">Выключенные</string>
+    <string name="FluxGramPluginFilterAttention">Требуют внимания</string>
     <string name="FluxGramBuiltInPlugins">Встроенные плагины</string>
     <string name="FluxGramPluginDevelopment">Разработка</string>
     <string name="FluxGramPluginDeveloperAccess">Доступ для разработки плагинов</string>

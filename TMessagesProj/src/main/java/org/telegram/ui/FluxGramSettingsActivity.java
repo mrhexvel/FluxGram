@@ -39,6 +39,7 @@ import org.telegram.messenger.fluxgram.MessageActionExecutor;
 import org.telegram.messenger.fluxgram.MessageGestureSettings;
 import org.telegram.messenger.fluxgram.NavigationSettings;
 import org.telegram.messenger.fluxgram.NotificationSettings;
+import org.telegram.messenger.fluxgram.PluginListFilter;
 import org.telegram.messenger.fluxgram.ProfileDisplaySettings;
 import org.telegram.messenger.fluxgram.ReplyAppearanceSettings;
 import org.telegram.messenger.fluxgram.StickerSettings;
@@ -68,16 +69,19 @@ import org.telegram.ui.Components.FluxGramFolderPreviewCell;
 import org.telegram.ui.Components.FluxGramFormattingPreviewCell;
 import org.telegram.ui.Components.FluxGramMessageAppearancePreviewCell;
 import org.telegram.ui.Components.FluxGramPluginCell;
+import org.telegram.ui.Components.FluxGramPluginFilterCell;
 import org.telegram.ui.Components.FluxGramSectionRadiusCell;
 import org.telegram.ui.Components.FluxGramSettingsHeaderCell;
 import org.telegram.ui.Components.FluxGramStickerShapeCell;
 import org.telegram.ui.Components.ItemOptions;
+import org.telegram.ui.Components.FilterChipGeometry;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.SliderGeometry;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalRecyclerView;
 import org.telegram.ui.fluxgram.FluxGramSettingsSections;
 import org.telegram.ui.fluxgram.MaterialControlsStyle;
+import org.telegram.ui.fluxgram.MaterialListStyle;
 import org.telegram.ui.fluxgram.NavigationTransitionPolicy;
 
 import java.util.ArrayList;
@@ -196,6 +200,8 @@ public class FluxGramSettingsActivity extends BaseFragment {
     private FluxGramMessageAppearancePreviewCell messageAppearancePreview;
     private FrameLayout messageAppearancePreviewContainer;
     private FluxGramStickerShapeCell stickerShapeCell;
+    private FluxGramPluginFilterCell pluginFilterCell;
+    private PluginListFilter.Filter pluginListFilter = PluginListFilter.Filter.ALL;
     private MaterialStylePolicy.State materialStyleState;
     private MaterialVisualStyle.Snapshot materialVisualStyle;
     private SliderGeometry sliderGeometry;
@@ -345,6 +351,26 @@ public class FluxGramSettingsActivity extends BaseFragment {
                         rebuildChatPresentation();
                     }
             );
+        } else if (section == PLUGINS) {
+            FilterChipGeometry geometry = MaterialListStyle.filterChipGeometry(materialVisualStyle);
+
+            if (geometry != null) {
+                pluginFilterCell = new FluxGramPluginFilterCell(
+                        context,
+                        getResourceProvider(),
+                        geometry,
+                        new CharSequence[]{
+                                LocaleController.getString(R.string.FluxGramPluginFilterAll),
+                                LocaleController.getString(R.string.FluxGramPluginFilterEnabled),
+                                LocaleController.getString(R.string.FluxGramPluginFilterDisabled),
+                                LocaleController.getString(R.string.FluxGramPluginFilterAttention)
+                        },
+                        filter -> {
+                            pluginListFilter = filter;
+                            AndroidUtilities.runOnUIThread(refresh);
+                        }
+                );
+            }
         }
 
         listView = new UniversalRecyclerView(
@@ -1008,23 +1034,51 @@ public class FluxGramSettingsActivity extends BaseFragment {
             PluginManager manager,
             boolean external,
             boolean showHeader) {
-        boolean headerAdded = false;
         ArrayList<Plugin> plugins = manager.getPlugins();
 
         if (external) {
             plugins.addAll(ExternalPlugins.getIncompatiblePlugins());
         }
 
+        ArrayList<Plugin> matchingPlugins = new ArrayList<>();
         for (Plugin plugin : plugins) {
-            boolean isExternal = ExternalPlugins.isExternal(plugin);
-
-            if (isExternal != external) {
-                continue;
+            if (ExternalPlugins.isExternal(plugin) == external) {
+                matchingPlugins.add(plugin);
             }
+        }
+        plugins = matchingPlugins;
 
-            if (showHeader && !headerAdded) {
-                addSectionLabel(items, R.string.FluxGramInstalledPlugins);
-                headerAdded = true;
+        PluginListFilter.Filter normalizedFilter = PluginListFilter.normalize(
+                pluginListFilter,
+                plugins.size()
+        );
+        if (normalizedFilter != pluginListFilter) {
+            pluginListFilter = normalizedFilter;
+
+            if (pluginFilterCell != null) {
+                pluginFilterCell.setSelectedFilter(pluginListFilter, false);
+            }
+        }
+        boolean showFilters = external
+                && showHeader
+                && pluginFilterCell != null
+                && plugins.size() >= 2;
+
+        if (showHeader && !plugins.isEmpty()) {
+            addSectionLabel(items, R.string.FluxGramInstalledPlugins);
+
+            if (showFilters) {
+                items.add(UItem.asCustomShadow(pluginFilterCell, 48));
+            }
+        }
+
+        for (Plugin plugin : plugins) {
+            boolean metadataOnly = plugin instanceof ExternalPlugins.IncompatiblePlugin;
+            boolean enabled = !metadataOnly && manager.isEnabled(plugin.getId());
+            boolean attention = pluginNeedsAttention(plugin, manager);
+
+            if (external && !PluginListFilter.matches(pluginListFilter, enabled, attention)) {
+                continue;
             }
 
             PluginPackageStore.Pending pending = ExternalPlugins.getPending(plugin.getId());
@@ -1032,7 +1086,6 @@ public class FluxGramSettingsActivity extends BaseFragment {
             ExternalPlugins.IncompatiblePlugin metadataPlugin =
                     plugin instanceof ExternalPlugins.IncompatiblePlugin
                             ? (ExternalPlugins.IncompatiblePlugin) plugin : null;
-            boolean metadataOnly = metadataPlugin != null;
             boolean incompatible = metadataOnly
                     && metadataPlugin.getState()
                     == ExternalPlugins.IncompatiblePlugin.State.INCOMPATIBLE;
@@ -1130,12 +1183,19 @@ public class FluxGramSettingsActivity extends BaseFragment {
                     getParentActivity(), getResourceProvider(), plugin, plugin.getName(),
                     LocaleController.getString(R.string.FluxGramPluginVersion) + " " + plugin.getVersion(),
                     status, statusError, description,
-                    !metadataOnly && manager.isEnabled(plugin.getId()),
+                    enabled,
                     !metadataOnly && pending == null && !ExternalPlugins.isRemoving(plugin.getId())
                             && !(plugin instanceof PythonPluginAdapter
                             && ((PythonPluginAdapter) plugin).isStoppingForRemoval()),
-                    metadataOnly ? null
-                            : enabled -> manager.setEnabled(plugin.getId(), enabled),
+                    metadataOnly ? null : value -> {
+                        boolean changed = manager.setEnabled(plugin.getId(), value);
+
+                        if (changed) {
+                            AndroidUtilities.runOnUIThread(refresh);
+                        }
+
+                        return changed;
+                    },
                     view -> showPluginActions(
                             view,
                             plugin,
@@ -1144,6 +1204,32 @@ public class FluxGramSettingsActivity extends BaseFragment {
             items.add(UItem.asCustom(cell, LayoutHelper.WRAP_CONTENT));
             items.add(UItem.asShadow(null));
         }
+    }
+
+    private boolean pluginNeedsAttention(Plugin plugin, PluginManager manager) {
+        if (ExternalPlugins.getPending(plugin.getId()) != null
+                || ExternalPlugins.isRemoving(plugin.getId())
+                || manager.isRecoveryPlugin(plugin.getId())) {
+            return true;
+        }
+
+        if (plugin instanceof ExternalPlugins.IncompatiblePlugin) {
+            return ((ExternalPlugins.IncompatiblePlugin) plugin).getState()
+                    != ExternalPlugins.IncompatiblePlugin.State.CHECKING;
+        }
+
+        if (plugin instanceof PythonPluginAdapter) {
+            PythonPluginAdapter adapter = (PythonPluginAdapter) plugin;
+            String state = adapter.getRuntimeState();
+
+            return adapter.getLoadError() != null
+                    || adapter.getQuarantineReason() != null
+                    || adapter.isStoppingForRemoval()
+                    || "FAILED".equals(state)
+                    || "REMOVAL_PENDING".equals(state);
+        }
+
+        return false;
     }
 
     private void showPluginActions(

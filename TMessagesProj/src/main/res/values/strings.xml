@@ -11741,6 +11741,10 @@
     <string name="FluxGramPluginsHomeDisabled">Extensions · currently disabled</string>
     <string name="FluxGramPluginSystem">Plugin system</string>
     <string name="FluxGramInstalledPlugins">Installed plugins</string>
+    <string name="FluxGramPluginFilterAll">All</string>
+    <string name="FluxGramPluginFilterEnabled">Enabled</string>
+    <string name="FluxGramPluginFilterDisabled">Disabled</string>
+    <string name="FluxGramPluginFilterAttention">Needs attention</string>
     <string name="FluxGramBuiltInPlugins">Built-in plugins</string>
     <string name="FluxGramPluginDevelopment">Development</string>
     <string name="FluxGramPluginDeveloperAccess">Plugin developer access</string>
