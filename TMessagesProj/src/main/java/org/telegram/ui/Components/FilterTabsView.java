@@ -77,6 +77,8 @@ import java.util.Map;
 public class FilterTabsView extends FrameLayout {
 
     private final Theme.ResourcesProvider resourcesProvider;
+    private final Paint filterChipPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private FilterChipGeometry filterChipGeometry;
 
     public int getCurrentTabStableId() {
         return positionToStableId.get(currentPosition, -1);
@@ -156,7 +158,7 @@ public class FilterTabsView extends FrameLayout {
                 String counterText = String.format("%d", c);
                 int counterWidth = (int) Math.ceil(textCounterPaint.measureText(counterText));
                 int countWidth = Math.max(dp(TAB_COUNTER_HEIGHT - 10), counterWidth) + dp(10);
-                counterResultWidth = countWidth + dp(-2);
+                counterResultWidth = getCounterContributionWidth(countWidth, 1.0f, -2.0f);
             } else {
                 counterResultWidth = !isDefault && isEditing ? dp(TAB_COUNTER_HEIGHT - 5) : 0;
             }
@@ -323,6 +325,45 @@ public class FilterTabsView extends FrameLayout {
                 );
                 canvas.rotate(1.4f * s, getMeasuredWidth() / 2f, getMeasuredHeight() / 2f);
             }
+
+            if (filterChipGeometry != null) {
+                float selectionProgress = getTabSelectionProgress(currentTab.id);
+                int unselectedColor = ColorUtils.setAlphaComponent(
+                        getAnimatedThemeColor(unactiveTextColorKey, aUnactiveTextColorKey),
+                        Math.round(255 * filterChipGeometry.getUnselectedContainerAlpha())
+                );
+                int selectedColor = ColorUtils.setAlphaComponent(
+                        getAnimatedThemeColor(activeTextColorKey, aActiveTextColorKey),
+                        Math.round(255 * filterChipGeometry.getSelectedContainerAlpha())
+                );
+                float horizontalInset = dp(filterChipGeometry.getGapDp()) / 2.0f;
+                float chipHeight = dp(filterChipGeometry.getHeightDp());
+                float top = (getMeasuredHeight() - chipHeight) / 2.0f;
+
+                filterChipPaint.setColor(ColorUtils.blendARGB(
+                        unselectedColor,
+                        selectedColor,
+                        selectionProgress
+                ));
+                rect.set(
+                        horizontalInset,
+                        top,
+                        getMeasuredWidth() - horizontalInset,
+                        top + chipHeight
+                );
+                float cornerRadius = lerp(
+                        filterChipGeometry.getUnselectedCornerRadiusDp(),
+                        filterChipGeometry.getSelectedCornerRadiusDp(),
+                        selectionProgress
+                );
+                canvas.drawRoundRect(
+                        rect,
+                        dp(cornerRadius),
+                        dp(cornerRadius),
+                        filterChipPaint
+                );
+            }
+
             int key;
             int animateToKey;
             int otherKey;
@@ -400,7 +441,13 @@ public class FilterTabsView extends FrameLayout {
             }
 
             tabCounterVisible = (countWidth != 0 && !animateCounterRemove) ? (counterText != null ? 1.0f : editingStartAnimationProgress) : 0;
-            tabWidth = currentTab.titleWidth + ((countWidth != 0 && !animateCounterRemove) ? countWidth + dp(-2 * (counterText != null ? 1.0f : editingStartAnimationProgress)) : 0);
+            tabWidth = currentTab.titleWidth + ((countWidth != 0 && !animateCounterRemove)
+                    ? getCounterContributionWidth(
+                            countWidth,
+                            counterText != null ? 1.0f : editingStartAnimationProgress,
+                            -2.0f
+                    )
+                    : 0);
             float textX = (getMeasuredWidth() - tabWidth) / 2f;
             if (animateTextX) {
                 textX = textX * changeProgress + animateFromTextX * (1f - changeProgress);
@@ -669,7 +716,13 @@ public class FilterTabsView extends FrameLayout {
             } else {
                 countWidth = 0;
             }
-            int tabWidth = currentTab.titleWidth + (countWidth != 0 ? countWidth + dp(6 * (counterText != null ? 1.0f : editingStartAnimationProgress)) : 0);
+            int tabWidth = currentTab.titleWidth + (countWidth != 0
+                    ? getCounterContributionWidth(
+                            countWidth,
+                            counterText != null ? 1.0f : editingStartAnimationProgress,
+                            6.0f
+                    )
+                    : 0);
             int textX = (getMeasuredWidth() - tabWidth) / 2;
 
             if (textX != lastTextX) {
@@ -1157,6 +1210,17 @@ public class FilterTabsView extends FrameLayout {
         delegate = filterTabsViewDelegate;
     }
 
+    public void setFilterChipGeometry(FilterChipGeometry geometry) {
+        if (filterChipGeometry == geometry) {
+            return;
+        }
+
+        filterChipGeometry = geometry;
+        listView.invalidateViews();
+        listView.invalidate();
+        invalidate();
+    }
+
     public boolean isAnimatingIndicator() {
         return animatingIndicator;
     }
@@ -1411,7 +1475,7 @@ public class FilterTabsView extends FrameLayout {
     @Override
     protected boolean drawChild(@NonNull Canvas canvas, View child, long drawingTime) {
         boolean result = super.drawChild(canvas, child, drawingTime);
-        if (child == listView) {
+        if (child == listView && filterChipGeometry == null) {
             drawSelector(canvas);
         }
         long newTime = SystemClock.elapsedRealtime();
@@ -1465,6 +1529,47 @@ public class FilterTabsView extends FrameLayout {
             invalidate();
         }
         return result;
+    }
+
+    private float getTabSelectionProgress(int tabId) {
+        if (animatingIndicator || manualScrollingToId != -1) {
+            int selectedId = manualScrollingToId != -1 ? manualScrollingToId : selectedTabId;
+            int oldId = manualScrollingToId != -1 ? selectedTabId : previousId;
+
+            if (tabId == selectedId) {
+                return animatingIndicatorProgress;
+            }
+            if (tabId == oldId) {
+                return 1.0f - animatingIndicatorProgress;
+            }
+
+            return 0.0f;
+        }
+
+        return tabId == selectedTabId ? 1.0f : 0.0f;
+    }
+
+    private int getCounterContributionWidth(
+            int countWidth,
+            float visibleProgress,
+            float fallbackSpacingDp
+    ) {
+        float spacing = (filterChipGeometry != null ? 5.0f : fallbackSpacingDp) * visibleProgress;
+        return countWidth + dp(spacing);
+    }
+
+    private int getAnimatedThemeColor(int colorKey, int animatedColorKey) {
+        int color = Theme.getColor(colorKey, resourcesProvider);
+
+        if (animatedColorKey < 0) {
+            return color;
+        }
+
+        return ColorUtils.blendARGB(
+                color,
+                Theme.getColor(animatedColorKey, resourcesProvider),
+                animationValue
+        );
     }
 
     private void drawSelector(Canvas canvas) {

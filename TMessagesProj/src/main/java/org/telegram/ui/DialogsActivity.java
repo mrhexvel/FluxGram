@@ -138,6 +138,7 @@ import org.telegram.messenger.fluxgram.FolderSwipeGesturePolicy;
 import org.telegram.messenger.fluxgram.FolderSettings;
 import org.telegram.messenger.fluxgram.MainMenuPolicy;
 import org.telegram.messenger.fluxgram.MainMenuSettings;
+import org.telegram.messenger.fluxgram.MaterialVisualStyleRuntime;
 import org.telegram.messenger.fluxgram.RootNavigationSnapshot;
 import org.telegram.messenger.fluxgram.appearance.AppearanceRepositories;
 import org.telegram.messenger.fluxgram.icons.IconPackRuntime;
@@ -283,6 +284,7 @@ import org.telegram.ui.fluxgram.appearance.FluxGramDialogListAppearanceControlle
 import org.telegram.ui.fluxgram.appearance.FluxGramDialogStoriesCell;
 import org.telegram.ui.fluxgram.FolderPresentation;
 import org.telegram.ui.fluxgram.FolderUnreadCounter;
+import org.telegram.ui.fluxgram.MaterialListStyle;
 import org.telegram.utils.glass.GlassEngine;
 import org.telegram.utils.glass.positions.GlassPositionsMerger;
 
@@ -3616,6 +3618,10 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                             : filter.name;
                 }
             };
+            if (usesFluxGramRootDialogsAppearance()) {
+                filterTabsView.setFilterChipGeometry(MaterialListStyle.filterChipGeometry(
+                        MaterialVisualStyleRuntime.getSnapshot()));
+            }
             filterTabsView.setVisibility(View.GONE);
             canShowFilterTabsView = false;
             animatorFilterTabsVisible.setValue(false, false);
@@ -5217,8 +5223,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             BlurredBackgroundDrawable filterTabsViewBackground = iBlur3FactoryLiquidGlass.create(filterTabsView, BlurredBackgroundProviderImpl.topPanel(resourceProvider));
             filterTabsViewBackground.setRadius(dp(18));
             filterTabsViewBackground.setPadding(dp(6.666f));
-            filterTabsView.setPadding(0, dp(7), 0, dp(7));
             filterTabsView.setBlurredBackground(filterTabsViewBackground);
+            filterTabsView.setPadding(0, dp(7), 0, dp(7));
             contentView.addView(filterTabsView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 36 + 7 + 7, Gravity.TOP, 4, 0, 4, 0));
         }
 

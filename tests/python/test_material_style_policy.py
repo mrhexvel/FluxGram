@@ -214,6 +214,7 @@ class MaterialStylePolicyTest(unittest.TestCase):
                 "ui/Components/FluxGramSettingsHeaderCell.java",
                 "ui/FluxGramSettingsActivity.java",
                 "ui/fluxgram/MaterialControlsStyle.java",
+                "ui/fluxgram/MaterialListStyle.java",
                 "ui/fluxgram/MaterialProgressStyle.java",
             ],
             sorted(consumers),

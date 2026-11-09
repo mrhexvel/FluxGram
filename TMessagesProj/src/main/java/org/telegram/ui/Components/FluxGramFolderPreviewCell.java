@@ -12,12 +12,14 @@ import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.fluxgram.FolderSettings;
+import org.telegram.messenger.fluxgram.MaterialVisualStyleRuntime;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.blur3.BlurredBackgroundDrawableViewFactory;
 import org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawable;
 import org.telegram.ui.Components.blur3.drawable.color.impl.BlurredBackgroundProviderImpl;
 import org.telegram.ui.fluxgram.FolderPresentation;
 import org.telegram.ui.fluxgram.FolderUnreadCounter;
+import org.telegram.ui.fluxgram.MaterialListStyle;
 import org.telegram.utils.glass.source.GlassSourceColor;
 
 import java.util.ArrayList;
@@ -49,6 +51,8 @@ public final class FluxGramFolderPreviewCell extends FrameLayout implements Noti
                 );
             }
         };
+        tabsView.setFilterChipGeometry(MaterialListStyle.filterChipGeometry(
+                MaterialVisualStyleRuntime.getSnapshot()));
         tabsView.setPadding(0, dp(7), 0, dp(7));
 
         GlassSourceColor backgroundSource = new GlassSourceColor();

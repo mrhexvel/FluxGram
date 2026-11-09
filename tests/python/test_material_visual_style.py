@@ -273,10 +273,13 @@ class MaterialVisualStyleTest(unittest.TestCase):
             [
                 "org/telegram/messenger/ApplicationLoader.java",
                 "org/telegram/messenger/fluxgram/icons/MaterialSymbolsCatalog.java",
+                "org/telegram/ui/Components/FluxGramFolderPreviewCell.java",
                 "org/telegram/ui/Components/FluxGramSettingsHeaderCell.java",
+                "org/telegram/ui/DialogsActivity.java",
                 "org/telegram/ui/FluxGramSettingsActivity.java",
                 "org/telegram/ui/PluginInstallSheet.java",
                 "org/telegram/ui/fluxgram/MaterialControlsStyle.java",
+                "org/telegram/ui/fluxgram/MaterialListStyle.java",
                 "org/telegram/ui/fluxgram/MaterialProgressStyle.java",
             ],
             sorted(consumers),
