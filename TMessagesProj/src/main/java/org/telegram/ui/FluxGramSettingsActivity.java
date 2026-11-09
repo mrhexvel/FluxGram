@@ -183,10 +183,17 @@ public class FluxGramSettingsActivity extends BaseFragment {
     private static final int SHOW_PROFILE_BUSINESS = 92;
     private static final int PLUGIN_JOURNAL = 93;
     private static final int MATERIAL_STYLE_EXPAND = 94;
-    private static final int MATERIAL_STYLE_PRESET = 95;
     private static final int MATERIAL_STYLE_MODULE_FIRST = 96;
     private static final int MATERIAL_STYLE_MODULE_LAST = MATERIAL_STYLE_MODULE_FIRST
-            + MaterialStylePolicy.Module.values().length - 1;
+            + MaterialStylePolicy.Module.PROGRESS.ordinal();
+    private static final MaterialStylePolicy.Module[] MATERIAL_STYLE_MODULES = {
+            MaterialStylePolicy.Module.MATERIAL_SYMBOLS,
+            MaterialStylePolicy.Module.NAVIGATION,
+            MaterialStylePolicy.Module.CONTROLS,
+            MaterialStylePolicy.Module.SURFACES,
+            MaterialStylePolicy.Module.LISTS,
+            MaterialStylePolicy.Module.PROGRESS
+    };
     private static final int DOWNLOADS_DIRECTORY_REQUEST = 1001;
 
     private final int section;
@@ -558,41 +565,6 @@ public class FluxGramSettingsActivity extends BaseFragment {
 
         if (section == APPEARANCE) {
             appearancePreview.update(false);
-            String materialPreset = materialStylePresetOption(materialStyleState.getPreset());
-            addSectionLabel(items, R.string.FluxGramMaterialDesign3);
-            UItem materialStyleExpand = UItem.asSettingsCell(
-                    MATERIAL_STYLE_EXPAND,
-                    LocaleController.getString(R.string.FluxGramMaterialDesign3),
-                    materialPreset
-            );
-            materialStyleExpand.bind = view -> {
-                TextSettingsCell cell = (TextSettingsCell) view;
-                cell.getValueImageView().setImageResource(R.drawable.arrow_more);
-                cell.getValueImageView().setVisibility(View.VISIBLE);
-                cell.getValueImageView().setRotation(materialStyleExpanded ? 180 : 0);
-            };
-            items.add(materialStyleExpand);
-
-            if (materialStyleExpanded) {
-                items.add(UItem.asButton(
-                        MATERIAL_STYLE_PRESET,
-                        LocaleController.getString(R.string.FluxGramMaterialPreset),
-                        materialPreset
-                ));
-
-                if (materialStyleState.getPreset() == MaterialStylePolicy.Preset.ADVANCED) {
-                    for (MaterialStylePolicy.Module module : MaterialStylePolicy.Module.values()) {
-                        boolean requested = materialStyleState.getCustomModules().contains(module);
-                        items.add(UItem.asCheck(
-                                        materialStyleModuleId(module),
-                                        LocaleController.getString(materialStyleModuleTitle(module))
-                                ).setChecked(requested)
-                                .setEnabled(true));
-                    }
-                }
-            }
-
-            items.add(UItem.asShadow(null));
             addSectionLabel(items, R.string.FluxGramFontsAndEmoji);
             items.add(UItem.asButton(
                     FONTS,
@@ -613,6 +585,34 @@ public class FluxGramSettingsActivity extends BaseFragment {
             ));
             items.add(UItem.asShadow(LocaleController.getString(
                     R.string.FluxGramInterfaceIconsInfo)));
+            addSectionLabel(items, R.string.FluxGramMaterialDesign3);
+            UItem materialStyleExpand = UItem.asSettingsCell(
+                    MATERIAL_STYLE_EXPAND,
+                    LocaleController.getString(R.string.FluxGramMaterialDesign3),
+                    null
+            );
+            materialStyleExpand.bind = view -> {
+                TextSettingsCell cell = (TextSettingsCell) view;
+                cell.getValueImageView().setImageResource(R.drawable.arrow_more);
+                cell.getValueImageView().setVisibility(View.VISIBLE);
+                cell.getValueImageView().setRotation(materialStyleExpanded ? 180 : 0);
+            };
+            items.add(materialStyleExpand);
+
+            if (materialStyleExpanded) {
+                MaterialStylePolicy.EffectiveSnapshot materialStyle =
+                        MaterialStylePolicy.resolve(materialStyleState);
+
+                for (MaterialStylePolicy.Module module : MATERIAL_STYLE_MODULES) {
+                    items.add(UItem.asCheck(
+                                    materialStyleModuleId(module),
+                                    LocaleController.getString(materialStyleModuleTitle(module))
+                            ).setChecked(materialStyle.isEnabled(module))
+                            .setEnabled(true));
+                }
+            }
+
+            items.add(UItem.asShadow(null));
             addSectionLabel(items, R.string.FluxGramChatList);
             items.add(UItem.asCustom(appearancePreview, 88));
             items.add(UItem.asButton(
@@ -1575,16 +1575,13 @@ public class FluxGramSettingsActivity extends BaseFragment {
             if (item.id == MATERIAL_STYLE_EXPAND) {
                 boolean wasExpanded = materialStyleExpanded;
                 materialStyleExpanded = !materialStyleExpanded;
-                updateMaterialStyleRows(materialStyleState, wasExpanded, -1);
-            } else if (item.id == MATERIAL_STYLE_PRESET) {
-                showMaterialStylePresetDialog();
+                updateMaterialStyleRows(wasExpanded, -1);
             } else if (item.id >= MATERIAL_STYLE_MODULE_FIRST
                     && item.id <= MATERIAL_STYLE_MODULE_LAST) {
                 MaterialStylePolicy.Module module = MaterialStylePolicy.Module.values()[
                         item.id - MATERIAL_STYLE_MODULE_FIRST
                         ];
-                boolean requested = materialStyleState.getCustomModules().contains(module);
-                boolean enabled = !requested;
+                boolean enabled = !MaterialStylePolicy.resolve(materialStyleState).isEnabled(module);
                 applyMaterialStyleState(MaterialStylePolicy.setModuleEnabled(
                         materialStyleState,
                         module,
@@ -1996,37 +1993,6 @@ public class FluxGramSettingsActivity extends BaseFragment {
         ));
     }
 
-    private void showMaterialStylePresetDialog() {
-        MaterialStylePolicy.Preset[] presets = {
-                MaterialStylePolicy.Preset.TELEGRAM,
-                MaterialStylePolicy.Preset.ICONS,
-                MaterialStylePolicy.Preset.BALANCED,
-                MaterialStylePolicy.Preset.ADVANCED
-        };
-        CharSequence[] options = new CharSequence[presets.length];
-        int selected = 0;
-
-        for (int index = 0; index < presets.length; index++) {
-            options[index] = materialStylePresetOption(presets[index]);
-
-            if (materialStyleState.getPreset() == presets[index]) {
-                selected = index;
-            }
-        }
-
-        showDialog(AlertsCreator.createSingleChoiceDialog(
-                getParentActivity(),
-                options,
-                LocaleController.getString(R.string.FluxGramMaterialPreset),
-                selected,
-                (dialog, index) -> applyMaterialStyleState(
-                        MaterialStylePolicy.selectPreset(materialStyleState, presets[index]),
-                        MATERIAL_STYLE_PRESET
-                ),
-                getResourceProvider()
-        ));
-    }
-
     private void applyMaterialStyleState(MaterialStylePolicy.State state, int changedItemId) {
         if (state.equals(materialStyleState)) {
             return;
@@ -2040,22 +2006,13 @@ public class FluxGramSettingsActivity extends BaseFragment {
             return;
         }
 
-        MaterialStylePolicy.State previousState = materialStyleState;
         materialStyleState = state;
-        updateMaterialStyleRows(previousState, materialStyleExpanded, changedItemId);
+        updateMaterialStyleRows(materialStyleExpanded, changedItemId);
     }
 
-    private void updateMaterialStyleRows(
-            MaterialStylePolicy.State previousState,
-            boolean wasExpanded,
-            int changedItemId
-    ) {
+    private void updateMaterialStyleRows(boolean wasExpanded, int changedItemId) {
         listView.stopScroll();
         int expandPosition = findItemPosition(MATERIAL_STYLE_EXPAND);
-        int oldModuleCount = materialStyleModuleCount(previousState, wasExpanded);
-        int newModuleCount = materialStyleModuleCount(materialStyleState, materialStyleExpanded);
-        boolean oldPresetVisible = wasExpanded;
-        boolean newPresetVisible = materialStyleExpanded;
 
         listView.adapter.updateWithoutNotify();
 
@@ -2064,49 +2021,28 @@ public class FluxGramSettingsActivity extends BaseFragment {
             return;
         }
 
-        if (wasExpanded != materialStyleExpanded
-                || previousState.getPreset() != materialStyleState.getPreset()) {
+        if (wasExpanded != materialStyleExpanded) {
             listView.adapter.notifyItemChanged(expandPosition);
-        }
 
-        if (oldPresetVisible != newPresetVisible) {
-            int count = 1 + (newPresetVisible ? newModuleCount : oldModuleCount);
-
-            if (newPresetVisible) {
-                listView.adapter.notifyItemRangeInserted(expandPosition + 1, count);
-            } else {
-                listView.adapter.notifyItemRangeRemoved(expandPosition + 1, count);
-            }
-        } else if (newPresetVisible) {
-            if (previousState.getPreset() != materialStyleState.getPreset()) {
-                listView.adapter.notifyItemChanged(expandPosition + 1);
-            }
-
-            if (oldModuleCount < newModuleCount) {
+            if (materialStyleExpanded) {
                 listView.adapter.notifyItemRangeInserted(
-                        expandPosition + 2,
-                        newModuleCount - oldModuleCount
+                        expandPosition + 1,
+                        MATERIAL_STYLE_MODULES.length
                 );
-            } else if (oldModuleCount > newModuleCount) {
+            } else {
                 listView.adapter.notifyItemRangeRemoved(
-                        expandPosition + 2,
-                        oldModuleCount - newModuleCount
+                        expandPosition + 1,
+                        MATERIAL_STYLE_MODULES.length
                 );
-            } else if (changedItemId >= MATERIAL_STYLE_MODULE_FIRST
-                    && changedItemId <= MATERIAL_STYLE_MODULE_LAST) {
-                int changedPosition = findItemPosition(changedItemId);
+            }
+        } else if (changedItemId >= MATERIAL_STYLE_MODULE_FIRST
+                && changedItemId <= MATERIAL_STYLE_MODULE_LAST) {
+            int changedPosition = findItemPosition(changedItemId);
 
-                if (changedPosition >= 0) {
-                    listView.adapter.notifyItemChanged(changedPosition);
-                }
+            if (changedPosition >= 0) {
+                listView.adapter.notifyItemChanged(changedPosition);
             }
         }
-    }
-
-    private int materialStyleModuleCount(MaterialStylePolicy.State state, boolean expanded) {
-        return expanded && state.getPreset() == MaterialStylePolicy.Preset.ADVANCED
-                ? MaterialStylePolicy.Module.values().length
-                : 0;
     }
 
     private int findItemPosition(int itemId) {
@@ -2119,20 +2055,6 @@ public class FluxGramSettingsActivity extends BaseFragment {
         }
 
         return -1;
-    }
-
-    private String materialStylePresetOption(MaterialStylePolicy.Preset preset) {
-        if (preset == MaterialStylePolicy.Preset.ICONS) {
-            return LocaleController.getString(R.string.FluxGramMaterialPresetIcons);
-        }
-        if (preset == MaterialStylePolicy.Preset.BALANCED) {
-            return LocaleController.getString(R.string.FluxGramMaterialPresetBalanced);
-        }
-        if (preset == MaterialStylePolicy.Preset.ADVANCED) {
-            return LocaleController.getString(R.string.FluxGramMaterialPresetAdvanced);
-        }
-
-        return LocaleController.getString(R.string.FluxGramMaterialPresetTelegram);
     }
 
     private int materialStyleModuleId(MaterialStylePolicy.Module module) {
@@ -2153,14 +2075,6 @@ public class FluxGramSettingsActivity extends BaseFragment {
                 return R.string.FluxGramMaterialLists;
             case PROGRESS:
                 return R.string.FluxGramMaterialProgress;
-            case MOTION:
-                return R.string.FluxGramMaterialMotion;
-            case CHAT_CHROME:
-                return R.string.FluxGramMaterialChatChrome;
-            case MESSAGE_BUBBLES:
-                return R.string.FluxGramMaterialMessageBubbles;
-            case PROFILE:
-                return R.string.FluxGramMaterialProfile;
             default:
                 throw new IllegalArgumentException();
         }

@@ -62,7 +62,7 @@ class AppearanceSettingsTest(unittest.TestCase):
         self.assertIn("addSectionLabel(items, R.string.FluxGramFontsAndEmoji);", activity)
         fonts_and_emoji = activity.split(
             "addSectionLabel(items, R.string.FluxGramFontsAndEmoji);", 1
-        )[1].split("addSectionLabel(items, R.string.FluxGramChatList);", 1)[0]
+        )[1].split("addSectionLabel(items, R.string.FluxGramInterfaceIcons);", 1)[0]
         self.assertIn("UItem.asButton(\n                    FONTS", fonts_and_emoji)
         self.assertIn("UItem.asCheck(\n                    USE_SYSTEM_EMOJI", fonts_and_emoji)
         self.assertEqual(1, fonts_and_emoji.count("UItem.asShadow(null)"))

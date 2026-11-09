@@ -94,6 +94,43 @@ class MaterialStylePolicyTest(unittest.TestCase):
                         require(edited.getPreset() == Preset.ADVANCED);
                         require(edited.getCustomModules().isEmpty());
 
+                        State telegramEdited = MaterialStylePolicy.setModuleEnabled(
+                                MaterialStylePolicy.defaults(),
+                                Module.NAVIGATION,
+                                true
+                        );
+                        require(telegramEdited.getPreset() == Preset.ADVANCED);
+                        require(telegramEdited.getCustomModules().equals(setOf(
+                                Module.NAVIGATION
+                        )));
+
+                        State balanced = MaterialStylePolicy.selectPreset(custom, Preset.BALANCED);
+                        State balancedEdited = MaterialStylePolicy.setModuleEnabled(
+                                balanced,
+                                Module.CONTROLS,
+                                false
+                        );
+                        require(balancedEdited.getPreset() == Preset.ADVANCED);
+                        require(balancedEdited.getCustomModules().equals(setOf(
+                                Module.MATERIAL_SYMBOLS,
+                                Module.NAVIGATION,
+                                Module.SURFACES,
+                                Module.LISTS,
+                                Module.PROGRESS
+                        )));
+
+                        State advancedEdited = MaterialStylePolicy.setModuleEnabled(
+                                custom,
+                                Module.NAVIGATION,
+                                true
+                        );
+                        require(advancedEdited.getPreset() == Preset.ADVANCED);
+                        require(advancedEdited.getCustomModules().equals(setOf(
+                                Module.MOTION,
+                                Module.NAVIGATION,
+                                Module.PROFILE
+                        )));
+
                         State nullModule = MaterialStylePolicy.setModuleEnabled(colors, null, true);
                         require(nullModule.equals(colors));
                     }

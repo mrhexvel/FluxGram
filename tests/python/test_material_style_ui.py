@@ -10,7 +10,7 @@ STRINGS_RU = ROOT / "TMessagesProj/src/main/res/values-ru/strings.xml"
 
 
 class MaterialStyleUiTest(unittest.TestCase):
-    def test_material_section_precedes_existing_appearance_sections(self):
+    def test_material_section_follows_interface_icons(self):
         source = ACTIVITY.read_text()
         fill_items = source.split("private void fillItems", 1)[1]
         appearance = fill_items.split("if (section == APPEARANCE) {", 1)[1].split(
@@ -18,47 +18,57 @@ class MaterialStyleUiTest(unittest.TestCase):
         )[0]
 
         self.assertLess(
+            appearance.index("addSectionLabel(items, R.string.FluxGramInterfaceIcons);"),
             appearance.index("addSectionLabel(items, R.string.FluxGramMaterialDesign3);"),
-            appearance.index("addSectionLabel(items, R.string.FluxGramFontsAndEmoji);"),
         )
-        self.assertIn("UItem.asButton(\n                        MATERIAL_STYLE_PRESET", appearance)
+        self.assertLess(
+            appearance.index("addSectionLabel(items, R.string.FluxGramMaterialDesign3);"),
+            appearance.index("addSectionLabel(items, R.string.FluxGramChatList);"),
+        )
         self.assertIn("UItem.asSettingsCell(\n                    MATERIAL_STYLE_EXPAND", appearance)
         self.assertIn("if (materialStyleExpanded)", appearance)
         self.assertIn("R.drawable.arrow_more", appearance)
         self.assertIn("items.add(UItem.asShadow(null));", appearance)
         self.assertNotIn("UItem.asHeader", appearance)
+        self.assertNotIn("MATERIAL_STYLE_PRESET", appearance)
         self.assertNotIn("materialStylePreview", appearance)
 
-    def test_advanced_modules_are_conditional_and_theme_independent(self):
+    def test_only_production_modules_are_listed(self):
         source = ACTIVITY.read_text()
         fill_items = source.split("private void fillItems", 1)[1]
         appearance = fill_items.split("if (section == APPEARANCE) {", 1)[1].split(
             "if (section == CHATS) {", 1
         )[0]
 
-        self.assertIn(
-            "materialStyleState.getPreset() == MaterialStylePolicy.Preset.ADVANCED",
-            appearance,
-        )
-        self.assertIn("for (MaterialStylePolicy.Module module", appearance)
-        self.assertIn("materialStyleState.getCustomModules().contains(module)", appearance)
+        supported = source.split(
+            "private static final MaterialStylePolicy.Module[] MATERIAL_STYLE_MODULES = {", 1
+        )[1].split("};", 1)[0]
+        for module in (
+            "MATERIAL_SYMBOLS",
+            "NAVIGATION",
+            "CONTROLS",
+            "SURFACES",
+            "LISTS",
+            "PROGRESS",
+        ):
+            self.assertIn(f"MaterialStylePolicy.Module.{module}", supported)
+        for module in ("MOTION", "CHAT_CHROME", "MESSAGE_BUBBLES", "PROFILE"):
+            self.assertNotIn(f"MaterialStylePolicy.Module.{module}", supported)
+
+        self.assertIn("for (MaterialStylePolicy.Module module : MATERIAL_STYLE_MODULES)", appearance)
+        self.assertIn("MaterialStylePolicy.resolve(materialStyleState)", appearance)
+        self.assertIn("materialStyle.isEnabled(module)", appearance)
         self.assertIn(".setEnabled(true)", appearance)
         self.assertNotIn("DYNAMIC_COLORS", source)
         self.assertNotIn("resolveMaterialStyleAvailability", source)
         self.assertNotIn("Theme.getActiveTheme()", source)
 
-    def test_preset_uses_telegram_single_choice_dialog(self):
+    def test_preset_selection_is_not_exposed(self):
         source = ACTIVITY.read_text()
-        dialog = source.split("private void showMaterialStylePresetDialog()", 1)[1].split(
-            "private void applyMaterialStyleState", 1
-        )[0]
-
-        self.assertIn("AlertsCreator.createSingleChoiceDialog", dialog)
-        self.assertIn("getResourceProvider()", dialog)
-        self.assertIn("MaterialStylePolicy.Preset.TELEGRAM", dialog)
-        self.assertIn("MaterialStylePolicy.Preset.ICONS", dialog)
-        self.assertIn("MaterialStylePolicy.Preset.BALANCED", dialog)
-        self.assertIn("MaterialStylePolicy.Preset.ADVANCED", dialog)
+        self.assertNotIn("MATERIAL_STYLE_PRESET", source)
+        self.assertNotIn("showMaterialStylePresetDialog", source)
+        self.assertNotIn("materialStylePresetOption", source)
+        self.assertNotIn("FluxGramMaterialPreset", source)
 
     def test_save_updates_only_material_rows_without_restart(self):
         source = ACTIVITY.read_text()
@@ -71,11 +81,21 @@ class MaterialStyleUiTest(unittest.TestCase):
             apply_state.index("MaterialStyleSettings.setState(state)"),
             apply_state.index("materialStyleState = state"),
         )
-        self.assertIn("updateMaterialStyleRows(previousState", apply_state)
+        self.assertIn("updateMaterialStyleRows(materialStyleExpanded", apply_state)
         self.assertIn("listView.stopScroll()", apply_state)
         self.assertIn("listView.adapter.updateWithoutNotify()", apply_state)
         self.assertIn("notifyItemRangeInserted", apply_state)
         self.assertIn("notifyItemRangeRemoved", apply_state)
+        self.assertGreaterEqual(apply_state.count("expandPosition + 1"), 2)
+        self.assertGreaterEqual(apply_state.count("MATERIAL_STYLE_MODULES.length"), 2)
+        self.assertLess(
+            apply_state.index("listView.adapter.updateWithoutNotify()"),
+            apply_state.index("listView.adapter.notifyItemRangeInserted"),
+        )
+        self.assertLess(
+            apply_state.index("listView.adapter.updateWithoutNotify()"),
+            apply_state.index("listView.adapter.notifyItemRangeRemoved"),
+        )
         self.assertNotIn("listView.adapter.update(true)", apply_state)
         self.assertNotIn("materialStylePreview", source)
         self.assertNotIn("confirmMaterialStyleRestart", source)
@@ -96,14 +116,20 @@ class MaterialStyleUiTest(unittest.TestCase):
         russian = STRINGS_RU.read_text()
         keys = (
             "FluxGramMaterialDesign3",
-            "FluxGramMaterialPreset",
-            "FluxGramMaterialPresetAdvanced",
-            "FluxGramMaterialPresetIcons",
+            "FluxGramMaterialSymbols",
+            "FluxGramMaterialNavigation",
+            "FluxGramMaterialControls",
+            "FluxGramMaterialSurfaces",
+            "FluxGramMaterialLists",
+            "FluxGramMaterialProgress",
         )
 
         for key in keys:
             self.assertIn(f'name="{key}"', english)
             self.assertIn(f'name="{key}"', russian)
+
+        self.assertNotIn('name="FluxGramMaterialPreset"', english)
+        self.assertNotIn('name="FluxGramMaterialPreset"', russian)
 
     def test_production_material_state_consumers_are_bounded(self):
         consumers = []
