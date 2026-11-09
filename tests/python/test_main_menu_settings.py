@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 JAVA = ROOT / "TMessagesProj/src/main/java/org/telegram"
 BOTTOM_NAVIGATION = JAVA / "messenger/fluxgram/BottomNavigationSettings.java"
 ROOT_NAVIGATION = JAVA / "messenger/fluxgram/RootNavigationSnapshot.java"
+ROOT_NAVIGATION_POLICY = JAVA / "messenger/fluxgram/RootNavigationPolicy.java"
 POLICY = JAVA / "messenger/fluxgram/MainMenuPolicy.java"
 SETTINGS = JAVA / "messenger/fluxgram/MainMenuSettings.java"
 
@@ -160,6 +161,7 @@ class MainMenuSettingsTest(unittest.TestCase):
                     str(shared_preferences),
                     str(messages_controller),
                     str(BOTTOM_NAVIGATION),
+                    str(ROOT_NAVIGATION_POLICY),
                     str(ROOT_NAVIGATION),
                     str(POLICY),
                     str(SETTINGS),

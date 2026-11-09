@@ -87,11 +87,16 @@ class RootNavigationSettingsUiTest(unittest.TestCase):
         self.assertIn("info.setCheckable(false)", source)
         self.assertIn("getCheckBox().setEnabled(toggleEnabled)", source)
 
-    def test_root_runtime_does_not_read_pending_topology(self):
+    def test_root_runtime_fixes_saved_topology_at_construction(self):
         source = MAIN_TABS.read_text()
+        constructor = source.split("public MainTabsActivity()", 1)[1].split(
+            "private static final class DockedNavigationDrawable", 1
+        )[0]
 
-        self.assertNotIn("RootNavigationSettings", source)
-        self.assertNotIn("RootNavigationPolicy", source)
+        self.assertIn("RootNavigationSettings.getState(", constructor)
+        self.assertIn("getUserConfig().showCallsTab", constructor)
+        self.assertIn("private final RootNavigationPolicy.State rootNavigationState", source)
+        self.assertEqual(source.count("RootNavigationSettings.getState("), 1)
 
     def test_resources_are_localized(self):
         english = STRINGS.read_text()

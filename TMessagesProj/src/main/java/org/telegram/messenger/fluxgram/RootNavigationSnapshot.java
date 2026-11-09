@@ -1,46 +1,35 @@
 package org.telegram.messenger.fluxgram;
 
-import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Objects;
-import java.util.Set;
 
 public final class RootNavigationSnapshot {
-    public static final String CHATS = "chats";
-    public static final String CONTACTS = "contacts";
-    public static final String CALLS = "calls";
-    public static final String SETTINGS = "settings";
-    public static final String PROFILE = "profile";
-
-    private static final Set<String> DESTINATIONS = Collections.unmodifiableSet(
-            new LinkedHashSet<>(Arrays.asList(
-                    CHATS,
-                    CONTACTS,
-                    CALLS,
-                    SETTINGS,
-                    PROFILE
-            ))
-    );
+    public static final String CHATS = RootNavigationPolicy.CHATS;
+    public static final String CONTACTS = RootNavigationPolicy.CONTACTS;
+    public static final String CALLS = RootNavigationPolicy.CALLS;
+    public static final String SETTINGS = RootNavigationPolicy.SETTINGS;
+    public static final String PROFILE = RootNavigationPolicy.PROFILE;
 
     private final int account;
     private final int rootIdentity;
     private final boolean bottomNavigationVisible;
-    private final boolean callsTabVisible;
+    private final List<String> effectiveOrder;
     private final String activeDestination;
 
     private RootNavigationSnapshot(
             int account,
             int rootIdentity,
             boolean bottomNavigationVisible,
-            boolean callsTabVisible,
+            List<String> effectiveOrder,
             String activeDestination
     ) {
         this.account = account;
         this.rootIdentity = rootIdentity;
         this.bottomNavigationVisible = bottomNavigationVisible;
-        this.callsTabVisible = callsTabVisible;
-        this.activeDestination = DESTINATIONS.contains(activeDestination)
+        this.effectiveOrder = Collections.unmodifiableList(new ArrayList<>(effectiveOrder));
+        this.activeDestination = this.effectiveOrder.contains(activeDestination)
                 ? activeDestination
                 : CHATS;
     }
@@ -49,14 +38,22 @@ public final class RootNavigationSnapshot {
             int account,
             int rootIdentity,
             int bottomNavigationMode,
-            boolean callsTabVisible,
+            RootNavigationPolicy.State state,
             String activeDestination
     ) {
+        boolean bottomNavigationVisible = BottomNavigationSettings.isVisible(bottomNavigationMode);
+        RootNavigationPolicy.State effectiveState = state == null
+                ? RootNavigationPolicy.normalize(null)
+                : state;
+        List<String> effectiveOrder = bottomNavigationVisible
+                ? effectiveState.getOrder()
+                : Collections.singletonList(CHATS);
+
         return new RootNavigationSnapshot(
                 account,
                 rootIdentity,
-                BottomNavigationSettings.isVisible(bottomNavigationMode),
-                callsTabVisible,
+                bottomNavigationVisible,
+                effectiveOrder,
                 activeDestination
         );
     }
@@ -73,8 +70,8 @@ public final class RootNavigationSnapshot {
         return bottomNavigationVisible;
     }
 
-    public boolean isCallsTabVisible() {
-        return callsTabVisible;
+    public List<String> getEffectiveOrder() {
+        return effectiveOrder;
     }
 
     public String getActiveDestination() {
@@ -82,27 +79,15 @@ public final class RootNavigationSnapshot {
     }
 
     public boolean hasDestination(String destination) {
-        return DESTINATIONS.contains(destination);
+        return effectiveOrder.contains(destination);
+    }
+
+    public static boolean isKnownDestination(String destination) {
+        return RootNavigationPolicy.knownDestinations().contains(destination);
     }
 
     public boolean canSelectInRoot(String destination) {
-        if (CHATS.equals(destination)) {
-            return true;
-        }
-        if (!bottomNavigationVisible) {
-            return false;
-        }
-        if (CONTACTS.equals(destination) || PROFILE.equals(destination)) {
-            return true;
-        }
-        if (CALLS.equals(destination)) {
-            return callsTabVisible;
-        }
-        if (SETTINGS.equals(destination)) {
-            return !callsTabVisible;
-        }
-
-        return false;
+        return effectiveOrder.contains(destination);
     }
 
     public boolean matches(RootNavigationSnapshot other) {
@@ -123,7 +108,7 @@ public final class RootNavigationSnapshot {
         return account == other.account
                 && rootIdentity == other.rootIdentity
                 && bottomNavigationVisible == other.bottomNavigationVisible
-                && callsTabVisible == other.callsTabVisible
+                && effectiveOrder.equals(other.effectiveOrder)
                 && activeDestination.equals(other.activeDestination);
     }
 
@@ -133,7 +118,7 @@ public final class RootNavigationSnapshot {
                 account,
                 rootIdentity,
                 bottomNavigationVisible,
-                callsTabVisible,
+                effectiveOrder,
                 activeDestination
         );
     }

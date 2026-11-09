@@ -157,8 +157,8 @@ class MaterialNavigationStyleTest(unittest.TestCase):
         self.assertIn("if (materialNavigationDocked)", activity)
         self.assertIn("else {\n            final ViewPositionWatcher", activity)
         self.assertIn("materialNavigationDocked\n                || !hasBottomNavigation()", activity)
-        self.assertIn("public static final int TABS_COUNT = 4", activity)
-        self.assertIn("private static int indexToPosition(int index)", activity)
+        self.assertIn("position < rootNavigationState.size()", activity)
+        self.assertIn("createTab(context, destination)", activity)
 
         consumers = []
         for path in JAVA.rglob("*.java"):

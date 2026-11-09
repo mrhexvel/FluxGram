@@ -9,6 +9,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 POLICY = ROOT / "TMessagesProj/src/main/java/org/telegram/messenger/fluxgram/MainMenuPolicy.java"
 ROOT_NAVIGATION = ROOT / "TMessagesProj/src/main/java/org/telegram/messenger/fluxgram/RootNavigationSnapshot.java"
+ROOT_NAVIGATION_POLICY = ROOT / "TMessagesProj/src/main/java/org/telegram/messenger/fluxgram/RootNavigationPolicy.java"
 BOTTOM_NAVIGATION = ROOT / "TMessagesProj/src/main/java/org/telegram/messenger/fluxgram/BottomNavigationSettings.java"
 
 
@@ -186,6 +187,7 @@ class MainMenuPolicyTest(unittest.TestCase):
                     "-d",
                     str(root),
                     str(BOTTOM_NAVIGATION),
+                    str(ROOT_NAVIGATION_POLICY),
                     str(ROOT_NAVIGATION),
                     str(POLICY),
                     str(check),

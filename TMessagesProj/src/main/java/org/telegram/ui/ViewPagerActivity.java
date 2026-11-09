@@ -42,6 +42,10 @@ public abstract class ViewPagerActivity extends BaseFragment {
 
     abstract protected BaseFragment createBaseFragmentAt(int position);
 
+    protected int getItemKey(int position) {
+        return position;
+    }
+
 
     protected void onViewPagerScrollEnd() {
 
@@ -79,20 +83,22 @@ public abstract class ViewPagerActivity extends BaseFragment {
 
             @Override
             public int getItemViewType(int position) {
-                return position;
+                return getItemKey(position);
             }
 
             @Override
             public void bindView(View view, int position, int viewType) {
-                FragmentState state = fragmentsArr.get(position);
+                final int itemKey = getItemKey(position);
+                FragmentState state = fragmentsArr.get(itemKey);
                 final BaseFragment fragment;
                 if (state != null) {
                     fragment = state.fragment;
+                    state.position = position;
                 } else {
                     fragment = createBaseFragmentAt(position);
 
-                    state = new FragmentState(fragment);
-                    fragmentsArr.put(position, state);
+                    state = new FragmentState(fragment, position);
+                    fragmentsArr.put(itemKey, state);
                 }
 
                 if (!state.onCreateCalled) {
@@ -137,7 +143,7 @@ public abstract class ViewPagerActivity extends BaseFragment {
     }
 
     protected void putFragmentAtPosition(int position, BaseFragment fragment) {
-        fragmentsArr.put(position, new FragmentState(fragment));
+        fragmentsArr.put(getItemKey(position), new FragmentState(fragment, position));
     }
 
     protected boolean canScrollBackward(MotionEvent ev) {
@@ -183,7 +189,7 @@ public abstract class ViewPagerActivity extends BaseFragment {
         }
 
         final int currentPosition = viewPager.getCurrentPosition();
-        final FragmentState state = fragmentsArr.get(currentPosition);
+        final FragmentState state = fragmentsArr.get(getItemKey(currentPosition));
         return state != null ? state.fragment : null;
     }
 
@@ -210,8 +216,7 @@ public abstract class ViewPagerActivity extends BaseFragment {
         final int visiblePosition = viewPager.getCurrentPosition();
         for (int a = 0, N = fragmentsArr.size(); a < N; a++) {
             final FragmentState state = fragmentsArr.valueAt(a);
-            final int position = fragmentsArr.keyAt(a);
-            if (position == visiblePosition) {
+            if (state != null && state.position == visiblePosition) {
                 continue;
             }
 
@@ -343,15 +348,15 @@ public abstract class ViewPagerActivity extends BaseFragment {
     private void checkFragmentsVisibility() {
         for (int a = 0, N = fragmentsArr.size(); a < N; a++) {
             final FragmentState state = fragmentsArr.valueAt(a);
-            final int position = fragmentsArr.keyAt(a);
             if (state != null && state.fragment.fragmentView != null) {
-                state.setVisibility(viewPager.getPositionVisibility(position), isResumed ? visibilityByParent : 0, isFullyVisible, isResumed);
+                state.setVisibility(viewPager.getPositionVisibility(state.position), isResumed ? visibilityByParent : 0, isFullyVisible, isResumed);
             }
         }
     }
 
     protected void dropFragmentAtPosition(int position) {
-        final FragmentState state = fragmentsArr.get(position);
+        final int itemKey = getItemKey(position);
+        final FragmentState state = fragmentsArr.get(itemKey);
         if (state != null) {
             if (state.isFullyVisible) {
                 state.fragment.onBecomeFullyHidden();
@@ -362,7 +367,7 @@ public abstract class ViewPagerActivity extends BaseFragment {
             state.fragment.onFragmentDestroy();
             state.fragment.setParentLayout(null);
         }
-        fragmentsArr.remove(position);
+        fragmentsArr.remove(itemKey);
     }
 
     @Override
@@ -408,6 +413,7 @@ public abstract class ViewPagerActivity extends BaseFragment {
 
     protected static class FragmentState {
         public final @NonNull BaseFragment fragment;
+        private int position;
         private boolean onCreateCalled;
 
         private boolean isFullyVisible;
@@ -453,8 +459,9 @@ public abstract class ViewPagerActivity extends BaseFragment {
             }
         }
 
-        private FragmentState(@NonNull BaseFragment fragment) {
+        private FragmentState(@NonNull BaseFragment fragment, int position) {
             this.fragment = fragment;
+            this.position = position;
         }
     }
 

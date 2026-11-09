@@ -9,6 +9,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 JAVA = ROOT / "TMessagesProj/src/main/java/org/telegram"
 BOTTOM_NAVIGATION = JAVA / "messenger/fluxgram/BottomNavigationSettings.java"
+POLICY = JAVA / "messenger/fluxgram/RootNavigationPolicy.java"
 SNAPSHOT = JAVA / "messenger/fluxgram/RootNavigationSnapshot.java"
 
 
@@ -22,47 +23,57 @@ class RootNavigationContractTest(unittest.TestCase):
             check = root / "RootNavigationSnapshotCheck.java"
             check.write_text(textwrap.dedent("""
                 import org.telegram.messenger.fluxgram.BottomNavigationSettings;
+                import org.telegram.messenger.fluxgram.RootNavigationPolicy;
                 import org.telegram.messenger.fluxgram.RootNavigationSnapshot;
 
                 public final class RootNavigationSnapshotCheck {
                     public static void main(String[] args) {
+                        RootNavigationPolicy.State topology = RootNavigationPolicy.normalize(
+                                java.util.Arrays.asList(
+                                        RootNavigationPolicy.PROFILE,
+                                        RootNavigationPolicy.CHATS,
+                                        RootNavigationPolicy.CALLS,
+                                        RootNavigationPolicy.SETTINGS
+                                )
+                        );
                         RootNavigationSnapshot settings = RootNavigationSnapshot.create(
                                 1,
                                 20,
                                 BottomNavigationSettings.FLOATING,
-                                false,
+                                topology,
                                 RootNavigationSnapshot.SETTINGS
                         );
                         require(settings.getAccount() == 1);
                         require(settings.getRootIdentity() == 20);
                         require(settings.isBottomNavigationVisible());
-                        require(!settings.isCallsTabVisible());
                         require(settings.getActiveDestination().equals(RootNavigationSnapshot.SETTINGS));
-                        require(settings.canSelectInRoot(RootNavigationSnapshot.CONTACTS));
+                        require(!settings.canSelectInRoot(RootNavigationSnapshot.CONTACTS));
                         require(settings.canSelectInRoot(RootNavigationSnapshot.SETTINGS));
-                        require(!settings.canSelectInRoot(RootNavigationSnapshot.CALLS));
+                        require(settings.canSelectInRoot(RootNavigationSnapshot.CALLS));
                         require(settings.hasDestination(RootNavigationSnapshot.CALLS));
+                        require(!settings.hasDestination(RootNavigationSnapshot.CONTACTS));
+                        require(RootNavigationSnapshot.isKnownDestination(RootNavigationSnapshot.CONTACTS));
 
                         RootNavigationSnapshot calls = RootNavigationSnapshot.create(
                                 1,
                                 20,
                                 BottomNavigationSettings.SHOW,
-                                true,
+                                topology,
                                 RootNavigationSnapshot.CALLS
                         );
                         require(calls.canSelectInRoot(RootNavigationSnapshot.CALLS));
-                        require(!calls.canSelectInRoot(RootNavigationSnapshot.SETTINGS));
+                        require(calls.canSelectInRoot(RootNavigationSnapshot.SETTINGS));
                         require(!settings.matches(calls));
 
                         RootNavigationSnapshot hidden = RootNavigationSnapshot.create(
                                 1,
                                 20,
                                 BottomNavigationSettings.HIDE,
-                                true,
+                                topology,
                                 RootNavigationSnapshot.CONTACTS
                         );
                         require(!hidden.isBottomNavigationVisible());
-                        require(hidden.getActiveDestination().equals(RootNavigationSnapshot.CONTACTS));
+                        require(hidden.getActiveDestination().equals(RootNavigationSnapshot.CHATS));
                         require(hidden.canSelectInRoot(RootNavigationSnapshot.CHATS));
                         require(!hidden.canSelectInRoot(RootNavigationSnapshot.CONTACTS));
 
@@ -70,7 +81,7 @@ class RootNavigationContractTest(unittest.TestCase):
                                 1,
                                 20,
                                 BottomNavigationSettings.HIDE,
-                                true,
+                                topology,
                                 RootNavigationSnapshot.CONTACTS
                         );
                         require(hidden.matches(copy));
@@ -79,7 +90,7 @@ class RootNavigationContractTest(unittest.TestCase):
                                 1,
                                 21,
                                 BottomNavigationSettings.HIDE,
-                                true,
+                                topology,
                                 RootNavigationSnapshot.CHATS
                         )));
                     }
@@ -98,6 +109,7 @@ class RootNavigationContractTest(unittest.TestCase):
                     "-d",
                     str(root),
                     str(BOTTOM_NAVIGATION),
+                    str(POLICY),
                     str(SNAPSHOT),
                     str(check),
                 ],
@@ -124,9 +136,44 @@ class RootNavigationContractTest(unittest.TestCase):
 
         self.assertIn("!currentSnapshot.matches(snapshot)", navigation)
         self.assertIn("currentSnapshot == null", navigation)
-        self.assertIn("!currentSnapshot.hasDestination(destination)", navigation)
+        self.assertIn("!RootNavigationSnapshot.isKnownDestination(destination)", navigation)
         self.assertIn("currentSnapshot.canSelectInRoot(destination)", navigation)
         self.assertIn("viewPager.scrollToPosition(positionForDestination(destination))", navigation)
+
+    def test_main_tabs_builds_pages_from_fixed_semantic_topology(self):
+        activity = (JAVA / "ui/MainTabsActivity.java").read_text()
+        create_view = activity.split("public View createView(Context context)", 1)[1].split(
+            "private GlassTabView createTab", 1
+        )[0]
+        fragments = activity.split("protected BaseFragment createBaseFragmentAt", 1)[1].split(
+            "public DialogsActivity getDialogsActivity", 1
+        )[0]
+
+        self.assertIn("private final RootNavigationPolicy.State rootNavigationState", activity)
+        self.assertEqual(activity.count("RootNavigationSettings.getState("), 1)
+        self.assertIn("position < rootNavigationState.size()", create_view)
+        self.assertIn("rootNavigationState.getOrder().get(position)", create_view)
+        self.assertIn("createTab(context, destination)", create_view)
+        self.assertIn("return rootNavigationState.size();", activity)
+        self.assertIn("protected int getItemKey(int position)", activity)
+        self.assertIn("itemKeyForDestination(destinationForPosition(position))", activity)
+        self.assertIn("RootNavigationPolicy.CALLS.equals(destination)", fragments)
+        self.assertIn("RootNavigationPolicy.SETTINGS.equals(destination)", fragments)
+        self.assertNotIn("POSITION_CALLS_OR_SETTINGS", activity)
+        self.assertNotIn("callTabsVisibleToggled", activity)
+
+        colors = activity.split("private void blur3_updateColors()", 1)[1].split(
+            "public EdgeToEdgeSupportMode", 1
+        )[0]
+        self.assertIn("if (tabView != null)", colors)
+
+    def test_legacy_calls_actions_do_not_mutate_fixed_topology(self):
+        calls = (JAVA / "ui/CallLogActivity.java").read_text()
+
+        self.assertNotIn("ID_SHOW_IN_MAIN_TABS", calls)
+        self.assertNotIn("setCallsTabVisible", calls)
+        self.assertNotIn("NotificationCenter.callTabsVisibleToggled", calls)
+        self.assertNotIn("TapToHideCallsTab", calls)
 
     def test_standalone_fallback_reuses_fragment_routing(self):
         activity = (JAVA / "ui/MainTabsActivity.java").read_text()
@@ -146,23 +193,17 @@ class RootNavigationContractTest(unittest.TestCase):
         self.assertIn("new SettingsActivity(args)", standalone)
         self.assertIn("new ProfileActivity(args)", standalone)
 
-    def test_snapshot_is_fail_closed_during_detach_and_calls_tab_replacement(self):
+    def test_snapshot_is_fail_closed_during_detach(self):
         activity = (JAVA / "ui/MainTabsActivity.java").read_text()
         snapshot = activity.split("private RootNavigationSnapshot getRootNavigationSnapshot", 1)[1].split(
             "private String destinationForPosition", 1
-        )[0]
-        stability = activity.split("private boolean hasStableCallsOrSettingsPage", 1)[1].split(
-            "private boolean navigateToRootDestination", 1
         )[0]
 
         self.assertIn("fragmentView == null", snapshot)
         self.assertIn("!fragmentView.isAttachedToWindow()", snapshot)
         self.assertIn("viewPager == null", snapshot)
         self.assertIn("getParentLayout() == null", snapshot)
-        self.assertIn("!hasStableCallsOrSettingsPage()", snapshot)
-        self.assertIn("dropCallsFragmentAfterPageScroll", stability)
-        self.assertIn("state.fragment instanceof CallLogActivity", stability)
-        self.assertIn("state.fragment instanceof SettingsActivity", stability)
+        self.assertIn("rootNavigationState", snapshot)
 
     def test_root_pager_keeps_full_size_pages_during_horizontal_transition(self):
         pager = (JAVA / "ui/ViewPagerActivity.java").read_text()
@@ -180,7 +221,9 @@ class RootNavigationContractTest(unittest.TestCase):
         )[0]
 
         self.assertIn("public int getItemViewType(int position)", adapter)
-        self.assertIn("return position;", adapter)
+        self.assertIn("return getItemKey(position);", adapter)
+        self.assertIn("fragmentsArr.get(itemKey)", adapter)
+        self.assertIn("fragmentsArr.put(itemKey, state)", adapter)
         self.assertIn("if (fragmentView.getParent() != container)", adapter)
         self.assertEqual(adapter.count("container.removeAllViews();"), 1)
 
@@ -190,8 +233,7 @@ class RootNavigationContractTest(unittest.TestCase):
             "protected void onViewPagerTabAnimationUpdate", 1
         )[0]
 
-        self.assertNotIn("dropFragmentAtPosition(POSITION_PROFILE)", scroll_end)
-        self.assertIn("dropFragmentAtPosition(POSITION_CALLS_OR_SETTINGS)", scroll_end)
+        self.assertNotIn("dropFragmentAtPosition", scroll_end)
 
     def test_retained_root_profile_skips_redundant_full_resume_layout(self):
         profile = (JAVA / "ui/ProfileActivity.java").read_text()

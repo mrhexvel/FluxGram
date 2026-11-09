@@ -124,7 +124,6 @@ public class CallLogActivity extends BaseFragment implements NotificationCenter.
 	private FragmentFloatingButton floatingButton;
 	private FlickerLoadingView flickerLoadingView;
 	private SizeNotifierFrameLayout contentView;
-	private HintView2 hideCallTabsHintView;
 	private boolean needFinishFragment = true;
 	private boolean hasMainTabs;
 
@@ -871,7 +870,6 @@ public class CallLogActivity extends BaseFragment implements NotificationCenter.
 	}
 
 	private final int ID_CREATE_CALL = 1;
-	private final int ID_SHOW_IN_MAIN_TABS = 2;
 
 	private void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
 		final boolean hasActiveCalls = !activeGroupCalls.isEmpty();
@@ -879,9 +877,6 @@ public class CallLogActivity extends BaseFragment implements NotificationCenter.
 
 		if (hasActiveCalls || hasCalls) {
 			items.add(UItem.asButton(ID_CREATE_CALL, R.drawable.menu_call_create, getString(R.string.GroupCallCreate2)).accent());
-			if (!getUserConfig().showCallsTab) {
-				items.add(UItem.asButton(ID_SHOW_IN_MAIN_TABS, R.drawable.menu_add_tab_24, getString(R.string.GroupCallShowInMainTabs)).accent());
-			}
 			items.add(UItem.asShadow(null));
 		}
 
@@ -963,13 +958,7 @@ public class CallLogActivity extends BaseFragment implements NotificationCenter.
 	}
 
 	private void onClick(UItem item, View view, int position, float x, float y) {
-		if (item.id == ID_SHOW_IN_MAIN_TABS) {
-			setCallsTabVisible(true);
-			BulletinFactory.of(CallLogActivity.this)
-				.createSimpleBulletin(R.raw.contact_check, AndroidUtilities.replaceTags(getString(R.string.GroupCallTabWasShownTitle)), getString(R.string.UndoNoCaps), Bulletin.DURATION_PROLONG, true, () -> setCallsTabVisible(false))
-				.setDuration(Bulletin.DURATION_PROLONG)
-				.show();
-		} else if (item.id == ID_CREATE_CALL) {
+		if (item.id == ID_CREATE_CALL) {
 			openCreateCall();
 		} else if (item.object instanceof CallLogRow) {
 			CallLogRow row = (CallLogRow) item.object;
@@ -1033,27 +1022,9 @@ public class CallLogActivity extends BaseFragment implements NotificationCenter.
 		return false;
 	}
 
-	private boolean hideCallTabsHintWasShown = false;
-
 	@Override
 	public void onBecomeFullyVisible() {
 		super.onBecomeFullyVisible();
-
-		if (!hideCallTabsHintWasShown && getUserConfig().showCallsTab && MessagesController.getGlobalMainSettings().getInt("hidecallshint", 0) < 2) {
-			hideCallTabsHintView = new HintView2(getContext(), HintView2.DIRECTION_TOP);
-			hideCallTabsHintView.setDuration(3000);
-			hideCallTabsHintView.setJoint(1, -(12 + 13));
-			hideCallTabsHintView.setPadding(0, dp(4), 0, 0);
-			hideCallTabsHintView.setGlass(getBaseSimpleGlass().factory);
-			hideCallTabsHintView.setText(AndroidUtilities.replaceTags(getString(R.string.TapToHideCallsTab)));
-			// hideCallTabsHintView.setRounding(dp(12));
-			contentView.addView(hideCallTabsHintView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 80, Gravity.TOP));
-			hideCallTabsHintView.setTranslationY(AndroidUtilities.statusBarHeight + ActionBar.getCurrentActionBarHeight() - dp(16));
-			hideCallTabsHintView.show();
-			hideCallTabsHintWasShown = true;
-
-			MessagesController.getGlobalMainSettings().edit().putInt("hidecallshint", MessagesController.getGlobalMainSettings().getInt("hidecallshint", 0) + 1).apply();
-		}
 	}
 
 
@@ -1848,32 +1819,11 @@ public class CallLogActivity extends BaseFragment implements NotificationCenter.
 		ItemOptions io = ItemOptions.makeOptions(this, otherItem);
 		// io.setColors(getThemedColor(Theme.key_actionBarDefaultTitle), getThemedColor(Theme.key_actionBarDefaultTitle));
 		io.setDimAlpha(0x08);
-		if (getUserConfig().showCallsTab) {
-			io.add(R.drawable.msg_archive_hide, getString(R.string.HideCallTab), () -> {
-				setCallsTabVisible(false);
-				final BulletinFactory factory = hasMainTabs ? BulletinFactory.global() : BulletinFactory.of(CallLogActivity.this);
-				factory.createSimpleBulletin(R.raw.contact_check, AndroidUtilities.replaceTags(getString(R.string.GroupCallTabWasHiddenTitle)), getString(R.string.UndoNoCaps), Bulletin.DURATION_PROLONG, true, () -> {
-					setCallsTabVisible(true);
-				}).setDuration(Bulletin.DURATION_PROLONG).show();
-			});
-		}
 		io.add(R.drawable.msg_delete, getString(R.string.DeleteAllCalls), true, () -> showDeleteAlert(true));
 
 		io.show();
 		io.setTranslationY(-dp(64));
 	}
-
-	private void setCallsTabVisible(boolean visible) {
-		if (visible == getUserConfig().showCallsTab) {
-			return;
-		}
-
-		getUserConfig().setShowCallsTab(visible);
-		listView.adapter.update(true);
-		NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.callTabsVisibleToggled);
-	}
-
-
 
 	/* Blur */
 

@@ -75,7 +75,12 @@ class BottomNavigationSettingsTest(unittest.TestCase):
             create_view.index("if (!hasBottomNavigation())"),
             create_view.index("tabsView = new MainTabsLayout"),
         )
-        self.assertIn("return hasBottomNavigation() ? TABS_COUNT : 1;", activity)
+        self.assertIn("return rootNavigationState.size();", activity)
+        self.assertIn(
+            "RootNavigationPolicy.normalize(Collections.singletonList(\n"
+            "                        RootNavigationPolicy.CHATS))",
+            activity,
+        )
         self.assertIn('bundle.putBoolean("hasMainTabs", hasBottomNavigation());', activity)
         self.assertIn("if (!hasBottomNavigation()) {\n            return false;", activity)
         self.assertIn("if (tabsView != null) {", activity)
