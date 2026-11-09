@@ -9,10 +9,17 @@
 package org.telegram.ui.Components;
 
 import android.content.Context;
+import android.database.ContentObserver;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.PathMeasure;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
+import android.provider.Settings;
 import android.view.View;
 import android.view.animation.AccelerateInterpolator;
 import android.view.animation.DecelerateInterpolator;
@@ -21,6 +28,7 @@ import androidx.annotation.Keep;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLog;
+import org.telegram.messenger.R;
 import org.telegram.ui.ActionBar.Theme;
 
 import java.util.HashSet;
@@ -54,6 +62,21 @@ public class RadialProgressView extends View implements Theme.Colorable {
 
     private boolean noProgress = true;
     private final Theme.ResourcesProvider resourcesProvider;
+    private final CircularProgressGeometry.Resolved circularProgressResolved =
+            new CircularProgressGeometry.Resolved();
+    private final Paint circularProgressTrackPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Path circularProgressPath = new Path();
+    private final Path circularProgressDisplayedPath = new Path();
+    private final PathMeasure circularProgressPathMeasure = new PathMeasure();
+    private CircularProgressGeometry circularProgressGeometry;
+    private double circularProgressTime;
+    private long lastCircularProgressUpdateTime;
+    private float circularProgressPathRadius;
+    private float circularProgressAnimatorDurationScale = 1.0f;
+    private Drawable circularProgressStaticDrawable;
+    private ContentObserver circularProgressAnimatorScaleObserver;
+    private boolean circularProgressAnimatorScaleObserverRegistered;
+    private float progressStrokeWidth;
 
     public RadialProgressView(Context context) {
         this(context, null);
@@ -71,8 +94,11 @@ public class RadialProgressView extends View implements Theme.Colorable {
         progressPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         progressPaint.setStyle(Paint.Style.STROKE);
         progressPaint.setStrokeCap(Paint.Cap.ROUND);
-        progressPaint.setStrokeWidth(AndroidUtilities.dp(3));
+        progressStrokeWidth = AndroidUtilities.dp(3);
+        progressPaint.setStrokeWidth(progressStrokeWidth);
         progressPaint.setColor(progressColor);
+        circularProgressTrackPaint.setStyle(Paint.Style.STROKE);
+        circularProgressTrackPaint.setStrokeCap(Paint.Cap.ROUND);
         themedProgressColor = progressColor;
     }
 
@@ -159,10 +185,30 @@ public class RadialProgressView extends View implements Theme.Colorable {
         animatedProgress = from.animatedProgress;
         risingCircleLength = from.risingCircleLength;
         progressAnimationStart = from.progressAnimationStart;
+        circularProgressTime = from.circularProgressTime;
+        lastCircularProgressUpdateTime = from.lastCircularProgressUpdateTime;
         updateAnimation(17 * 5);
     }
 
     private void updateAnimation() {
+        if (circularProgressGeometry != null && noProgress) {
+            if (circularProgressAnimatorDurationScale == 0.0f) {
+                return;
+            }
+
+            long newTime = SystemClock.uptimeMillis();
+
+            if (lastCircularProgressUpdateTime != 0) {
+                updateAnimation(Math.max(0, newTime - lastCircularProgressUpdateTime));
+            } else {
+                invalidate();
+            }
+
+            lastCircularProgressUpdateTime = newTime;
+
+            return;
+        }
+
         long newTime = System.currentTimeMillis();
         long dt = newTime - lastUpdateTime;
         if (dt > 17) {
@@ -173,6 +219,19 @@ public class RadialProgressView extends View implements Theme.Colorable {
     }
 
     private void updateAnimation(long dt) {
+        if (circularProgressGeometry != null && noProgress) {
+            if (circularProgressAnimatorDurationScale == 0.0f) {
+                return;
+            }
+
+            circularProgressTime = (circularProgressTime
+                    + dt / circularProgressAnimatorDurationScale)
+                    % circularProgressGeometry.getTotalDurationMs();
+            invalidate();
+
+            return;
+        }
+
         radOffset += 360 * dt / rotationTime;
         int count = (int) (radOffset / 360);
         radOffset -= count * 360;
@@ -250,7 +309,104 @@ public class RadialProgressView extends View implements Theme.Colorable {
     }
 
     public void setStrokeWidth(float value) {
-        progressPaint.setStrokeWidth(AndroidUtilities.dp(value));
+        progressStrokeWidth = AndroidUtilities.dp(value);
+        progressPaint.setStrokeWidth(progressStrokeWidth);
+    }
+
+    public void setCircularProgressGeometry(CircularProgressGeometry geometry) {
+        if (circularProgressGeometry == geometry) {
+            return;
+        }
+
+        circularProgressGeometry = geometry;
+        circularProgressTime = 0;
+        lastCircularProgressUpdateTime = 0;
+        circularProgressPathRadius = 0;
+
+        if (circularProgressGeometry == null) {
+            unregisterCircularProgressAnimatorScaleObserver();
+        } else {
+            updateCircularProgressAnimatorDurationScale();
+            registerCircularProgressAnimatorScaleObserver();
+        }
+
+        invalidate();
+    }
+
+    public void setCircularProgressTrackColor(int color) {
+        circularProgressTrackPaint.setColor(color);
+        invalidate();
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        updateCircularProgressAnimatorDurationScale();
+        registerCircularProgressAnimatorScaleObserver();
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        unregisterCircularProgressAnimatorScaleObserver();
+        lastCircularProgressUpdateTime = 0;
+        super.onDetachedFromWindow();
+    }
+
+    private void registerCircularProgressAnimatorScaleObserver() {
+        if (circularProgressGeometry == null
+                || !isAttachedToWindow()
+                || circularProgressAnimatorScaleObserverRegistered) {
+            return;
+        }
+
+        if (circularProgressAnimatorScaleObserver == null) {
+            circularProgressAnimatorScaleObserver = new ContentObserver(
+                    new Handler(Looper.getMainLooper())) {
+                @Override
+                public void onChange(boolean selfChange) {
+                    updateCircularProgressAnimatorDurationScale();
+                }
+            };
+        }
+
+        getContext().getContentResolver().registerContentObserver(
+                Settings.Global.getUriFor(Settings.Global.ANIMATOR_DURATION_SCALE),
+                false,
+                circularProgressAnimatorScaleObserver
+        );
+        circularProgressAnimatorScaleObserverRegistered = true;
+    }
+
+    private void unregisterCircularProgressAnimatorScaleObserver() {
+        if (!circularProgressAnimatorScaleObserverRegistered) {
+            return;
+        }
+
+        getContext().getContentResolver().unregisterContentObserver(
+                circularProgressAnimatorScaleObserver);
+        circularProgressAnimatorScaleObserverRegistered = false;
+    }
+
+    private void updateCircularProgressAnimatorDurationScale() {
+        if (circularProgressGeometry == null) {
+            circularProgressAnimatorDurationScale = 1.0f;
+
+            return;
+        }
+
+        float durationScale = Settings.Global.getFloat(
+                getContext().getContentResolver(),
+                Settings.Global.ANIMATOR_DURATION_SCALE,
+                1.0f
+        );
+
+        if (Float.isNaN(durationScale) || Float.isInfinite(durationScale) || durationScale < 0.0f) {
+            durationScale = 1.0f;
+        }
+
+        circularProgressAnimatorDurationScale = durationScale;
+        lastCircularProgressUpdateTime = 0;
+        invalidate();
     }
 
     public void setProgressColor(int color) {
@@ -267,17 +423,189 @@ public class RadialProgressView extends View implements Theme.Colorable {
 
     @Override
     protected void onDraw(Canvas canvas) {
-        int x = (getMeasuredWidth() - size) / 2;
-        int y = (getMeasuredHeight() - size) / 2;
-        cicleRect.set(x, y, x + size, y + size);
-        canvas.drawArc(cicleRect, radOffset, drawingCircleLenght = currentCircleLength, false, progressPaint);
-        updateAnimation();
+        int drawingSize = getDrawingSize();
+        int x = (getMeasuredWidth() - drawingSize) / 2;
+        int y = (getMeasuredHeight() - drawingSize) / 2;
+        drawProgress(canvas, x, y, x + drawingSize, y + drawingSize);
     }
 
     public void draw(Canvas canvas, float cx, float cy) {
-        cicleRect.set(cx - size / 2f, cy - size / 2f, cx + size / 2f, cy +  size / 2f);
-        canvas.drawArc(cicleRect, radOffset, drawingCircleLenght = currentCircleLength, false, progressPaint);
-        updateAnimation();
+        int drawingSize = getDrawingSize();
+        drawProgress(
+                canvas,
+                cx - drawingSize / 2f,
+                cy - drawingSize / 2f,
+                cx + drawingSize / 2f,
+                cy + drawingSize / 2f
+        );
+    }
+
+    private int getDrawingSize() {
+        return circularProgressGeometry == null
+                ? size
+                : AndroidUtilities.dp(circularProgressGeometry.getDiameterDp());
+    }
+
+    private void drawProgress(Canvas canvas, float left, float top, float right, float bottom) {
+        boolean materialIndeterminate = circularProgressGeometry != null && noProgress;
+
+        if (materialIndeterminate) {
+            updateAnimation();
+        }
+
+        float strokeWidth = circularProgressGeometry == null
+                ? progressStrokeWidth
+                : AndroidUtilities.dp(circularProgressGeometry.getTrackThicknessDp());
+
+        if (progressPaint.getStrokeWidth() != strokeWidth) {
+            progressPaint.setStrokeWidth(strokeWidth);
+        }
+
+        float inset = circularProgressGeometry == null ? 0.0f : strokeWidth / 2.0f;
+        cicleRect.set(left + inset, top + inset, right - inset, bottom - inset);
+
+        if (materialIndeterminate) {
+            drawCircularProgress(canvas, left, top, right, bottom, strokeWidth);
+        } else {
+            drawingCircleLenght = currentCircleLength;
+            canvas.drawArc(cicleRect, radOffset, drawingCircleLenght, false, progressPaint);
+        }
+
+        if (!materialIndeterminate) {
+            updateAnimation();
+        }
+    }
+
+    private void drawCircularProgress(
+            Canvas canvas,
+            float left,
+            float top,
+            float right,
+            float bottom,
+            float strokeWidth
+    ) {
+        if (circularProgressAnimatorDurationScale == 0.0f) {
+            drawCircularProgressStatic(canvas, left, top, right, bottom);
+
+            return;
+        }
+
+        circularProgressGeometry.resolve((long) circularProgressTime, circularProgressResolved);
+
+        float radius = (right - left - strokeWidth) / 2.0f;
+        ensureCircularProgressPath(radius);
+
+        float circumference = (float) (Math.PI * 2.0f * radius);
+        float edgeInset = (AndroidUtilities.dp(circularProgressGeometry.getTrackGapDp())
+                + strokeWidth / 2.0f) / circumference;
+        float endFraction = circularProgressResolved.getEndFraction();
+        float trackStart = endFraction + edgeInset;
+        float trackSweep = 1.0f - endFraction - edgeInset * 2.0f;
+
+        circularProgressTrackPaint.setStrokeWidth(strokeWidth);
+        progressPaint.setStrokeWidth(strokeWidth);
+
+        int save = canvas.save();
+        canvas.translate((left + right) / 2.0f, (top + bottom) / 2.0f);
+        canvas.rotate(circularProgressResolved.getRotationDegrees() - 90.0f);
+
+        if (trackSweep > 0.0f) {
+            cicleRect.set(-radius, -radius, radius, radius);
+            canvas.drawArc(
+                    cicleRect,
+                    trackStart * 360.0f,
+                    trackSweep * 360.0f,
+                    false,
+                    circularProgressTrackPaint
+            );
+        }
+
+        float activeStart = edgeInset;
+        float activeEnd = endFraction - edgeInset;
+        drawingCircleLenght = Math.max(0.0f, activeEnd - activeStart) * 360.0f;
+
+        if (activeEnd > activeStart) {
+            circularProgressDisplayedPath.rewind();
+            circularProgressPathMeasure.getSegment(
+                    activeStart * circularProgressPathMeasure.getLength(),
+                    activeEnd * circularProgressPathMeasure.getLength(),
+                    circularProgressDisplayedPath,
+                    true
+            );
+            canvas.drawPath(circularProgressDisplayedPath, progressPaint);
+        }
+
+        canvas.restoreToCount(save);
+    }
+
+    private void drawCircularProgressStatic(
+            Canvas canvas,
+            float left,
+            float top,
+            float right,
+            float bottom
+    ) {
+        if (circularProgressStaticDrawable == null) {
+            circularProgressStaticDrawable = getContext().getDrawable(
+                    R.drawable.ic_fluxgram_material_progress_static).mutate();
+        }
+
+        circularProgressStaticDrawable.setTint(progressColor);
+        circularProgressStaticDrawable.setBounds(
+                Math.round(left),
+                Math.round(top),
+                Math.round(right),
+                Math.round(bottom)
+        );
+        circularProgressStaticDrawable.draw(canvas);
+        drawingCircleLenght = 360.0f;
+    }
+
+    private void ensureCircularProgressPath(float radius) {
+        if (circularProgressPathRadius == radius) {
+            return;
+        }
+
+        circularProgressPathRadius = radius;
+        circularProgressPath.rewind();
+
+        float wavelength = AndroidUtilities.dpf2(circularProgressGeometry.getWavelengthDp());
+        float amplitude = AndroidUtilities.dpf2(circularProgressGeometry.getWaveAmplitudeDp());
+        float circumference = (float) (Math.PI * 2.0f * radius);
+        int cycleCount = Math.max(3, (int) (circumference / wavelength));
+        int anchorCount = cycleCount * 2;
+        float controlLength = circumference / cycleCount / 2.0f * 0.48f;
+
+        float previousX = radius;
+        float previousY = 0.0f;
+        float previousTangentX = 0.0f;
+        float previousTangentY = 1.0f;
+        circularProgressPath.moveTo(previousX, previousY);
+
+        for (int i = 1; i <= anchorCount; i++) {
+            float angle = (float) (Math.PI * 2.0f * i / anchorCount);
+            float anchorRadius = (i & 1) == 0 ? radius : radius - amplitude * 2.0f;
+            float x = (float) Math.cos(angle) * anchorRadius;
+            float y = (float) Math.sin(angle) * anchorRadius;
+            float tangentX = -(float) Math.sin(angle);
+            float tangentY = (float) Math.cos(angle);
+
+            circularProgressPath.cubicTo(
+                    previousX + previousTangentX * controlLength,
+                    previousY + previousTangentY * controlLength,
+                    x - tangentX * controlLength,
+                    y - tangentY * controlLength,
+                    x,
+                    y
+            );
+
+            previousX = x;
+            previousY = y;
+            previousTangentX = tangentX;
+            previousTangentY = tangentY;
+        }
+
+        circularProgressPathMeasure.setPath(circularProgressPath, false);
     }
 
     public boolean isCircle() {

@@ -18,6 +18,8 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import androidx.core.graphics.ColorUtils;
+
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLoader;
 import org.telegram.messenger.LocaleController;
@@ -31,6 +33,7 @@ import org.telegram.messenger.plugins.packages.PluginPackageStore;
 import org.telegram.messenger.plugins.reputation.PluginReputationPolicy;
 import org.telegram.messenger.plugins.risk.PluginRiskPolicy;
 import org.telegram.messenger.plugins.signing.PluginSignerTransition;
+import org.telegram.messenger.fluxgram.MaterialVisualStyleRuntime;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.BottomSheet;
@@ -42,6 +45,7 @@ import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.LinkSpanDrawable;
 import org.telegram.ui.Components.RadialProgressView;
 import org.telegram.ui.Components.RLottieImageView;
+import org.telegram.ui.fluxgram.MaterialProgressStyle;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -1009,8 +1013,15 @@ public final class PluginInstallSheet {
             RadialProgressView progress = new RadialProgressView(
                     context, fragment.getResourceProvider());
             progress.setSize(dp(42));
-            progress.setProgressColor(fragment.getThemedColor(
-                    Theme.key_windowBackgroundWhiteBlueText));
+            progress.setCircularProgressGeometry(MaterialProgressStyle.circularGeometry(
+                    MaterialVisualStyleRuntime.getSnapshot()));
+            int progressColor = fragment.getThemedColor(
+                    Theme.key_windowBackgroundWhiteBlueText);
+            progress.setProgressColor(progressColor);
+            progress.setCircularProgressTrackColor(ColorUtils.blendARGB(
+                    fragment.getThemedColor(Theme.key_dialogBackground),
+                    progressColor,
+                    0.18f));
             addView(progress, LayoutHelper.createLinear(
                     72, 72, Gravity.CENTER_HORIZONTAL, 0, 42, 0, 18));
             addTitle(LocaleController.getString(R.string.FluxGramPluginInstalling));
