@@ -77,7 +77,7 @@ class ChatMessageFactCheck {
             bounce.setAdditionalInvalidate(cell::invalidateOutbounds);
         }
 
-        final float right = cell.getBackgroundDrawableRight() + (cell.transitionParams != null ? cell.transitionParams.deltaRight : 0) - dp(10 + (cell.currentMessageObject.isOutOwner() && !cell.mediaBackground && !cell.drawPinnedBottom ? 6 : 0)) - cell.getExtraTextX();
+        final float right = cell.getBackgroundDrawableRight() + (cell.transitionParams != null ? cell.transitionParams.deltaRight : 0) - dp(10 + (cell.currentMessageObject.isOutOwner() && cell.hasMessageTail() ? 6 : 0)) - cell.getExtraTextX();
         int x, y;
         if (cell.currentMessagesGroup != null && !cell.currentMessagesGroup.isDocuments) {
             x = (int) cell.captionX;
@@ -90,7 +90,7 @@ class ChatMessageFactCheck {
             if (cell.mediaBackground) {
                 x = cell.backgroundDrawableLeft + dp(12) + cell.getExtraTextX();
             } else {
-                x = cell.backgroundDrawableLeft + dp(cell.drawPinnedBottom ? 12 : 18) + cell.getExtraTextX();
+                x = cell.backgroundDrawableLeft + dp(cell.hasMessageTail() ? 18 : 12) + cell.getExtraTextX();
             }
         }
         x += cell.transitionParams.deltaLeft;
@@ -221,7 +221,7 @@ class ChatMessageFactCheck {
         if (alpha <= 0)
             return;
 
-        final float right = cell.getBackgroundDrawableRight() + (cell.transitionParams != null ? cell.transitionParams.deltaRight : 0) - dp(10 + (cell.currentMessageObject.isOutOwner() && !cell.mediaBackground && !cell.drawPinnedBottom ? 6 : 0)) - cell.getExtraTextX();
+        final float right = cell.getBackgroundDrawableRight() + (cell.transitionParams != null ? cell.transitionParams.deltaRight : 0) - dp(10 + (cell.currentMessageObject.isOutOwner() && cell.hasMessageTail() ? 6 : 0)) - cell.getExtraTextX();
 
         int x, y;
         if (cell.currentMessagesGroup != null && !cell.currentMessagesGroup.isDocuments) {
@@ -235,7 +235,7 @@ class ChatMessageFactCheck {
             if (cell.mediaBackground) {
                 x = cell.backgroundDrawableLeft + dp(12) + cell.getExtraTextX();
             } else {
-                x = cell.backgroundDrawableLeft + dp(cell.drawPinnedBottom ? 12 : 18) + cell.getExtraTextX();
+                x = cell.backgroundDrawableLeft + dp(cell.hasMessageTail() ? 18 : 12) + cell.getExtraTextX();
             }
         }
         x += cell.transitionParams.deltaLeft;
@@ -304,7 +304,7 @@ class ChatMessageFactCheck {
         if (alpha <= 0)
             return;
 
-        final float right = cell.getBackgroundDrawableRight() + (cell.transitionParams != null ? cell.transitionParams.deltaRight : 0) - dp(10 + (cell.currentMessageObject.isOutOwner() && !cell.mediaBackground && !cell.drawPinnedBottom ? 6 : 0)) - cell.getExtraTextX();
+        final float right = cell.getBackgroundDrawableRight() + (cell.transitionParams != null ? cell.transitionParams.deltaRight : 0) - dp(10 + (cell.currentMessageObject.isOutOwner() && cell.hasMessageTail() ? 6 : 0)) - cell.getExtraTextX();
 
         int x, y;
         if (cell.currentMessagesGroup != null && !cell.currentMessagesGroup.isDocuments) {
@@ -318,7 +318,7 @@ class ChatMessageFactCheck {
             if (cell.mediaBackground) {
                 x = cell.backgroundDrawableLeft + dp(12) + cell.getExtraTextX();
             } else {
-                x = cell.backgroundDrawableLeft + dp(cell.drawPinnedBottom ? 12 : 18) + cell.getExtraTextX();
+                x = cell.backgroundDrawableLeft + dp(cell.hasMessageTail() ? 18 : 12) + cell.getExtraTextX();
             }
         }
         x += cell.transitionParams.deltaLeft;

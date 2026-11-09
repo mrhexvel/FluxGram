@@ -14121,7 +14121,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         if (currentMessageObject.isOutOwner()) {
             textX = (parent ? (int) (backgroundDrawableLeft + transitionParams.deltaLeft) : getCurrentBackgroundLeft()) + dp(11) + getExtraTextX();
         } else {
-            textX = (parent ? (int) (backgroundDrawableLeft + transitionParams.deltaLeft) : getCurrentBackgroundLeft()) + (currentMessageObject.type == MessageObject.TYPE_EMOJIS ? 0 : dp(!mediaBackground && drawPinnedBottom ? 11 : 17)) + getExtraTextX();
+            textX = (parent ? (int) (backgroundDrawableLeft + transitionParams.deltaLeft) : getCurrentBackgroundLeft()) + (currentMessageObject.type == MessageObject.TYPE_EMOJIS ? 0 : dp(hasMessageTail() ? 17 : 11)) + getExtraTextX();
         }
         if (hasGamePreview) {
             textX += dp(11);
@@ -14375,7 +14375,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 end -= getExtraTextX() + dp(8 + (isAvatarVisible ? 48 : 0));
                 right = end;
             }
-            right -= dp(10 + (currentMessageObject.isOutOwner() && !mediaBackground && !drawPinnedBottom ? 6 : 0)) + getExtraTextX();
+            right -= dp(10 + (currentMessageObject.isOutOwner() && hasMessageTail() ? 6 : 0)) + getExtraTextX();
             if (isCompactIn()) {
                 // no bubble: quotes and code reach the page's 16dp edge, not the edge of the media above a caption
                 right = getCompactRight();
@@ -14676,7 +14676,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             captionYBelow = y + h + dp(6);
             captionY = y + AndroidUtilities.lerp(h + dp(6), (captionLayout == null ? 0 : -captionLayout.textHeight()) - dp(4), mediaAbove());
         } else if (hasOldCaptionPreview) {
-            captionX = backgroundDrawableLeft + dp(currentMessageObject.isOutOwner() ? 11 : 17) + captionOffsetX;
+            captionX = backgroundDrawableLeft + dp(currentMessageObject.isOutOwner() || !hasMessageTail() ? 11 : 17) + captionOffsetX;
             captionYBelow = totalHeight - captionHeight - dp(drawPinnedTop ? 9 : 10) - linkPreviewHeight - dp(17) - (drawCommentButton && drawSideButton != 3 ? getCommentButtonHeight() : 0);
             captionY = AndroidUtilities.lerp(
                 captionYBelow,
@@ -14688,7 +14688,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             if (isRoundVideo) {
                 captionX = getBackgroundDrawableLeft() + dp(11 + (currentMessageObject.isOutOwner() ? 0 : 6));
             } else {
-                captionX = backgroundDrawableLeft + dp(currentMessageObject.isOutOwner() || mediaBackground || drawPinnedBottom ? 11 : 17) + captionOffsetX;
+                captionX = backgroundDrawableLeft + dp(currentMessageObject.isOutOwner() || !hasMessageTail() ? 11 : 17) + captionOffsetX;
             }
             captionYBelow = totalHeight - captionHeight - dp(drawPinnedTop ? 9 : 10) - (drawCommentButton && drawSideButton != 3 ? getCommentButtonHeight() : 0) - (!reactionsLayoutInBubble.isEmpty && !reactionsLayoutInBubble.isSmall ? reactionsLayoutInBubble.totalHeight : 0);
             captionY = AndroidUtilities.lerp(
@@ -20431,7 +20431,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                         end -= getExtraTextX() + dp(8) + lerp(dp(isAvatarVisible ? 48 : 0), dp(ChatActivity.SIDE_MENU_WIDTH), sideMenuAlpha);
                         right = end;
                     }
-                    right -= dp(10 + (currentMessageObject.isOutOwner() && !mediaBackground && !drawPinnedBottom ? 6 : 0)) + getExtraTextX();
+                    right -= dp(10 + (currentMessageObject.isOutOwner() && hasMessageTail() ? 6 : 0)) + getExtraTextX();
                     if (isCompactIn() && currentMessagesGroup == null) {
                         right = getCompactRight() + transitionParams.deltaRight;
                     }
@@ -23853,7 +23853,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 if (mediaBackground) {
                     linkX = backgroundDrawableLeft + dp(12) + getExtraTextX();
                 } else {
-                    linkX = backgroundDrawableLeft + dp(drawPinnedBottom ? 12 : 18) + getExtraTextX();
+                    linkX = backgroundDrawableLeft + dp(hasMessageTail() ? 18 : 12) + getExtraTextX();
                 }
             }
             linkX += transitionParams.deltaLeft;
@@ -23864,7 +23864,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 startY = AndroidUtilities.lerp(transitionParams.animateFromLinkPreviewY, startY, transitionParams.animateChangeProgress);
             }
         }
-        final float right = getBackgroundDrawableRight() + (transitionParams != null ? transitionParams.deltaRight : 0) - dp(10 + (currentMessageObject.isOutOwner() && !mediaBackground && !drawPinnedBottom ? 6 : 0)) - getExtraTextX();
+        final float right = getBackgroundDrawableRight() + (transitionParams != null ? transitionParams.deltaRight : 0) - dp(10 + (currentMessageObject.isOutOwner() && hasMessageTail() ? 6 : 0)) - getExtraTextX();
         final int width = (int) (right - linkX);
         return linkX + dp(10) + (Math.abs(descriptionLayoutLeft) > 1 ? width - dp(20) - descriptionLayoutWidth - descriptionLayoutLeft : 0);
     }
@@ -24177,7 +24177,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             return 0;
         }
         int left = currentBackgroundDrawable.getBounds().left;
-        if (!currentMessageObject.isOutOwner() && transitionParams.changePinnedBottomProgress != 1 && (isRoundVideo || !mediaBackground) && !drawPinnedBottom) {
+        if (!currentMessageObject.isOutOwner() && transitionParams.changePinnedBottomProgress != 1 && (isRoundVideo || !mediaBackground && drawMessageTail) && !drawPinnedBottom) {
             if (isRoundVideo) {
                 left -= dp(6) * (getVideoTranscriptionProgress());
             } else {
@@ -24192,7 +24192,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             return getWidth();
         }
         int right = currentBackgroundDrawable.getBounds().right;
-        if (currentMessageObject.isOutOwner() && transitionParams.changePinnedBottomProgress != 1 && (isRoundVideo || !mediaBackground) && !drawPinnedBottom) {
+        if (currentMessageObject.isOutOwner() && transitionParams.changePinnedBottomProgress != 1 && (isRoundVideo || !mediaBackground && drawMessageTail) && !drawPinnedBottom) {
             if (isRoundVideo) {
                 right += dp(6) * (getVideoTranscriptionProgress());
             } else {

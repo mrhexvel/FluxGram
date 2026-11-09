@@ -379,6 +379,9 @@ class ChatSettingsTest(unittest.TestCase):
         accessibility = (
             JAVA / "ui/Cells/ChatMessageAccessibilityNodeProvider.java"
         ).read_text()
+        link_preview = (JAVA / "ui/Cells/ChatMessageLinkPreview.java").read_text()
+        fact_check = (JAVA / "ui/Cells/ChatMessageFactCheck.java").read_text()
+        contact = (JAVA / "ui/Cells/ChatMessageContact.java").read_text()
         activity = (JAVA / "ui/FluxGramSettingsActivity.java").read_text()
 
         self.assertEqual(
@@ -406,11 +409,33 @@ class ChatSettingsTest(unittest.TestCase):
         self.assertEqual(2, bot_buttons.count("cell.hasMessageTail() ? 7 : 1"))
         self.assertEqual(1, accessibility.count("cell.hasMessageTail() ? 7 : 1"))
         self.assertEqual(
-            1,
+            3,
             message_cell.count(
                 "currentMessageObject.isOutOwner() || !hasMessageTail() ? 11 : 17"
             ),
         )
+        self.assertGreaterEqual(
+            message_cell.count("currentMessageObject.isOutOwner() && hasMessageTail() ? 6 : 0"),
+            4,
+        )
+        self.assertIn("dp(hasMessageTail() ? 17 : 11)", message_cell)
+        self.assertIn("dp(hasMessageTail() ? 18 : 12)", message_cell)
+        self.assertEqual(2, message_cell.count("!mediaBackground && drawMessageTail"))
+        self.assertIn("cell.currentMessageObject.isOutOwner() && cell.hasMessageTail()", link_preview)
+        self.assertIn("cell.hasMessageTail() ? 18 : 12", link_preview)
+        self.assertEqual(
+            3,
+            fact_check.count("cell.currentMessageObject.isOutOwner() && cell.hasMessageTail()"),
+        )
+        self.assertEqual(3, fact_check.count("cell.hasMessageTail() ? 18 : 12"))
+        self.assertIn("cell.currentMessageObject.isOutOwner() && cell.hasMessageTail()", contact)
+        stale_tail_geometry = (
+            "!mediaBackground && !drawPinnedBottom ? 6 : 0",
+            "drawPinnedBottom ? 12 : 18",
+        )
+        for source in (message_cell, link_preview, fact_check, contact):
+            for expression in stale_tail_geometry:
+                self.assertNotIn(expression, source)
         self.assertNotIn("backgroundDrawableLeft + dp(mediaBackground ? 1 : 7)", message_cell)
         self.assertIn(".setChecked(ChatSettings.showsMessageTails())", activity)
         self.assertIn("ChatSettings.setShowsMessageTails(shown)", activity)

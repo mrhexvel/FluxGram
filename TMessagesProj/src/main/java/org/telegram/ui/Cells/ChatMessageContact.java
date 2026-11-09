@@ -196,7 +196,7 @@ class ChatMessageContact {
         if (cell.contactRect == null) {
             cell.contactRect = new RectF();
         }
-        float width = cell.getBackgroundDrawableRight() - (dp(10) + (cell.currentMessageObject.isOutOwner() && !cell.mediaBackground && !cell.drawPinnedBottom ? dp(6) : 0)) - cell.getExtraTextX();
+        float width = cell.getBackgroundDrawableRight() - (dp(10) + (cell.currentMessageObject.isOutOwner() && cell.hasMessageTail() ? dp(6) : 0)) - cell.getExtraTextX();
         if (cell.transitionParams.animateBackgroundBoundsInner) {
             width += cell.transitionParams.deltaRight;
         }

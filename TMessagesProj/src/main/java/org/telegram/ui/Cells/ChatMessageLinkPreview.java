@@ -98,7 +98,7 @@ class ChatMessageLinkPreview {
         int restoreCount = canvas.getSaveCount();
 
         final int backgroundWidth = (int) (cell.backgroundWidth + (cell.transitionParams != null ? - cell.transitionParams.deltaLeft + cell.transitionParams.deltaRight : 0));
-        final float right = cell.getBackgroundDrawableRight() + (cell.transitionParams != null ? cell.transitionParams.deltaRight : 0) - dp(10 + (cell.currentMessageObject.isOutOwner() && !cell.mediaBackground && !cell.drawPinnedBottom ? 6 : 0)) - cell.getExtraTextX();
+        final float right = cell.getBackgroundDrawableRight() + (cell.transitionParams != null ? cell.transitionParams.deltaRight : 0) - dp(10 + (cell.currentMessageObject.isOutOwner() && cell.hasMessageTail() ? 6 : 0)) - cell.getExtraTextX();
 
         int startY;
         int linkPreviewYDiff = 0;
@@ -122,7 +122,7 @@ class ChatMessageLinkPreview {
                 if (cell.mediaBackground) {
                     linkX = cell.backgroundDrawableLeft + dp(12) + cell.getExtraTextX();
                 } else {
-                    linkX = cell.backgroundDrawableLeft + dp(cell.drawPinnedBottom ? 12 : 18) + cell.getExtraTextX();
+                    linkX = cell.backgroundDrawableLeft + dp(cell.hasMessageTail() ? 18 : 12) + cell.getExtraTextX();
                 }
             }
             linkX += cell.transitionParams.deltaLeft;
