@@ -10,8 +10,11 @@ import android.animation.Animator;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.graphics.Canvas;
+import android.graphics.ColorFilter;
 import android.graphics.Paint;
+import android.graphics.PixelFormat;
 import android.graphics.RectF;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.ShapeDrawable;
 import android.os.Build;
 import android.os.Bundle;
@@ -133,13 +136,17 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
     private FrameLayout tabsViewWrapper;
     private MainTabsLayout tabsView;
     private BlurredBackgroundDrawable tabsViewBackground;
+    private DockedNavigationDrawable dockedNavigationBackground;
     private View fadeView;
     private final int bottomNavigationMode;
+    private final boolean materialNavigationDocked;
 
     public MainTabsActivity() {
         super();
         bottomNavigationMode = BottomNavigationSettings.normalize(SharedConfig.bottomNavigationMode);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        materialNavigationDocked = MaterialNavigationStyle.usesDockedContainer(
+                MaterialVisualStyleRuntime.getSnapshot());
+        if (!materialNavigationDocked && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             iBlur3SourceTabGlass = createTabSource(false);
             iBlur3SourceTabFrosted = createTabSource(true);
         } else {
@@ -162,6 +169,64 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
 
         Bulletin.addDelegate(this, delegate);
         Bulletin.addDelegate(contentView, delegate);
+    }
+
+    private static final class DockedNavigationDrawable extends Drawable {
+        private final Paint backgroundPaint = new Paint();
+        private final Paint dividerPaint = new Paint();
+        private int backgroundColor;
+        private int dividerColor;
+        private int alpha = 255;
+
+        public void setColors(int backgroundColor, int dividerColor) {
+            if (this.backgroundColor == backgroundColor && this.dividerColor == dividerColor) {
+                return;
+            }
+
+            this.backgroundColor = backgroundColor;
+            this.dividerColor = dividerColor;
+            updatePaints();
+            invalidateSelf();
+        }
+
+        private void updatePaints() {
+            float alphaFactor = alpha / 255.0f;
+            backgroundPaint.setColor(Theme.multAlpha(backgroundColor, alphaFactor));
+            dividerPaint.setColor(Theme.multAlpha(dividerColor, alphaFactor));
+        }
+
+        @Override
+        public void draw(@NonNull Canvas canvas) {
+            canvas.drawRect(getBounds(), backgroundPaint);
+            canvas.drawRect(
+                    getBounds().left,
+                    getBounds().top,
+                    getBounds().right,
+                    getBounds().top + Math.max(1.0f, AndroidUtilities.dpf2(0.5f)),
+                    dividerPaint
+            );
+        }
+
+        @Override
+        public void setAlpha(int alpha) {
+            int boundedAlpha = MathUtils.clamp(alpha, 0, 255);
+            if (this.alpha != boundedAlpha) {
+                this.alpha = boundedAlpha;
+                updatePaints();
+                invalidateSelf();
+            }
+        }
+
+        @Override
+        public void setColorFilter(@Nullable ColorFilter colorFilter) {
+            backgroundPaint.setColorFilter(colorFilter);
+            dividerPaint.setColorFilter(colorFilter);
+        }
+
+        @Override
+        public int getOpacity() {
+            return PixelFormat.TRANSLUCENT;
+        }
     }
 
     /** The pages under the tabs: an intermediate node over one or two of them, their glass or their frosted glass. */
@@ -243,7 +308,9 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
                 super.onLayout(changed, left, top, right, bottom);
                 checkUi_tabsPosition();
                 checkUi_fadeView();
-                blur3_updateFragmentsGlass();
+                if (!materialNavigationDocked) {
+                    blur3_updateFragmentsGlass();
+                }
             }
 
             @Override
@@ -257,7 +324,9 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
                 }
 
                 super.dispatchDraw(canvas);
-                blur3_invalidateBlur();
+                if (!materialNavigationDocked) {
+                    blur3_invalidateBlur();
+                }
                 blur3_updateFadeColors();
             }
         };
@@ -407,33 +476,54 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
 
         iBlur3SourceColor.setColor(getThemedColor(Theme.key_windowBackgroundWhite));
 
-        final ViewPositionWatcher viewPositionWatcher = new ViewPositionWatcher(contentView);
-
-        BlurredBackgroundDrawableViewFactory iBlur3FactoryGlass = new BlurredBackgroundDrawableViewFactory(
-            iBlur3SourceTabGlass != null ? iBlur3SourceTabGlass : iBlur3SourceColor,
-            iBlur3SourceTabFrosted != null ? iBlur3SourceTabFrosted : iBlur3SourceColor,
-            iBlur3SourceColor);
-        iBlur3FactoryGlass.setSourceRootView(viewPositionWatcher, contentView);
-        iBlur3FactoryGlass.setLiquidGlassEffectAllowed(true);
-
-        tabsViewBackground = iBlur3FactoryGlass.create(tabsView, BlurredBackgroundProviderImpl.mainTabs(resourceProvider));
-        tabsViewBackground.setRadius(dp(DialogsActivity.MAIN_TABS_HEIGHT / 2f));
-        tabsViewBackground.setPadding(dp(DialogsActivity.MAIN_TABS_MARGIN - 0.334f));
-        tabsViewBackground.setOutlineStyle(AppearanceSettings.getGlassOutlineStyle(currentAccount));
-        tabsView.setBackground(tabsViewBackground);
-
-        BlurredBackgroundDrawableViewFactory iBlur3FactoryFade = new BlurredBackgroundDrawableViewFactory(iBlur3SourceColor);
-        iBlur3FactoryFade.setSourceRootView(viewPositionWatcher, contentView);
-
         fadeView = new View(context);
-        BlurredBackgroundWithFadeDrawable fadeDrawable = new BlurredBackgroundWithFadeDrawable(iBlur3FactoryFade.create(fadeView, null));
-        fadeDrawable.setFadeHeight(dp(60), true);
-        fadeView.setBackground(fadeDrawable);
-
         contentView.addView(fadeView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 0, Gravity.BOTTOM));
 
         tabsViewWrapper = new FrameLayout(context);
         tabsViewWrapper.setOnClickListener(v -> {});
+
+        if (materialNavigationDocked) {
+            dockedNavigationBackground = new DockedNavigationDrawable();
+            dockedNavigationBackground.setColors(
+                    getThemedColor(Theme.key_windowBackgroundWhite),
+                    getThemedColor(Theme.key_divider)
+            );
+            tabsViewWrapper.setBackground(dockedNavigationBackground);
+        } else {
+            final ViewPositionWatcher viewPositionWatcher = new ViewPositionWatcher(contentView);
+            BlurredBackgroundDrawableViewFactory iBlur3FactoryGlass =
+                    new BlurredBackgroundDrawableViewFactory(
+                            iBlur3SourceTabGlass != null
+                                    ? iBlur3SourceTabGlass
+                                    : iBlur3SourceColor,
+                            iBlur3SourceTabFrosted != null
+                                    ? iBlur3SourceTabFrosted
+                                    : iBlur3SourceColor,
+                            iBlur3SourceColor
+                    );
+            iBlur3FactoryGlass.setSourceRootView(viewPositionWatcher, contentView);
+            iBlur3FactoryGlass.setLiquidGlassEffectAllowed(true);
+
+            tabsViewBackground = iBlur3FactoryGlass.create(
+                    tabsView,
+                    BlurredBackgroundProviderImpl.mainTabs(resourceProvider)
+            );
+            tabsViewBackground.setRadius(dp(DialogsActivity.MAIN_TABS_HEIGHT / 2f));
+            tabsViewBackground.setPadding(dp(DialogsActivity.MAIN_TABS_MARGIN - 0.334f));
+            tabsViewBackground.setOutlineStyle(
+                    AppearanceSettings.getGlassOutlineStyle(currentAccount));
+            tabsView.setBackground(tabsViewBackground);
+
+            BlurredBackgroundDrawableViewFactory iBlur3FactoryFade =
+                    new BlurredBackgroundDrawableViewFactory(iBlur3SourceColor);
+            iBlur3FactoryFade.setSourceRootView(viewPositionWatcher, contentView);
+            BlurredBackgroundWithFadeDrawable fadeDrawable =
+                    new BlurredBackgroundWithFadeDrawable(
+                            iBlur3FactoryFade.create(fadeView, null));
+            fadeDrawable.setFadeHeight(dp(60), true);
+            fadeView.setBackground(fadeDrawable);
+        }
+
         tabsViewWrapper.addView(tabsView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
         tabsViewWrapper.setClipToPadding(false);
         contentView.addView(tabsViewWrapper, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.BOTTOM));
@@ -1270,7 +1360,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         if (viewPager == null || fadeView == null) {
             return;
         }
-        if (!hasBottomNavigation()) {
+        if (!hasBottomNavigation() || materialNavigationDocked) {
             fadeView.setVisibility(View.GONE);
             return;
         }
@@ -1311,6 +1401,9 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         tabsView.setEnabled(factor > 1);
         tabsView.setAlpha(factor);
         tabsView.setVisibility(factor > 0 ? View.VISIBLE : View.GONE);
+        if (dockedNavigationBackground != null) {
+            dockedNavigationBackground.setAlpha(Math.round(255 * factor));
+        }
     }
 
     private void checkUi_callTabVisible(boolean callTabsVisible, boolean animated) {
@@ -1458,7 +1551,9 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
     private final Runnable onFragmentGlassCaptured = this::blur3_onFragmentGlassCaptured;
 
     private void blur3_onFragmentGlassCaptured() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && iBlur3SourceTabGlass != null) {
+        if (!materialNavigationDocked
+                && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                && iBlur3SourceTabGlass != null) {
             iBlur3SourceTabGlass.invalidateRenderer();
             iBlur3SourceTabFrosted.invalidateRenderer();
             blur3_invalidateBlur();
@@ -1467,7 +1562,10 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
 
     /** The tabs go to the capture of the page under them: the full width, the place of the shown tabs whatever they do. */
     private void blur3_updateFragmentsGlass() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || iBlur3SourceTabGlass == null || contentView == null) {
+        if (materialNavigationDocked
+                || Build.VERSION.SDK_INT < Build.VERSION_CODES.S
+                || iBlur3SourceTabGlass == null
+                || contentView == null) {
             return;
         }
 
@@ -1491,7 +1589,11 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
     }
 
     private void blur3_invalidateBlur() {
-        if (!hasBottomNavigation() || Build.VERSION.SDK_INT < Build.VERSION_CODES.S || iBlur3SourceTabGlass == null || fragmentView == null) {
+        if (materialNavigationDocked
+                || !hasBottomNavigation()
+                || Build.VERSION.SDK_INT < Build.VERSION_CODES.S
+                || iBlur3SourceTabGlass == null
+                || fragmentView == null) {
             return;
         }
 
@@ -1522,6 +1624,12 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         if (tabsViewBackground != null) {
             tabsViewBackground.setOutlineStyle(AppearanceSettings.getGlassOutlineStyle(currentAccount));
             tabsViewBackground.updateColors();
+        }
+        if (dockedNavigationBackground != null) {
+            dockedNavigationBackground.setColors(
+                    getThemedColor(Theme.key_windowBackgroundWhite),
+                    getThemedColor(Theme.key_divider)
+            );
         }
         blur3_invalidateBlur();
         if (fadeView != null) {
@@ -1557,6 +1665,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
     public void addThemeColorKeys(HashSet<Integer> keys) {
         super.addThemeColorKeys(keys);
         keys.add(Theme.key_dialogBackground);
+        keys.add(Theme.key_divider);
         keys.add(Theme.key_windowBackgroundWhite);
     }
 }

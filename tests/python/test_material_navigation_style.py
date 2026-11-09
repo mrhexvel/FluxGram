@@ -39,6 +39,11 @@ class MaterialNavigationStyleTest(unittest.TestCase):
                                 MaterialVisualStyle.telegram()) == null);
                         require(MaterialNavigationStyle.activeIndicatorGeometry(resolve(
                                 MaterialStylePolicy.Module.LISTS)) == null);
+                        require(!MaterialNavigationStyle.usesDockedContainer(null));
+                        require(!MaterialNavigationStyle.usesDockedContainer(
+                                MaterialVisualStyle.telegram()));
+                        require(!MaterialNavigationStyle.usesDockedContainer(resolve(
+                                MaterialStylePolicy.Module.LISTS)));
 
                         ActiveIndicatorGeometry geometry =
                                 MaterialNavigationStyle.activeIndicatorGeometry(resolve(
@@ -48,6 +53,8 @@ class MaterialNavigationStyleTest(unittest.TestCase):
                         require(geometry.getHeightDp() == 32);
                         require(geometry.getCornerRadiusDp() == 16);
                         require(geometry.getHorizontalMarginDp() == 4);
+                        require(MaterialNavigationStyle.usesDockedContainer(resolve(
+                                MaterialStylePolicy.Module.NAVIGATION)));
 
                         requireThrows(() -> new ActiveIndicatorGeometry(0, 32, 16, 4));
                         requireThrows(() -> new ActiveIndicatorGeometry(56, 0, 16, 4));
@@ -138,8 +145,20 @@ class MaterialNavigationStyleTest(unittest.TestCase):
         self.assertIn("tmpRectF.set(0, 0, viewWidth, getHeight())", tab)
         self.assertIn("sWidth = availableWidth", layout)
         self.assertIn("MaterialNavigationStyle.activeIndicatorGeometry(", activity)
+        self.assertIn("MaterialNavigationStyle.usesDockedContainer(", activity)
         self.assertIn("MaterialVisualStyleRuntime.getSnapshot()", activity)
         self.assertIn("tabsView.setActiveIndicatorGeometry(activeIndicatorGeometry)", activity)
+        self.assertIn("private static final class DockedNavigationDrawable", activity)
+        self.assertIn("tabsViewWrapper.setBackground(dockedNavigationBackground)", activity)
+        self.assertIn("!hasBottomNavigation() || materialNavigationDocked", activity)
+        self.assertIn("dockedNavigationBackground.setAlpha(Math.round(255 * factor))", activity)
+        self.assertIn("getThemedColor(Theme.key_windowBackgroundWhite)", activity)
+        self.assertIn("getThemedColor(Theme.key_divider)", activity)
+        self.assertIn("if (materialNavigationDocked)", activity)
+        self.assertIn("else {\n            final ViewPositionWatcher", activity)
+        self.assertIn("materialNavigationDocked\n                || !hasBottomNavigation()", activity)
+        self.assertIn("public static final int TABS_COUNT = 4", activity)
+        self.assertIn("private static int indexToPosition(int index)", activity)
 
         consumers = []
         for path in JAVA.rglob("*.java"):

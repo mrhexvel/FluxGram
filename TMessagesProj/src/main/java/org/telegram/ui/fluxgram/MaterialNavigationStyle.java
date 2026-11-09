@@ -25,4 +25,8 @@ public final class MaterialNavigationStyle {
 
         return shape != null && shape.isFull() ? ACTIVE_INDICATOR_GEOMETRY : null;
     }
+
+    public static boolean usesDockedContainer(MaterialVisualStyle.Snapshot style) {
+        return activeIndicatorGeometry(style) != null;
+    }
 }
