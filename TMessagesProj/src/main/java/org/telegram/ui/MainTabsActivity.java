@@ -57,6 +57,7 @@ import org.telegram.messenger.UserObject;
 import org.telegram.messenger.fluxgram.AppearanceSettings;
 import org.telegram.messenger.fluxgram.BottomNavigationSettings;
 import org.telegram.messenger.fluxgram.FolderSettings;
+import org.telegram.messenger.fluxgram.MaterialVisualStyleRuntime;
 import org.telegram.messenger.fluxgram.ProfileDisplaySettings;
 import org.telegram.messenger.fluxgram.RootNavigationSnapshot;
 import org.telegram.tgnet.TLRPC;
@@ -67,6 +68,7 @@ import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.ActionBar.ThemeBind;
 import org.telegram.ui.ActionBar.ThemeDescription;
 import org.telegram.ui.Components.AnimatedEmojiDrawable;
+import org.telegram.ui.Components.ActiveIndicatorGeometry;
 import org.telegram.ui.Components.AvatarDrawable;
 import org.telegram.ui.Components.BackupImageView;
 import org.telegram.ui.Components.Bulletin;
@@ -90,6 +92,7 @@ import org.telegram.ui.Components.chat.ViewPositionWatcher;
 import org.telegram.ui.Components.glass.GlassTabView;
 import org.telegram.ui.fluxgram.FolderPresentation;
 import org.telegram.ui.fluxgram.FolderUnreadCounter;
+import org.telegram.ui.fluxgram.MaterialNavigationStyle;
 import org.telegram.ui.Stories.recorder.HintView2;
 import org.telegram.ui.Wallet.WalletActivity;
 
@@ -394,6 +397,10 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
             tabsView.addView(tabs[index]);
             tabsView.setViewVisible(view, true, false);
         }
+        ActiveIndicatorGeometry activeIndicatorGeometry =
+                MaterialNavigationStyle.activeIndicatorGeometry(
+                        MaterialVisualStyleRuntime.getSnapshot());
+        tabsView.setActiveIndicatorGeometry(activeIndicatorGeometry);
         checkUi_callTabVisible(getUserConfig().showCallsTab, false);
 
         selectTab(viewPager.getCurrentPosition(), false);

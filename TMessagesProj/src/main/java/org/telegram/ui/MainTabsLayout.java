@@ -22,6 +22,7 @@ import android.util.Log;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Components.ActiveIndicatorGeometry;
 import org.telegram.ui.Components.AnimatedLinearLayout;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.glass.GlassTabView;
@@ -47,6 +48,26 @@ public class MainTabsLayout extends AnimatedLinearLayout {
     private static final int[] PASS_PADDINGS_DP = {16, 8, 4};
 
     private int maxWidthPx;
+    @Nullable
+    private ActiveIndicatorGeometry activeIndicatorGeometry;
+
+    public void setActiveIndicatorGeometry(@Nullable ActiveIndicatorGeometry geometry) {
+        if (activeIndicatorGeometry == geometry) {
+            return;
+        }
+
+        activeIndicatorGeometry = geometry;
+
+        for (int index = 0; index < getChildCount(); index++) {
+            View child = getChildAt(index);
+
+            if (child instanceof GlassTabView) {
+                ((GlassTabView) child).setActiveIndicatorGeometry(geometry);
+            }
+        }
+
+        invalidate();
+    }
 
     public void setMaxWidth(int maxWidthPx) {
         if (this.maxWidthPx != maxWidthPx) {
@@ -311,13 +332,42 @@ public class MainTabsLayout extends AnimatedLinearLayout {
     protected void dispatchDraw(@NonNull Canvas canvas) {
         if (drawCustomSelector) {
             final float x = animatedLongSelectedViewCenterX + animatedLongSelectedViewOffsetX;
-            final float sWidth = getInterpolatedWidthByX(x, this);
-            final float sHeight = getHeight() - getPaddingTop() - getPaddingBottom();
+            final float availableWidth = getInterpolatedWidthByX(x, this);
+            final float availableHeight = getHeight() - getPaddingTop() - getPaddingBottom();
+            final float sWidth;
+            final float sHeight;
+            final float centerY;
+            final float radius;
+
+            if (activeIndicatorGeometry != null) {
+                sWidth = Math.min(
+                        dp(activeIndicatorGeometry.getWidthDp()),
+                        Math.max(
+                                0,
+                                availableWidth
+                                        - dp(activeIndicatorGeometry.getHorizontalMarginDp()) * 2
+                        )
+                );
+                sHeight = Math.min(
+                        dp(activeIndicatorGeometry.getHeightDp()),
+                        availableHeight
+                );
+                centerY = getPaddingTop() + sHeight / 2f;
+                radius = Math.min(
+                        dp(activeIndicatorGeometry.getCornerRadiusDp()),
+                        Math.min(sWidth, sHeight) / 2f
+                );
+            } else {
+                sWidth = availableWidth;
+                sHeight = availableHeight;
+                centerY = getHeight() / 2f;
+                radius = sHeight / 2f;
+            }
 
             canvas.drawRoundRect(
-                    x - sWidth / 2f, (getHeight() - sHeight) / 2f,
-                    x + sWidth / 2f, (getHeight() + sHeight) / 2f,
-                    sHeight / 2f, sHeight / 2f, selectorPaint);
+                    x - sWidth / 2f, centerY - sHeight / 2f,
+                    x + sWidth / 2f, centerY + sHeight / 2f,
+                    radius, radius, selectorPaint);
         }
 
         super.dispatchDraw(canvas);
@@ -399,7 +449,7 @@ public class MainTabsLayout extends AnimatedLinearLayout {
         if (start) {
             View selected = findSelectedTab();
             if (selected != null) {
-                animatedLongSelectedViewCenterX = selected.getX() + selected.getWidth() / 2f;
+                animatedLongSelectedViewCenterX = getCenterX(selected);
                 animatedLongSelectedViewOffsetX = animatedLongSelectedViewCenterX - x;
                 selectedTabPositionOffsetX.animateToFinalPosition(0);
                 if (selected != found && found != null) {
@@ -419,8 +469,8 @@ public class MainTabsLayout extends AnimatedLinearLayout {
             setTabSelected(found, true);
 
             if (end) {
-                final float vw = found.getWidth();
-                final float cx = found.getX() + vw / 2f;
+                final float vw = getVisualWidth(found);
+                final float cx = getCenterX(found);
                 if (lastLongSelectedViewWidth != vw || lastLongSelectedViewCenterX != cx) {
                     selectedTabPositionX.animateToFinalPosition(cx);
                 }
@@ -625,7 +675,7 @@ public class MainTabsLayout extends AnimatedLinearLayout {
                 continue;
             }
 
-            float centerX = view.getX() + view.getWidth() * 0.5f;
+            float centerX = getCenterX(view);
 
             if (centerX < min) min = centerX;
             if (centerX > max) max = centerX;
@@ -657,7 +707,7 @@ public class MainTabsLayout extends AnimatedLinearLayout {
                 continue;
             }
 
-            float centerX = view.getX() + view.getWidth() * 0.5f;
+            float centerX = getCenterX(view);
             float distance = Math.abs(centerX - x);
 
             if (distance < nearestDistance) {
@@ -683,7 +733,7 @@ public class MainTabsLayout extends AnimatedLinearLayout {
                 continue;
             }
 
-            float centerX = view.getX() + view.getWidth() * 0.5f;
+            float centerX = getCenterX(view);
 
             if (centerX <= x && (left == null || centerX > getCenterX(left))) {
                 left = view;
@@ -699,25 +749,31 @@ public class MainTabsLayout extends AnimatedLinearLayout {
         }
 
         if (left == null) {
-            return right.getWidth();
+            return getVisualWidth(right);
         }
 
         if (right == null) {
-            return left.getWidth();
+            return getVisualWidth(left);
         }
 
         float leftX = getCenterX(left);
         float rightX = getCenterX(right);
 
         if (left == right || leftX == rightX) {
-            return left.getWidth();
+            return getVisualWidth(left);
         }
 
         float ratio = (x - leftX) / (rightX - leftX);
-        return lerp(left.getWidth(), right.getWidth(), ratio);
+        return lerp(getVisualWidth(left), getVisualWidth(right), ratio);
     }
 
     private static float getCenterX(View v) {
-        return v.getX() + v.getWidth() * 0.5f;
+        return v.getX() + getVisualWidth(v) * 0.5f;
+    }
+
+    private static float getVisualWidth(View view) {
+        return view instanceof GlassTabView
+                ? ((GlassTabView) view).getVisualWidth()
+                : view.getWidth();
     }
 }

@@ -21,6 +21,7 @@ import android.widget.TextView;
 
 import androidx.annotation.DrawableRes;
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.annotation.RawRes;
 import androidx.annotation.StringRes;
 import androidx.core.graphics.ColorUtils;
@@ -38,6 +39,7 @@ import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.fluxgram.icons.IconPackRuntime;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Components.ActiveIndicatorGeometry;
 import org.telegram.ui.Components.AnimatedTextView;
 import org.telegram.ui.Components.AvatarDrawable;
 import org.telegram.ui.Components.BackupImageView;
@@ -144,7 +146,15 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
             final float offset = (visualWidth - getMeasuredWidth()) / 2f;
             imageView.setTranslationX(offset);
             textView.setTranslationX(offset);
+
+            if (backupImageView != null) {
+                backupImageView.setTranslationX(offset);
+            }
         }
+    }
+
+    public float getVisualWidth() {
+        return hasVisualWidth ? visualWidth : getWidth();
     }
 
     private static final RectF tmpRectF = new RectF();
@@ -152,6 +162,14 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
     private boolean hasGestureSelectedOverride;
     private float gestureSelectedOverride;
     private boolean skipDrawSelector;
+    private ActiveIndicatorGeometry activeIndicatorGeometry;
+
+    public void setActiveIndicatorGeometry(@Nullable ActiveIndicatorGeometry geometry) {
+        if (activeIndicatorGeometry != geometry) {
+            activeIndicatorGeometry = geometry;
+            invalidate();
+        }
+    }
 
     public void setGestureSelectedOverride(float gestureSelectedOverride, boolean allow) {
         this.gestureSelectedOverride = gestureSelectedOverride;
@@ -174,12 +192,40 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
             final float alpha = AnimatorUtils.DECELERATE_INTERPOLATOR.getInterpolation(selectedFactor);
 
             paintCounterBackground.setColor(Theme.multAlpha(colorSelected, 0.09f * alpha));
-            tmpRectF.set(0, 0, viewWidth, getHeight());
-            final float r = Math.min(tmpRectF.width(), tmpRectF.height()) / 2f;
+            final float radius;
+
+            if (activeIndicatorGeometry != null) {
+                final float width = Math.min(
+                        dp(activeIndicatorGeometry.getWidthDp()),
+                        Math.max(
+                                0,
+                                viewWidth
+                                        - dp(activeIndicatorGeometry.getHorizontalMarginDp()) * 2
+                        )
+                );
+                final float height = Math.min(
+                        dp(activeIndicatorGeometry.getHeightDp()),
+                        getHeight()
+                );
+                tmpRectF.set(
+                        (viewWidth - width) / 2f,
+                        0,
+                        (viewWidth + width) / 2f,
+                        height
+                );
+                radius = Math.min(
+                        dp(activeIndicatorGeometry.getCornerRadiusDp()),
+                        Math.min(width, height) / 2f
+                );
+            } else {
+                tmpRectF.set(0, 0, viewWidth, getHeight());
+                radius = Math.min(tmpRectF.width(), tmpRectF.height()) / 2f;
+            }
+
             final float s = lerp(0.6f, 1, selectedFactor) * MathUtils.clamp(attachScale, 0, 1);
             canvas.save();
             canvas.scale(s, s, tmpRectF.centerX(), tmpRectF.centerY());
-            canvas.drawRoundRect(tmpRectF, r, r, paintCounterBackground);
+            canvas.drawRoundRect(tmpRectF, radius, radius, paintCounterBackground);
             canvas.restore();
         }
 
