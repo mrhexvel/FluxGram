@@ -45,6 +45,9 @@ import me.vkryl.android.animator.BoolAnimator;
 
 public class Switch extends View implements Theme.Colorable {
 
+    private static volatile SwitchGeometry defaultGeometry;
+    private static boolean defaultGeometryInitialized;
+
     @Override
     public void updateColors() {
         colorSet = 0; // the ripple color is re-read from the theme on the next press
@@ -113,6 +116,7 @@ public class Switch extends View implements Theme.Colorable {
     public Switch(Context context, Theme.ResourcesProvider resourcesProvider) {
         super(context);
         this.resourcesProvider = resourcesProvider;
+        geometry = defaultGeometry;
         rectF = new RectF();
 
         paint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -121,7 +125,43 @@ public class Switch extends View implements Theme.Colorable {
         paint2.setStrokeCap(Paint.Cap.ROUND);
         paint2.setStrokeWidth(AndroidUtilities.dp(2));
 
+        if (geometry != null) {
+            materialThumbWidthDp = geometry.getUncheckedThumbDiameterDp();
+            materialThumbHeightDp = geometry.getUncheckedThumbDiameterDp();
+        }
+
         setHapticFeedbackEnabled(true);
+    }
+
+    public static synchronized void initializeDefaultGeometry(SwitchGeometry geometry) {
+        if (defaultGeometryInitialized) {
+            return;
+        }
+
+        defaultGeometry = geometry;
+        defaultGeometryInitialized = true;
+    }
+
+    public SwitchGeometry getGeometry() {
+        return geometry;
+    }
+
+    public int getLayoutWidthDp(int fallbackWidthDp) {
+        return geometry == null ? fallbackWidthDp : geometry.getTrackWidthDp();
+    }
+
+    public int getLayoutHeightDp(int fallbackHeightDp) {
+        return geometry == null
+                ? fallbackHeightDp
+                : Math.max(fallbackHeightDp, geometry.getTrackHeightDp());
+    }
+
+    public int getOuterMarginDp(int fallbackMarginDp) {
+        return geometry == null ? fallbackMarginDp : geometry.getCellOuterMarginDp();
+    }
+
+    public int getCellEndInsetDp(int fallbackInsetDp) {
+        return geometry == null ? fallbackInsetDp : geometry.getCellEndInsetDp();
     }
 
     public void setGeometry(SwitchGeometry geometry) {

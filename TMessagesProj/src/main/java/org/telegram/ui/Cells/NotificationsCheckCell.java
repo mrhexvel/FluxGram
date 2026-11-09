@@ -116,7 +116,12 @@ public class NotificationsCheckCell extends FrameLayout {
             }
         };
         checkBox.setColors(Theme.key_switchTrack, Theme.key_switchTrackChecked, Theme.key_windowBackgroundWhite, Theme.key_windowBackgroundWhite);
-        addView(checkBox, LayoutHelper.createFrame(37, 40, (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.CENTER_VERTICAL, 21, 0, 21, 0));
+        int switchMargin = checkBox.getOuterMarginDp(21);
+        addView(checkBox, LayoutHelper.createFrame(
+                checkBox.getLayoutWidthDp(37),
+                checkBox.getLayoutHeightDp(40),
+                (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.CENTER_VERTICAL,
+                switchMargin, 0, switchMargin, 0));
         checkBox.setFocusable(false);
     }
 

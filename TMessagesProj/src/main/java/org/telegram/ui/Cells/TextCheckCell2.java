@@ -138,7 +138,23 @@ public class TextCheckCell2 extends FrameLayout {
 
         checkBox = new Switch(context);
         checkBox.setDrawIconType(1);
-        addView(checkBox, LayoutHelper.createFrame(37, 40, (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.CENTER_VERTICAL, 22, 0, 22, 0));
+        int switchMargin = checkBox.getOuterMarginDp(22);
+        addView(checkBox, LayoutHelper.createFrame(
+                checkBox.getLayoutWidthDp(37),
+                checkBox.getLayoutHeightDp(40),
+                (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.CENTER_VERTICAL,
+                switchMargin, 0, switchMargin, 0));
+
+        int textEndInset = dp(checkBox.getCellEndInsetDp(64));
+        FrameLayout.LayoutParams titleParams = (FrameLayout.LayoutParams) textView.getLayoutParams();
+        FrameLayout.LayoutParams valueParams = (FrameLayout.LayoutParams) valueTextView.getLayoutParams();
+        if (LocaleController.isRTL) {
+            titleParams.leftMargin = textEndInset;
+            valueParams.leftMargin = textEndInset;
+        } else {
+            titleParams.rightMargin = textEndInset;
+            valueParams.rightMargin = textEndInset;
+        }
     }
 
     @Override

@@ -76,8 +76,23 @@ public class PollCreateCheckCell extends FrameLayout {
 
         checkBox = new Switch(context, resourcesProvider);
         checkBox.setColors(Theme.key_switchTrack, Theme.key_switchTrackChecked, Theme.key_windowBackgroundWhite, Theme.key_windowBackgroundWhite);
-        addView(checkBox, LayoutHelper.createFrame(37, 40, (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.TOP, 21, 10, 19, 0));
+        addView(checkBox, LayoutHelper.createFrame(
+                checkBox.getLayoutWidthDp(37),
+                checkBox.getLayoutHeightDp(40),
+                (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.TOP,
+                checkBox.getOuterMarginDp(21), 10, checkBox.getOuterMarginDp(19), 0));
         checkBox.setFocusable(false);
+
+        int textEndInset = dp(checkBox.getCellEndInsetDp(66));
+        FrameLayout.LayoutParams titleParams = (FrameLayout.LayoutParams) textView.getLayoutParams();
+        FrameLayout.LayoutParams valueParams = (FrameLayout.LayoutParams) multilineValueTextView.getLayoutParams();
+        if (LocaleController.isRTL) {
+            titleParams.leftMargin = textEndInset;
+            valueParams.leftMargin = textEndInset;
+        } else {
+            titleParams.rightMargin = textEndInset;
+            valueParams.rightMargin = textEndInset;
+        }
     }
 
     public Switch getCheckBox() {

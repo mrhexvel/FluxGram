@@ -274,11 +274,21 @@ class MaterialStylePolicyTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            context = root / "android/content/Context.java"
             shared_preferences = root / "android/content/SharedPreferences.java"
             messages_controller = root / "org/telegram/messenger/MessagesController.java"
             check = root / "MaterialStyleSettingsCheck.java"
             shared_preferences.parent.mkdir(parents=True)
             messages_controller.parent.mkdir(parents=True)
+            context.write_text(textwrap.dedent("""
+                package android.content;
+
+                public abstract class Context {
+                    public static final int MODE_PRIVATE = 0;
+
+                    public abstract SharedPreferences getSharedPreferences(String name, int mode);
+                }
+            """))
             shared_preferences.write_text(textwrap.dedent("""
                 package android.content;
 
@@ -312,6 +322,7 @@ class MaterialStylePolicyTest(unittest.TestCase):
                 }
             """))
             check.write_text(textwrap.dedent("""
+                import android.content.Context;
                 import android.content.SharedPreferences;
                 import java.util.HashMap;
                 import java.util.Map;
@@ -329,8 +340,17 @@ class MaterialStylePolicyTest(unittest.TestCase):
                         FakePreferences preferences = new FakePreferences();
                         MessagesController.setGlobalMainSettingsForTests(preferences);
 
+                        Context context = new Context() {
+                            @Override
+                            public SharedPreferences getSharedPreferences(String name, int mode) {
+                                require(name.equals("mainconfig"));
+                                require(mode == Context.MODE_PRIVATE);
+                                return preferences;
+                            }
+                        };
+
                         preferences.values.put(KEY, "2:3:0");
-                        State fallback = MaterialStyleSettings.getState();
+                        State fallback = MaterialStyleSettings.getState(context);
                         require(fallback.equals(MaterialStylePolicy.defaults()));
                         require(preferences.commits == 0);
                         require(preferences.applies == 0);
@@ -438,6 +458,7 @@ class MaterialStylePolicyTest(unittest.TestCase):
                     "javac",
                     "-d",
                     str(root),
+                    str(context),
                     str(shared_preferences),
                     str(messages_controller),
                     str(POLICY),

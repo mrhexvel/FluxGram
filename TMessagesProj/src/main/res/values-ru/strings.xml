@@ -491,7 +491,7 @@
     <string name="FluxGramMaterialDesign3">Material Design 3</string>
     <string name="FluxGramMaterialSymbols">Material Symbols</string>
     <string name="FluxGramMaterialNavigation">Нижняя навигация</string>
-    <string name="FluxGramMaterialControls">Элементы управления настроек</string>
+    <string name="FluxGramMaterialControls">Элементы управления</string>
     <string name="FluxGramMaterialSurfaces">Шапка настроек FluxGram</string>
     <string name="FluxGramMaterialLists">Фильтры папок и плагинов</string>
     <string name="FluxGramMaterialProgress">Индикатор установки плагина</string>

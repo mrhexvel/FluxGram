@@ -58,8 +58,10 @@ import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.Components.ForegroundDetector;
 import org.telegram.ui.Components.ItemOptions;
+import org.telegram.ui.Components.Switch;
 import org.telegram.ui.IUpdateLayout;
 import org.telegram.ui.LauncherIconController;
+import org.telegram.ui.fluxgram.MaterialControlsStyle;
 
 import java.io.File;
 import java.util.Locale;
@@ -294,8 +296,6 @@ public class ApplicationLoader extends Application {
                 SendMessagesHelper.getInstance(a).checkUnsentMessages();
             }
         }
-        MaterialVisualStyleRuntime.initialize(MaterialStylePolicy.resolve(
-                MaterialStyleSettings.getState()));
         IconPackRepository.initializeRuntime();
 
         PluginStorageMaintenance.initialize(applicationContext);
@@ -336,6 +336,10 @@ public class ApplicationLoader extends Application {
             applicationContext = getApplicationContext();
         }
         FontSettings.initialize();
+        MaterialVisualStyleRuntime.initialize(MaterialStylePolicy.resolve(
+                MaterialStyleSettings.getState(applicationContext)));
+        Switch.initializeDefaultGeometry(MaterialControlsStyle.switchGeometry(
+                MaterialVisualStyleRuntime.getSnapshot()));
 
         // AndroidUtilities must be initialized before FileLog
         final String helloWorld = AndroidUtilities.getHelloWorld();

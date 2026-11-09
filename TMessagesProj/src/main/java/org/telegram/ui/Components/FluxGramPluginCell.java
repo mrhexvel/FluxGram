@@ -149,7 +149,9 @@ public final class FluxGramPluginCell extends LinearLayout {
                 0, LayoutHelper.WRAP_CONTENT, 1);
         labelsParams.setMarginEnd(AndroidUtilities.dp(8));
         header.addView(labels, labelsParams);
-        header.addView(switchView, LayoutHelper.createLinear(37, 40));
+        header.addView(switchView, LayoutHelper.createLinear(
+                switchView.getLayoutWidthDp(37),
+                switchView.getLayoutHeightDp(40)));
         header.addView(createActionsButton(context, provider, openActions),
                 LayoutHelper.createLinear(40, 40));
         content.addView(header, LayoutHelper.createLinear(

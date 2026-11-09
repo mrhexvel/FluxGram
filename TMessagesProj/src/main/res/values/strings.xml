@@ -11533,7 +11533,7 @@
     <string name="FluxGramMaterialDesign3">Material Design 3</string>
     <string name="FluxGramMaterialSymbols">Material Symbols</string>
     <string name="FluxGramMaterialNavigation">Bottom navigation</string>
-    <string name="FluxGramMaterialControls">Settings controls</string>
+    <string name="FluxGramMaterialControls">Controls</string>
     <string name="FluxGramMaterialSurfaces">FluxGram settings header</string>
     <string name="FluxGramMaterialLists">Folder and plugin filters</string>
     <string name="FluxGramMaterialProgress">Plugin installation indicator</string>

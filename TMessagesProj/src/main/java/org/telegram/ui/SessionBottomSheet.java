@@ -426,7 +426,40 @@ public class SessionBottomSheet extends BottomSheet {
             if (needSwitch) {
                 switchView = new Switch(context);
                 switchView.setDrawIconType(1);
-                addView(switchView, LayoutHelper.createFrame(37, 40, Gravity.RIGHT | Gravity.CENTER_VERTICAL, 21, 0, 21, 0));
+                int switchMargin = switchView.getOuterMarginDp(21);
+                addView(switchView, LayoutHelper.createFrame(
+                        switchView.getLayoutWidthDp(37),
+                        switchView.getLayoutHeightDp(40),
+                        (switchView.getGeometry() != null && LocaleController.isRTL
+                                ? Gravity.LEFT
+                                : Gravity.RIGHT) | Gravity.CENTER_VERTICAL,
+                        switchMargin, 0, switchMargin, 0));
+
+                if (switchView.getGeometry() != null) {
+                    int textEndInset = dp(switchView.getCellEndInsetDp(64));
+                    LinearLayout.LayoutParams valueParams = (LinearLayout.LayoutParams) valueText.getLayoutParams();
+                    LinearLayout.LayoutParams descriptionParams = (LinearLayout.LayoutParams) descriptionText.getLayoutParams();
+                    if (LocaleController.isRTL) {
+                        FrameLayout.LayoutParams iconParams = (FrameLayout.LayoutParams) iconView.getLayoutParams();
+                        iconParams.gravity = Gravity.RIGHT;
+                        iconParams.leftMargin = 0;
+                        iconParams.rightMargin = dp(12);
+
+                        FrameLayout.LayoutParams textParams = (FrameLayout.LayoutParams) linearLayout.getLayoutParams();
+                        textParams.leftMargin = textEndInset;
+                        textParams.rightMargin = dp(64);
+
+                        valueParams.leftMargin = 0;
+                        valueParams.rightMargin = 0;
+                        descriptionParams.leftMargin = 0;
+                        descriptionParams.rightMargin = 0;
+                        valueText.setGravity(Gravity.RIGHT);
+                        descriptionText.setGravity(Gravity.RIGHT);
+                    } else {
+                        valueParams.rightMargin = textEndInset;
+                        descriptionParams.rightMargin = textEndInset;
+                    }
+                }
             }
         }
 
@@ -434,7 +467,11 @@ public class SessionBottomSheet extends BottomSheet {
         protected void dispatchDraw(Canvas canvas) {
             super.dispatchDraw(canvas);
             if (needDivider) {
-                canvas.drawRect(dp(64), getMeasuredHeight() - 1, getMeasuredWidth(), getMeasuredHeight(), Theme.dividerPaint);
+                if (switchView != null && switchView.getGeometry() != null && LocaleController.isRTL) {
+                    canvas.drawRect(0, getMeasuredHeight() - 1, getMeasuredWidth() - dp(64), getMeasuredHeight(), Theme.dividerPaint);
+                } else {
+                    canvas.drawRect(dp(64), getMeasuredHeight() - 1, getMeasuredWidth(), getMeasuredHeight(), Theme.dividerPaint);
+                }
             }
         }
 

@@ -8,6 +8,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 JAVA = ROOT / "TMessagesProj/src/main/java/org/telegram"
+APPLICATION = JAVA / "messenger/ApplicationLoader.java"
 POLICY = JAVA / "messenger/fluxgram/MaterialStylePolicy.java"
 STYLE = JAVA / "messenger/fluxgram/MaterialVisualStyle.java"
 ADAPTER = JAVA / "ui/fluxgram/MaterialControlsStyle.java"
@@ -24,6 +25,7 @@ SEEK_BAR = JAVA / "ui/Components/SeekBarView.java"
 TEXT_CHECK = JAVA / "ui/Cells/TextCheckCell.java"
 UNIVERSAL_ADAPTER = JAVA / "ui/Components/UniversalAdapter.java"
 SETTINGS = JAVA / "ui/FluxGramSettingsActivity.java"
+SESSION_SHEET = JAVA / "ui/SessionBottomSheet.java"
 
 
 class MaterialControlsStyleTest(unittest.TestCase):
@@ -221,6 +223,8 @@ class MaterialControlsStyleTest(unittest.TestCase):
         text_check = TEXT_CHECK.read_text()
         universal = UNIVERSAL_ADAPTER.read_text()
         settings = SETTINGS.read_text()
+        session_sheet = SESSION_SHEET.read_text()
+        application = APPLICATION.read_text()
 
         self.assertIn("new SwitchGeometry(", adapter)
         self.assertIn("new CheckBoxGeometry(", adapter)
@@ -269,6 +273,30 @@ class MaterialControlsStyleTest(unittest.TestCase):
         self.assertIn("canvasToDraw.drawRoundRect(rectF, thumbRadius, thumbRadius, paint)", switch)
         self.assertIn("LocaleController.isRTL", switch)
         self.assertIn("info.setClassName(\"android.widget.Switch\")", switch)
+        self.assertIn("geometry = defaultGeometry;", switch)
+        self.assertIn("initializeDefaultGeometry(SwitchGeometry geometry)", switch)
+        self.assertIn("if (defaultGeometryInitialized)", switch)
+        self.assertIn("getLayoutWidthDp(int fallbackWidthDp)", switch)
+        self.assertIn("getLayoutHeightDp(int fallbackHeightDp)", switch)
+        self.assertIn("getOuterMarginDp(int fallbackMarginDp)", switch)
+        self.assertIn("getCellEndInsetDp(int fallbackInsetDp)", switch)
+        self.assertNotIn("MaterialStylePolicy", switch)
+        self.assertNotIn("MaterialVisualStyle", switch)
+
+        self.assertIn(
+            "Switch.initializeDefaultGeometry(MaterialControlsStyle.switchGeometry(",
+            application,
+        )
+        on_create = application.split("public void onCreate()", 1)[1]
+        post_init = application.split("public static void postInitApplication()", 1)[1].split(
+            "public ApplicationLoader()", 1
+        )[0]
+        self.assertIn("Switch.initializeDefaultGeometry(", on_create)
+        self.assertNotIn("Switch.initializeDefaultGeometry(", post_init)
+        self.assertLess(
+            application.index("MaterialVisualStyleRuntime.initialize("),
+            application.index("Switch.initializeDefaultGeometry("),
+        )
 
         self.assertIn("setSliderGeometry(SliderGeometry geometry)", seek_bar)
         self.assertIn("if (sliderGeometry != null)", seek_bar)
@@ -294,6 +322,10 @@ class MaterialControlsStyleTest(unittest.TestCase):
         self.assertIn("setRoundCheckBoxGeometry(CheckBoxGeometry geometry)", universal)
         self.assertIn("checkBoxCell.setCheckBoxGeometry(roundCheckBoxGeometry)", universal)
         self.assertIn("checkCell.setSwitchGeometry(checkCellSwitchGeometry)", universal)
+        self.assertEqual(
+            universal.count("if (checkCellSwitchGeometry != null)"),
+            2,
+        )
         self.assertNotIn("MaterialStylePolicy", universal)
         self.assertNotIn("MaterialVisualStyle", universal)
 
@@ -310,6 +342,45 @@ class MaterialControlsStyleTest(unittest.TestCase):
             settings,
         )
         self.assertEqual(settings.count("sliderGeometry,"), 4)
+        self.assertIn("switchView.getGeometry() != null && LocaleController.isRTL", session_sheet)
+        self.assertIn("iconParams.gravity = Gravity.RIGHT", session_sheet)
+        self.assertIn("textParams.leftMargin = textEndInset", session_sheet)
+        self.assertIn("textParams.rightMargin = dp(64)", session_sheet)
+        self.assertIn("getMeasuredWidth() - dp(64)", session_sheet)
+
+    def test_all_standard_switch_consumers_use_effective_geometry(self):
+        expected = {
+            "ui/Cells/AvailableReactionCell.java",
+            "ui/Cells/CheckBoxUserCell.java",
+            "ui/Cells/NotificationsCheckCell.java",
+            "ui/Cells/PollCreateCheckCell.java",
+            "ui/Cells/TextCell.java",
+            "ui/Cells/TextCheckCell.java",
+            "ui/Cells/TextCheckCell2.java",
+            "ui/Components/FluxGramPluginCell.java",
+            "ui/Components/MultilineTextCheckCell.java",
+            "ui/Components/PhonebookShareAlert.java",
+            "ui/LiteModeSettingsActivity.java",
+            "ui/SessionBottomSheet.java",
+        }
+        consumers = {
+            path.relative_to(JAVA).as_posix()
+            for path in JAVA.rglob("*.java")
+            if path != SWITCH and "new Switch(" in path.read_text()
+        }
+
+        self.assertEqual(expected, consumers)
+        for relative in consumers:
+            source = (JAVA / relative).read_text()
+            self.assertTrue(
+                "getLayoutWidthDp(37)" in source
+                or "switchGeometry == null ? 37" in source,
+                relative,
+            )
+            self.assertNotIn("createFrame(37, 20", source, relative)
+            self.assertNotIn("createFrame(37, 40", source, relative)
+            self.assertNotIn("createFrameRelatively(37, 20", source, relative)
+            self.assertNotIn("createLinear(37, 40", source, relative)
 
 
 if __name__ == "__main__":

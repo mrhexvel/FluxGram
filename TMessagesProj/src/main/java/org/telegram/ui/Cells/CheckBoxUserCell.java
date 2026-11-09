@@ -54,7 +54,20 @@ public class CheckBoxUserCell extends FrameLayout {
 
         checkBox = new Switch(context, null);
         checkBox.setColors(Theme.key_switchTrack, Theme.key_switchTrackChecked, Theme.key_windowBackgroundWhite, Theme.key_windowBackgroundWhite);
-        addView(checkBox, LayoutHelper.createFrame(37, 20, (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.CENTER_VERTICAL, 22, 0, 22, 0));
+        int switchMargin = checkBox.getOuterMarginDp(22);
+        addView(checkBox, LayoutHelper.createFrame(
+                checkBox.getLayoutWidthDp(37),
+                checkBox.getLayoutHeightDp(20),
+                (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.CENTER_VERTICAL,
+                switchMargin, 0, switchMargin, 0));
+
+        FrameLayout.LayoutParams textParams = (FrameLayout.LayoutParams) textView.getLayoutParams();
+        int textEndInset = AndroidUtilities.dp(checkBox.getCellEndInsetDp(21));
+        if (LocaleController.isRTL) {
+            textParams.leftMargin = textEndInset;
+        } else {
+            textParams.rightMargin = textEndInset;
+        }
     }
 
     @Override

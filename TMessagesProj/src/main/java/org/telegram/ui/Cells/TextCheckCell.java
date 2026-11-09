@@ -128,8 +128,9 @@ public class TextCheckCell extends FrameLayout {
         addView(valueTextView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.TOP, LocaleController.isRTL ? 70 : padding, 35, LocaleController.isRTL ? padding : 70, 0));
 
         checkBox = new Switch(context, resourcesProvider);
+        switchGeometry = checkBox.getGeometry();
         checkBox.setColors(Theme.key_switchTrack, Theme.key_switchTrackChecked, Theme.key_windowBackgroundWhite, Theme.key_windowBackgroundWhite);
-        addView(checkBox, LayoutHelper.createFrame(37, 20, (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.CENTER_VERTICAL, 22, 0, 22, 0));
+        updateSwitchLayout(false);
 
         setClipChildren(false);
 
@@ -251,7 +252,8 @@ public class TextCheckCell extends FrameLayout {
 
         valueTextView.setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT);
         removeView(valueTextView);
-        addView(valueTextView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.TOP, LocaleController.isRTL ? valueEndMargin : padding, 36, LocaleController.isRTL ? padding : valueEndMargin, 0));
+        int valueTopMargin = switchGeometry == null ? 35 : 36;
+        addView(valueTextView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.TOP, LocaleController.isRTL ? valueEndMargin : padding, valueTopMargin, LocaleController.isRTL ? padding : valueEndMargin, 0));
 
         removeView(checkBox);
         addView(checkBox, LayoutHelper.createFrame(switchWidth, switchHeight, (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.CENTER_VERTICAL, switchMargin, 0, switchMargin, 0));

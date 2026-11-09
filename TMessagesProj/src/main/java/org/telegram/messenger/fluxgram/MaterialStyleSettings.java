@@ -1,5 +1,6 @@
 package org.telegram.messenger.fluxgram;
 
+import android.content.Context;
 import android.content.SharedPreferences;
 
 import org.telegram.messenger.MessagesController;
@@ -11,7 +12,14 @@ public final class MaterialStyleSettings {
     }
 
     public static MaterialStylePolicy.State getState() {
-        SharedPreferences preferences = MessagesController.getGlobalMainSettings();
+        return readState(MessagesController.getGlobalMainSettings());
+    }
+
+    public static MaterialStylePolicy.State getState(Context context) {
+        return readState(context.getSharedPreferences("mainconfig", Context.MODE_PRIVATE));
+    }
+
+    private static MaterialStylePolicy.State readState(SharedPreferences preferences) {
         String encoded;
 
         try {
