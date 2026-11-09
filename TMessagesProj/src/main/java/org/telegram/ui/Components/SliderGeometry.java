@@ -8,6 +8,7 @@ public final class SliderGeometry {
     private final float trackInsideCornerRadiusDp;
     private final float stopIndicatorSizeDp;
     private final float pressedThumbWidthRatio;
+    private final int touchTargetHeightDp;
 
     public SliderGeometry(
             float trackHeightDp,
@@ -16,7 +17,8 @@ public final class SliderGeometry {
             float thumbTrackGapDp,
             float trackInsideCornerRadiusDp,
             float stopIndicatorSizeDp,
-            float pressedThumbWidthRatio
+            float pressedThumbWidthRatio,
+            int touchTargetHeightDp
     ) {
         if (trackHeightDp <= 0
                 || thumbWidthDp <= 0
@@ -27,7 +29,8 @@ public final class SliderGeometry {
                 || stopIndicatorSizeDp < 0
                 || stopIndicatorSizeDp > trackHeightDp
                 || pressedThumbWidthRatio <= 0
-                || pressedThumbWidthRatio > 1) {
+                || pressedThumbWidthRatio > 1
+                || touchTargetHeightDp < thumbHeightDp) {
             throw new IllegalArgumentException();
         }
 
@@ -38,6 +41,7 @@ public final class SliderGeometry {
         this.trackInsideCornerRadiusDp = trackInsideCornerRadiusDp;
         this.stopIndicatorSizeDp = stopIndicatorSizeDp;
         this.pressedThumbWidthRatio = pressedThumbWidthRatio;
+        this.touchTargetHeightDp = touchTargetHeightDp;
     }
 
     public float getTrackHeightDp() {
@@ -66,5 +70,9 @@ public final class SliderGeometry {
 
     public float getPressedThumbWidthRatio() {
         return pressedThumbWidthRatio;
+    }
+
+    public int getTouchTargetHeightDp() {
+        return touchTargetHeightDp;
     }
 }

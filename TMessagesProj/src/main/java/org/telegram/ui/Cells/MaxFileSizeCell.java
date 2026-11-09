@@ -35,6 +35,7 @@ public class MaxFileSizeCell extends FrameLayout {
     private TextView textView;
     private TextView sizeTextView;
     private SeekBarView seekBarView;
+    private final int seekBarHeightDp;
 
     private long currentSize;
 
@@ -73,6 +74,7 @@ public class MaxFileSizeCell extends FrameLayout {
                 return super.onTouchEvent(event);
             }
         };
+        seekBarHeightDp = seekBarView.getPreferredHeightDp(38);
         seekBarView.setReportChanges(true);
         seekBarView.setDelegate(new SeekBarView.SeekBarViewDelegate() {
             @Override
@@ -115,7 +117,7 @@ public class MaxFileSizeCell extends FrameLayout {
             }
         });
         seekBarView.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
-        addView(seekBarView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 38, Gravity.TOP | Gravity.LEFT, 6, 36, 6, 0));
+        addView(seekBarView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, seekBarHeightDp, Gravity.TOP | Gravity.LEFT, 6, 36, 6, 0));
 
         setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_YES);
         setAccessibilityDelegate(seekBarView.getSeekBarAccessibilityDelegate());
@@ -135,9 +137,10 @@ public class MaxFileSizeCell extends FrameLayout {
 
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-        super.onMeasure(MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(widthMeasureSpec), MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(80), MeasureSpec.EXACTLY));
+        int height = seekBarHeightDp == 38 ? 80 : 90;
+        super.onMeasure(MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(widthMeasureSpec), MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(height), MeasureSpec.EXACTLY));
 
-        setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), AndroidUtilities.dp(80));
+        setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), AndroidUtilities.dp(height));
 
         int availableWidth = getMeasuredWidth() - AndroidUtilities.dp(42);
 
@@ -146,7 +149,7 @@ public class MaxFileSizeCell extends FrameLayout {
 
         textView.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(30), MeasureSpec.EXACTLY));
 
-        seekBarView.measure(MeasureSpec.makeMeasureSpec(getMeasuredWidth() - AndroidUtilities.dp(20), MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(30), MeasureSpec.EXACTLY));
+        seekBarView.measure(MeasureSpec.makeMeasureSpec(getMeasuredWidth() - AndroidUtilities.dp(20), MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(seekBarHeightDp), MeasureSpec.EXACTLY));
     }
 
     @Override

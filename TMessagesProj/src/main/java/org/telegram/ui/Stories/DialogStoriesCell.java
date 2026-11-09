@@ -232,6 +232,7 @@ public class DialogStoriesCell extends FrameLayout implements NotificationCenter
             overscrollTextView.setText("Screen oversrcoll: " + overScrollCoef);
             ThemeBind.textColor(overscrollTextView, Theme.key_windowBackgroundWhiteBlueText);
             SeekBarView seekBar = new SeekBarView(getContext());
+            seekBar.setSliderGeometry(null);
             float progress = Math.min(1.0f, Math.max(0.0f, (overScrollCoef - 0.2f) / 0.8f));
             seekBar.setProgress(progress);
             seekBar.setDelegate(new SeekBarView.SeekBarViewDelegate() {
@@ -254,6 +255,7 @@ public class DialogStoriesCell extends FrameLayout implements NotificationCenter
             ThemeBind.textColor(collapsedSpringTextView, Theme.key_windowBackgroundWhiteBlueText);
             topView.addView(collapsedSpringTextView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 38, 0, 20, 0, 20, 0));
             SeekBarView collapsedSpringSeekBar = new SeekBarView(getContext());
+            collapsedSpringSeekBar.setSliderGeometry(null);
             collapsedSpringSeekBar.setProgress((collapsedSpringCoef - 0.25f) / 2.25f);
             collapsedSpringSeekBar.setDelegate(new SeekBarView.SeekBarViewDelegate() {
                 @Override
@@ -274,6 +276,7 @@ public class DialogStoriesCell extends FrameLayout implements NotificationCenter
             ThemeBind.textColor(expandedSpringTextView, Theme.key_windowBackgroundWhiteBlueText);
             topView.addView(expandedSpringTextView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 38, 0, 20, 0, 20, 0));
             SeekBarView expandedSpringSeekBar = new SeekBarView(getContext());
+            expandedSpringSeekBar.setSliderGeometry(null);
             expandedSpringSeekBar.setProgress((expandedSpringCoef - 0.25f) / 2.25f);
             expandedSpringSeekBar.setDelegate(new SeekBarView.SeekBarViewDelegate() {
                 @Override

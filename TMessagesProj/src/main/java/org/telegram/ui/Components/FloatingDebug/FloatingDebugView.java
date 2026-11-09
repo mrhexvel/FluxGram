@@ -609,6 +609,7 @@ public class FloatingDebugView extends FrameLayout implements NotificationCenter
             textPaint.setTextSize(AndroidUtilities.dp(16));
 
             seekBar = new SeekBarView(context);
+            seekBar.setSliderGeometry(null);
             seekBar.setReportChanges(true);
             seekBar.setDelegate(new SeekBarView.SeekBarViewDelegate() {
                 @Override

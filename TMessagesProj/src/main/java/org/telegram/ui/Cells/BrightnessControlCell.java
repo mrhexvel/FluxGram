@@ -44,9 +44,18 @@ public class BrightnessControlCell extends FrameLayout {
         super(context);
         this.type = type;
         this.resourcesProvider = resourcesProvider;
+        boolean materialSlider = SeekBarView.hasDefaultGeometry();
 
         leftImageView = new ImageView(context);
-        addView(leftImageView, LayoutHelper.createFrame(24, 24, Gravity.LEFT | Gravity.TOP, 17, 12, 0, 0));
+        addView(leftImageView, LayoutHelper.createFrame(
+                24,
+                24,
+                (materialSlider ? Gravity.START : Gravity.LEFT) | Gravity.TOP,
+                17,
+                12,
+                0,
+                0
+        ));
 
         seekBarView = new SeekBarView(context, /* inPercents = */ true, resourcesProvider) {
             @Override
@@ -74,10 +83,26 @@ public class BrightnessControlCell extends FrameLayout {
             }
         });
         seekBarView.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
-        addView(seekBarView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 38, Gravity.TOP | Gravity.LEFT, 54, 5, 54, 0));
+        addView(seekBarView, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT,
+                seekBarView.getPreferredHeightDp(38),
+                Gravity.TOP | Gravity.LEFT,
+                54,
+                materialSlider ? 0 : 5,
+                54,
+                0
+        ));
 
         rightImageView = new ImageView(context);
-        addView(rightImageView, LayoutHelper.createFrame(24, 24, Gravity.RIGHT | Gravity.TOP, 0, 12, 17, 0));
+        addView(rightImageView, LayoutHelper.createFrame(
+                24,
+                24,
+                (materialSlider ? Gravity.END : Gravity.RIGHT) | Gravity.TOP,
+                0,
+                12,
+                17,
+                0
+        ));
         if (type == TYPE_DEFAULT) {
             leftImageView.setImageResource(R.drawable.msg_brightness_low);
             rightImageView.setImageResource(R.drawable.msg_brightness_high);
@@ -85,7 +110,7 @@ public class BrightnessControlCell extends FrameLayout {
         } else {
             leftImageView.setImageResource(R.drawable.msg_brightness_high);
             rightImageView.setImageResource(R.drawable.msg_brightness_low);
-            size = 43;
+            size = materialSlider ? 48 : 43;
         }
     }
 

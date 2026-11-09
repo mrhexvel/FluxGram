@@ -59,17 +59,19 @@ public class SlideIntChooseView extends FrameLayout implements Theme.Colorable {
     private final AnimatedTextView valueText;
     private final AnimatedTextView maxText;
     private final SeekBarView seekBarView;
+    private final boolean materialSlider;
 
     public SlideIntChooseView(Context context, Theme.ResourcesProvider resourcesProvider) {
         super(context);
 
         this.resourcesProvider = resourcesProvider;
+        materialSlider = SeekBarView.hasDefaultGeometry();
 
         minText = new AnimatedTextView(context, true, true, true);
         minText.setAnimationProperties(.3f, 0, 220, CubicBezierInterpolator.EASE_OUT_QUINT);
         minText.setTextSize(dp(13));
         ThemeBind.textColor(minText, Theme.key_windowBackgroundWhiteGrayText, resourcesProvider);
-        minText.setGravity(Gravity.LEFT);
+        minText.setGravity(materialSlider ? Gravity.START : Gravity.LEFT);
         minText.setEmojiCacheType(AnimatedEmojiDrawable.CACHE_TYPE_COLORABLE);
         minText.setEmojiColor(Color.WHITE);
         minText.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
@@ -88,7 +90,7 @@ public class SlideIntChooseView extends FrameLayout implements Theme.Colorable {
         maxText = new AnimatedTextView(context, true, true, true);
         maxText.setAnimationProperties(.3f, 0, 220, CubicBezierInterpolator.EASE_OUT_QUINT);
         maxText.setTextSize(dp(13));
-        maxText.setGravity(Gravity.RIGHT);
+        maxText.setGravity(materialSlider ? Gravity.END : Gravity.RIGHT);
         maxText.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText, resourcesProvider)); // state color, re-applied in updateColors()
         maxText.setEmojiColor(Color.WHITE);
         maxText.setEmojiCacheType(AnimatedEmojiDrawable.CACHE_TYPE_COLORABLE);
@@ -143,7 +145,15 @@ public class SlideIntChooseView extends FrameLayout implements Theme.Colorable {
                 return buildAccessibilityDescription();
             }
         });
-        addView(seekBarView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 38, Gravity.TOP | Gravity.FILL_HORIZONTAL, 6, 30, 6, 0));
+        addView(seekBarView, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT,
+                seekBarView.getPreferredHeightDp(38),
+                Gravity.TOP | Gravity.FILL_HORIZONTAL,
+                6,
+                30,
+                6,
+                0
+        ));
     }
 
     private int value;
@@ -308,7 +318,7 @@ public class SlideIntChooseView extends FrameLayout implements Theme.Colorable {
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         super.onMeasure(
             MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(widthMeasureSpec), MeasureSpec.EXACTLY),
-            MeasureSpec.makeMeasureSpec(dp(75), MeasureSpec.EXACTLY)
+            MeasureSpec.makeMeasureSpec(dp(materialSlider ? 85 : 75), MeasureSpec.EXACTLY)
         );
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {

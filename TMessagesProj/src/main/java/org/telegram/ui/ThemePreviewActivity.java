@@ -2054,6 +2054,7 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
                                 return super.onTouchEvent(event);
                             }
                         };
+                        intensitySeekBar.setSliderGeometry(null);
                         intensitySeekBar.setProgress(currentIntensity);
                         intensitySeekBar.setReportChanges(true);
                         intensitySeekBar.setDelegate(new SeekBarView.SeekBarViewDelegate() {

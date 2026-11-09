@@ -3,6 +3,7 @@ package org.telegram.ui.fluxgram;
 import org.telegram.messenger.fluxgram.MaterialStylePolicy;
 import org.telegram.messenger.fluxgram.MaterialVisualStyle;
 import org.telegram.ui.Components.CheckBoxGeometry;
+import org.telegram.ui.Components.DiscreteSliderGeometry;
 import org.telegram.ui.Components.SliderGeometry;
 import org.telegram.ui.Components.SwitchGeometry;
 
@@ -34,8 +35,11 @@ public final class MaterialControlsStyle {
             6,
             2,
             4,
-            0.5f
+            0.5f,
+            48
     );
+    private static final DiscreteSliderGeometry DISCRETE_SLIDER_GEOMETRY =
+            new DiscreteSliderGeometry(SLIDER_GEOMETRY, 4);
 
     private MaterialControlsStyle() {
     }
@@ -62,6 +66,14 @@ public final class MaterialControlsStyle {
         }
 
         return SLIDER_GEOMETRY;
+    }
+
+    public static DiscreteSliderGeometry discreteSliderGeometry(MaterialVisualStyle.Snapshot style) {
+        if (!usesMaterialControls(style)) {
+            return null;
+        }
+
+        return DISCRETE_SLIDER_GEOMETRY;
     }
 
     private static boolean usesMaterialControls(MaterialVisualStyle.Snapshot style) {

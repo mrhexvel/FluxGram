@@ -16,16 +16,19 @@ CHECK_BOX = JAVA / "ui/Components/CheckBoxBase.java"
 CHECK_BOX_2 = JAVA / "ui/Components/CheckBox2.java"
 CHECK_BOX_CELL = JAVA / "ui/Cells/CheckBoxCell.java"
 CHECK_BOX_GEOMETRY = JAVA / "ui/Components/CheckBoxGeometry.java"
+DISCRETE_SLIDER_GEOMETRY = JAVA / "ui/Components/DiscreteSliderGeometry.java"
 SLIDER_GEOMETRY = JAVA / "ui/Components/SliderGeometry.java"
 RADIO_BUTTON = JAVA / "ui/Components/RadioButton.java"
 RADIO_COLOR_CELL = JAVA / "ui/Cells/RadioColorCell.java"
 SWITCH = JAVA / "ui/Components/Switch.java"
 SWITCH_GEOMETRY = JAVA / "ui/Components/SwitchGeometry.java"
 SEEK_BAR = JAVA / "ui/Components/SeekBarView.java"
+SLIDE_CHOOSE = JAVA / "ui/Components/SlideChooseView.java"
 TEXT_CHECK = JAVA / "ui/Cells/TextCheckCell.java"
 UNIVERSAL_ADAPTER = JAVA / "ui/Components/UniversalAdapter.java"
 SETTINGS = JAVA / "ui/FluxGramSettingsActivity.java"
 SESSION_SHEET = JAVA / "ui/SessionBottomSheet.java"
+CACHE_CONTROL = JAVA / "ui/CacheControlActivity.java"
 
 
 class MaterialControlsStyleTest(unittest.TestCase):
@@ -41,6 +44,7 @@ class MaterialControlsStyleTest(unittest.TestCase):
                 import org.telegram.messenger.fluxgram.MaterialStylePolicy;
                 import org.telegram.messenger.fluxgram.MaterialVisualStyle;
                 import org.telegram.ui.Components.CheckBoxGeometry;
+                import org.telegram.ui.Components.DiscreteSliderGeometry;
                 import org.telegram.ui.Components.SliderGeometry;
                 import org.telegram.ui.Components.SwitchGeometry;
                 import org.telegram.ui.fluxgram.MaterialControlsStyle;
@@ -83,10 +87,22 @@ class MaterialControlsStyleTest(unittest.TestCase):
                         require(sliderGeometry.getTrackInsideCornerRadiusDp() == 2);
                         require(sliderGeometry.getStopIndicatorSizeDp() == 4);
                         require(sliderGeometry.getPressedThumbWidthRatio() == 0.5f);
+                        require(sliderGeometry.getTouchTargetHeightDp() == 48);
                         require(sliderGeometry == MaterialControlsStyle.sliderGeometry(
                                 style(MaterialStylePolicy.Module.CONTROLS)
                         ));
                         require(MaterialControlsStyle.sliderGeometry(icons) == null);
+
+                        DiscreteSliderGeometry discreteGeometry = MaterialControlsStyle.discreteSliderGeometry(
+                                style(MaterialStylePolicy.Module.CONTROLS)
+                        );
+                        require(discreteGeometry != null);
+                        require(discreteGeometry.getSliderGeometry() == sliderGeometry);
+                        require(discreteGeometry.getTickSizeDp() == 4);
+                        require(discreteGeometry == MaterialControlsStyle.discreteSliderGeometry(
+                                style(MaterialStylePolicy.Module.CONTROLS)
+                        ));
+                        require(MaterialControlsStyle.discreteSliderGeometry(icons) == null);
 
                         SwitchGeometry geometry = MaterialControlsStyle.switchGeometry(
                                 style(MaterialStylePolicy.Module.CONTROLS)
@@ -199,6 +215,7 @@ class MaterialControlsStyleTest(unittest.TestCase):
                     str(POLICY),
                     str(STYLE),
                     str(CHECK_BOX_GEOMETRY),
+                    str(DISCRETE_SLIDER_GEOMETRY),
                     str(SLIDER_GEOMETRY),
                     str(SWITCH_GEOMETRY),
                     str(ADAPTER),
@@ -220,15 +237,18 @@ class MaterialControlsStyleTest(unittest.TestCase):
         radio_color_cell = RADIO_COLOR_CELL.read_text()
         switch = SWITCH.read_text()
         seek_bar = SEEK_BAR.read_text()
+        slide_choose = SLIDE_CHOOSE.read_text()
         text_check = TEXT_CHECK.read_text()
         universal = UNIVERSAL_ADAPTER.read_text()
         settings = SETTINGS.read_text()
         session_sheet = SESSION_SHEET.read_text()
         application = APPLICATION.read_text()
+        cache_control = CACHE_CONTROL.read_text()
 
         self.assertIn("new SwitchGeometry(", adapter)
         self.assertIn("new CheckBoxGeometry(", adapter)
         self.assertIn("new SliderGeometry(", adapter)
+        self.assertIn("new DiscreteSliderGeometry(SLIDER_GEOMETRY, 4)", adapter)
         self.assertIn("MaterialStylePolicy.Module.CONTROLS", adapter)
         self.assertIn("MaterialVisualStyle.ShapeRole.FULL", adapter)
         self.assertNotIn("MaterialStyleSettings", adapter)
@@ -303,9 +323,55 @@ class MaterialControlsStyleTest(unittest.TestCase):
         self.assertIn("drawSliderGeometry(canvas, thumbX)", seek_bar)
         self.assertIn("sliderGeometry.getPressedThumbWidthRatio()", seek_bar)
         self.assertIn("sliderGeometry.getStopIndicatorSizeDp()", seek_bar)
+        self.assertIn("sliderGeometry.getTouchTargetHeightDp()", seek_bar)
         self.assertIn("gap -= (thumbWidth - pressedThumbWidth) / 2.0f", seek_bar)
-        self.assertIn("sliderGeometry != null && LocaleController.isRTL", seek_bar)
+        self.assertIn("return sliderGeometry != null && LocaleController.isRTL", seek_bar)
         self.assertIn("Math.abs(stopIndicatorX - centerX) > gap + thumbWidth / 2.0f", seek_bar)
+        self.assertIn("sliderGeometry = defaultSliderGeometry", seek_bar)
+        self.assertIn("initializeDefaultGeometry(SliderGeometry geometry)", seek_bar)
+        self.assertIn("private int clampThumbX(int value)", seek_bar)
+        self.assertIn("boolean hasMinimum = minProgress > 0 && !twoSided", seek_bar)
+        self.assertIn("drawSliderGeometryTrackWithAlpha", seek_bar)
+        self.assertIn(
+            "innerPaint1.setColor(themedInnerColor = getThemedColor(Theme.key_player_progressBackground))",
+            seek_bar,
+        )
+        self.assertIn("sliderGeometry == null", seek_bar)
+        self.assertIn("? (int) (minProgress * range)", seek_bar)
+        self.assertNotIn("MaterialStylePolicy", seek_bar)
+        self.assertNotIn("MaterialVisualStyle", seek_bar)
+
+        self.assertIn("setDiscreteSliderGeometry(DiscreteSliderGeometry geometry)", slide_choose)
+        self.assertIn("drawDiscreteSlider(canvas)", slide_choose)
+        self.assertIn("discreteSliderGeometry.getTickSizeDp()", slide_choose)
+        self.assertIn("materialCenterForIndex", slide_choose)
+        self.assertIn("LocaleController.isRTL", slide_choose)
+        self.assertIn("geometry.getPressedThumbWidthRatio()", slide_choose)
+        self.assertIn("event.getAction() == MotionEvent.ACTION_UP", slide_choose)
+        self.assertIn("Math.round(indexTouch) != selectedIndex", slide_choose)
+        self.assertIn("materialRect.width() > minimumSegmentWidth", slide_choose)
+        self.assertIn("AndroidUtilities.dp(25), textPaint", slide_choose)
+        self.assertNotIn("MaterialStylePolicy", slide_choose)
+        self.assertNotIn("MaterialVisualStyle", slide_choose)
+
+        keep_media_case, max_cache_case = cache_control.split(
+            "case VIEW_TYPE_MAX_CACHE_SIZE:", 1
+        )
+        self.assertNotIn("setDiscreteSliderGeometry", keep_media_case)
+        self.assertIn("slideChooseView2.setDiscreteSliderGeometry(", max_cache_case)
+        self.assertIn("MaterialControlsStyle.discreteSliderGeometry(", max_cache_case)
+        self.assertEqual(1, cache_control.count("setDiscreteSliderGeometry("))
+
+        self.assertIn(
+            "SeekBarView.initializeDefaultGeometry(MaterialControlsStyle.sliderGeometry(",
+            application,
+        )
+        self.assertIn("SeekBarView.initializeDefaultGeometry(", on_create)
+        self.assertNotIn("SeekBarView.initializeDefaultGeometry(", post_init)
+        self.assertLess(
+            application.index("MaterialVisualStyleRuntime.initialize("),
+            application.index("SeekBarView.initializeDefaultGeometry("),
+        )
 
         self.assertIn("setSwitchGeometry(SwitchGeometry geometry)", text_check)
         self.assertIn("switchGeometry == null ? 37", text_check)
@@ -347,6 +413,61 @@ class MaterialControlsStyleTest(unittest.TestCase):
         self.assertIn("textParams.leftMargin = textEndInset", session_sheet)
         self.assertIn("textParams.rightMargin = dp(64)", session_sheet)
         self.assertIn("getMeasuredWidth() - dp(64)", session_sheet)
+
+    def test_all_seek_bar_consumers_have_explicit_global_classification(self):
+        expected = {
+            "ui/ArticleViewer.java",
+            "ui/BlurSettingsBottomSheet.java",
+            "ui/Cells/BrightnessControlCell.java",
+            "ui/Cells/MaxFileSizeCell.java",
+            "ui/Cells/SlideIntChooseView.java",
+            "ui/Components/AudioPlayerAlert.java",
+            "ui/Components/FloatingDebug/FloatingDebugView.java",
+            "ui/Components/FluxGramAvatarGeometryPreviewCell.java",
+            "ui/Components/FluxGramFabShapePreviewCell.java",
+            "ui/Components/FluxGramMessageAppearancePreviewCell.java",
+            "ui/Components/FluxGramSectionRadiusCell.java",
+            "ui/DebugRecordingCanvasReplayFragment.java",
+            "ui/GLIconSettingsView.java",
+            "ui/LiteModeSettingsActivity.java",
+            "ui/PluginSettingsActivity.java",
+            "ui/SaveToGallerySettingsActivity.java",
+            "ui/Stories/DialogStoriesCell.java",
+            "ui/ThemeActivity.java",
+            "ui/ThemePreviewActivity.java",
+        }
+        consumers = {
+            path.relative_to(JAVA).as_posix()
+            for path in JAVA.rglob("*.java")
+            if path != SEEK_BAR and "new SeekBarView(" in path.read_text()
+        }
+
+        self.assertEqual(expected, consumers)
+        sources = "\n".join((JAVA / path).read_text() for path in sorted(consumers))
+        self.assertEqual(28, sources.count("new SeekBarView("))
+        self.assertEqual(15, sources.count("setSliderGeometry(null)"))
+        self.assertEqual(4, sources.count("setSliderGeometry(sliderGeometry)"))
+
+        for path in {
+            "ui/BlurSettingsBottomSheet.java",
+            "ui/Components/AudioPlayerAlert.java",
+            "ui/Components/FloatingDebug/FloatingDebugView.java",
+            "ui/DebugRecordingCanvasReplayFragment.java",
+            "ui/GLIconSettingsView.java",
+            "ui/Stories/DialogStoriesCell.java",
+            "ui/ThemePreviewActivity.java",
+        }:
+            self.assertIn("setSliderGeometry(null)", (JAVA / path).read_text(), path)
+
+        for path in {
+            "ui/Cells/BrightnessControlCell.java",
+            "ui/Cells/MaxFileSizeCell.java",
+            "ui/Cells/SlideIntChooseView.java",
+            "ui/LiteModeSettingsActivity.java",
+            "ui/PluginSettingsActivity.java",
+            "ui/SaveToGallerySettingsActivity.java",
+        }:
+            self.assertIn("getPreferredHeightDp", (JAVA / path).read_text(), path)
 
     def test_all_standard_switch_consumers_use_effective_geometry(self):
         expected = {

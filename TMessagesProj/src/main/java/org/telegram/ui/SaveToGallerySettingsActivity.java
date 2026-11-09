@@ -430,12 +430,17 @@ public class SaveToGallerySettingsActivity extends BaseFragment {
                     LinearLayout linearLayout = new LinearLayout(getContext());
                     linearLayout.setOrientation(LinearLayout.VERTICAL);
                     SeekBarView slideChooseView = new SeekBarView(getContext());
+                    boolean materialSlider = slideChooseView.getSliderGeometry() != null;
                     FrameLayout textContainer = new FrameLayout(getContext());
 
                     SelectableAnimatedTextView lowerTextView = new SelectableAnimatedTextView(getContext());
                     lowerTextView.setTextSize(AndroidUtilities.dp(13));
                     lowerTextView.setText(AndroidUtilities.formatFileSize(1024 * 512, true, false));
-                    textContainer.addView(lowerTextView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.LEFT | Gravity.BOTTOM));
+                    textContainer.addView(lowerTextView, LayoutHelper.createFrame(
+                            LayoutHelper.WRAP_CONTENT,
+                            LayoutHelper.WRAP_CONTENT,
+                            (materialSlider ? Gravity.START : Gravity.LEFT) | Gravity.BOTTOM
+                    ));
 
                     SelectableAnimatedTextView midTextView = new SelectableAnimatedTextView(getContext());
                     midTextView.setTextSize(AndroidUtilities.dp(13));
@@ -445,11 +450,23 @@ public class SaveToGallerySettingsActivity extends BaseFragment {
                     SelectableAnimatedTextView topTextView = new SelectableAnimatedTextView(getContext());
                     topTextView.setTextSize(AndroidUtilities.dp(13));
                     topTextView.setText(AndroidUtilities.formatFileSize(SaveToGallerySettingsHelper.MAX_VIDEO_LIMIT, true, false));
-                    textContainer.addView(topTextView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.RIGHT | Gravity.BOTTOM));
+                    textContainer.addView(topTextView, LayoutHelper.createFrame(
+                            LayoutHelper.WRAP_CONTENT,
+                            LayoutHelper.WRAP_CONTENT,
+                            (materialSlider ? Gravity.END : Gravity.RIGHT) | Gravity.BOTTOM
+                    ));
 
 
                     linearLayout.addView(textContainer, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 20, 0, 21, 10, 21, 0));
-                    linearLayout.addView(slideChooseView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 38, 0, 5, 0, 5, 4));
+                    linearLayout.addView(slideChooseView, LayoutHelper.createLinear(
+                            LayoutHelper.MATCH_PARENT,
+                            slideChooseView.getPreferredHeightDp(38),
+                            0,
+                            5,
+                            0,
+                            5,
+                            4
+                    ));
                     SaveToGallerySettingsHelper.Settings settings = getSettings();
                     long currentValue = settings.limitVideo;
                     long maxValue = 4L * 1000 * 1024 * 1024;

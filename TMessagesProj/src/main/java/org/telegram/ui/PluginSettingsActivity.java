@@ -411,7 +411,14 @@ public final class PluginSettingsActivity extends BaseFragment {
                     return setting.title + ": " + setting.displayValue(current[0]);
                 }
             });
-            container.addView(slider, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 40, 12, 0, 12, 0));
+            container.addView(slider, LayoutHelper.createLinear(
+                    LayoutHelper.MATCH_PARENT,
+                    slider.getPreferredHeightDp(40),
+                    12,
+                    0,
+                    12,
+                    0
+            ));
         }
 
         if (!setting.description.isEmpty()) {

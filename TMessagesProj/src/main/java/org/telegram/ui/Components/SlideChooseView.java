@@ -4,7 +4,9 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.DashPathEffect;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.PorterDuff;
+import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.text.TextPaint;
@@ -17,6 +19,7 @@ import androidx.core.graphics.ColorUtils;
 import androidx.core.math.MathUtils;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.LocaleController;
 import org.telegram.ui.ActionBar.Theme;
 
 public class SlideChooseView extends View {
@@ -56,6 +59,11 @@ public class SlideChooseView extends View {
     private final Theme.ResourcesProvider resourcesProvider;
 
     private boolean touchWasClose = false;
+    private DiscreteSliderGeometry discreteSliderGeometry;
+    private final RectF materialRect = new RectF();
+    private final RectF materialCornerRect = new RectF();
+    private final Path materialPath = new Path();
+    private final float[] materialRadii = new float[8];
 
     public SlideChooseView(Context context) {
         this(context, null);
@@ -136,11 +144,30 @@ public class SlideChooseView extends View {
         dashedFrom = from;
     }
 
+    public void setDiscreteSliderGeometry(DiscreteSliderGeometry geometry) {
+        discreteSliderGeometry = geometry;
+        requestLayout();
+        invalidate();
+    }
+
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         float x = event.getX();
         float y = event.getY();
-        float indexTouch = MathUtils.clamp((x - sideSide + circleSize / 2f) / (lineSize + gapSize * 2 + circleSize), 0, optionsStr.length - 1);
+        float indexTouch;
+        if (usesDiscreteSliderGeometry()) {
+            float range = getMeasuredWidth() - sideSide * 2.0f;
+            float visualIndex = MathUtils.clamp(
+                    (x - sideSide) / range * (optionsStr.length - 1),
+                    0,
+                    optionsStr.length - 1
+            );
+            indexTouch = LocaleController.isRTL
+                    ? optionsStr.length - 1 - visualIndex
+                    : visualIndex;
+        } else {
+            indexTouch = MathUtils.clamp((x - sideSide + circleSize / 2f) / (lineSize + gapSize * 2 + circleSize), 0, optionsStr.length - 1);
+        }
         boolean isClose = Math.abs(indexTouch - Math.round(indexTouch)) < .35f;
         if (isClose) {
             indexTouch = Math.round(indexTouch);
@@ -182,7 +209,12 @@ public class SlideChooseView extends View {
                     setOption(Math.round(selectedIndexTouch));
                 }
             } else {
-                if (selectedIndex != startMovingPreset) {
+                if (usesDiscreteSliderGeometry()) {
+                    if (event.getAction() == MotionEvent.ACTION_UP
+                            && Math.round(indexTouch) != selectedIndex) {
+                        setOption(Math.round(indexTouch));
+                    }
+                } else if (selectedIndex != startMovingPreset) {
                     setOption(selectedIndex);
                 }
             }
@@ -219,6 +251,11 @@ public class SlideChooseView extends View {
 
     @Override
     protected void onDraw(Canvas canvas) {
+        if (usesDiscreteSliderGeometry()) {
+            drawDiscreteSlider(canvas);
+            return;
+        }
+
         float selectedIndexAnimated = selectedIndexAnimatedHolder.set(selectedIndex);
         float movingAnimated = movingAnimatedHolder.set(moving ? 1 : 0);
         int cy = getMeasuredHeight() / 2 + AndroidUtilities.dp(11);
@@ -290,6 +327,154 @@ public class SlideChooseView extends View {
         canvas.drawCircle(cx, cy, AndroidUtilities.dp(12 * movingAnimated), paint);
         paint.setColor(getThemedColor(Theme.key_switchTrackChecked));
         canvas.drawCircle(cx, cy, AndroidUtilities.dp(6), paint);
+    }
+
+    private boolean usesDiscreteSliderGeometry() {
+        return discreteSliderGeometry != null && leftDrawables == null && optionsStr != null && optionsStr.length > 1;
+    }
+
+    private float materialCenterForIndex(float index) {
+        float visualIndex = LocaleController.isRTL ? optionsStr.length - 1 - index : index;
+        return sideSide + (getMeasuredWidth() - sideSide * 2.0f)
+                * visualIndex / (optionsStr.length - 1);
+    }
+
+    private void drawDiscreteSlider(Canvas canvas) {
+        SliderGeometry geometry = discreteSliderGeometry.getSliderGeometry();
+        float selectedIndexAnimated = selectedIndexAnimatedHolder.set(selectedIndex);
+        float movingAnimated = movingAnimatedHolder.set(moving ? 1 : 0);
+        float centerY = getMeasuredHeight() / 2.0f + AndroidUtilities.dp(11);
+        float centerX = materialCenterForIndex(selectedIndexAnimated);
+        float trackHeight = AndroidUtilities.dpf2(geometry.getTrackHeightDp());
+        float outerRadius = trackHeight / 2.0f;
+        float innerRadius = AndroidUtilities.dpf2(geometry.getTrackInsideCornerRadiusDp());
+        float thumbWidth = AndroidUtilities.dpf2(geometry.getThumbWidthDp());
+        float pressedWidth = thumbWidth * geometry.getPressedThumbWidthRatio();
+        thumbWidth = AndroidUtilities.lerp(thumbWidth, pressedWidth, movingAnimated);
+        float thumbHeight = AndroidUtilities.dpf2(geometry.getThumbHeightDp());
+        float gap = AndroidUtilities.dpf2(geometry.getThumbTrackGapDp())
+                - (AndroidUtilities.dpf2(geometry.getThumbWidthDp()) - thumbWidth) / 2.0f;
+        float startX = sideSide;
+        float endX = getMeasuredWidth() - sideSide;
+        float trackLeft = startX - outerRadius;
+        float trackRight = endX + outerRadius;
+        float trackTop = centerY - trackHeight / 2.0f;
+        float trackBottom = centerY + trackHeight / 2.0f;
+        int activeColor = getThemedColor(Theme.key_player_progress);
+        int inactiveColor = getThemedColor(Theme.key_player_progressBackground);
+        float minimumSegmentWidth = outerRadius - gap;
+
+        if (LocaleController.isRTL) {
+            materialRect.set(trackLeft, trackTop, centerX - gap, trackBottom);
+            if (materialRect.width() > minimumSegmentWidth) {
+                drawMaterialTrack(canvas, materialRect, inactiveColor, outerRadius, innerRadius);
+            }
+            materialRect.set(centerX + gap, trackTop, trackRight, trackBottom);
+            if (materialRect.width() > minimumSegmentWidth) {
+                drawMaterialTrack(canvas, materialRect, activeColor, innerRadius, outerRadius);
+            }
+        } else {
+            materialRect.set(trackLeft, trackTop, centerX - gap, trackBottom);
+            if (materialRect.width() > minimumSegmentWidth) {
+                drawMaterialTrack(canvas, materialRect, activeColor, outerRadius, innerRadius);
+            }
+            materialRect.set(centerX + gap, trackTop, trackRight, trackBottom);
+            if (materialRect.width() > minimumSegmentWidth) {
+                drawMaterialTrack(canvas, materialRect, inactiveColor, innerRadius, outerRadius);
+            }
+        }
+
+        float tickRadius = AndroidUtilities.dpf2(discreteSliderGeometry.getTickSizeDp()) / 2.0f;
+        for (int index = 0; index < optionsStr.length; index++) {
+            float tickX = materialCenterForIndex(index);
+            if (Math.abs(tickX - centerX) > gap + thumbWidth / 2.0f) {
+                paint.setColor(index <= selectedIndexAnimated ? inactiveColor : activeColor);
+                canvas.drawCircle(tickX, centerY, tickRadius, paint);
+            }
+
+            float selected = Math.max(0, 1.0f - Math.abs(index - selectedIndexAnimated));
+            textPaint.setColor(ColorUtils.blendARGB(
+                    getThemedColor(Theme.key_windowBackgroundWhiteGrayText),
+                    getThemedColor(Theme.key_windowBackgroundWhiteBlueText),
+                    selected
+            ));
+            int textWidth = optionsSizes[index];
+            int visualIndex = LocaleController.isRTL ? optionsStr.length - 1 - index : index;
+            float textX;
+            if (visualIndex == 0) {
+                textX = sideSide;
+            } else if (visualIndex == optionsStr.length - 1) {
+                textX = getMeasuredWidth() - textWidth - sideSide;
+            } else {
+                textX = tickX - textWidth / 2.0f;
+            }
+            canvas.drawText(optionsStr[index], textX, AndroidUtilities.dp(25), textPaint);
+        }
+
+        paint.setColor(activeColor);
+        materialRect.set(
+                centerX - thumbWidth / 2.0f,
+                centerY - thumbHeight / 2.0f,
+                centerX + thumbWidth / 2.0f,
+                centerY + thumbHeight / 2.0f
+        );
+        canvas.drawRoundRect(materialRect, thumbWidth / 2.0f, thumbWidth / 2.0f, paint);
+    }
+
+    private void drawMaterialTrack(
+            Canvas canvas,
+            RectF bounds,
+            int color,
+            float leftRadius,
+            float rightRadius
+    ) {
+        if (bounds.width() <= 0) {
+            return;
+        }
+
+        paint.setColor(color);
+        materialRadii[0] = leftRadius;
+        materialRadii[1] = leftRadius;
+        materialRadii[2] = rightRadius;
+        materialRadii[3] = rightRadius;
+        materialRadii[4] = rightRadius;
+        materialRadii[5] = rightRadius;
+        materialRadii[6] = leftRadius;
+        materialRadii[7] = leftRadius;
+        materialPath.reset();
+        if (bounds.width() >= leftRadius + rightRadius) {
+            materialPath.addRoundRect(bounds, materialRadii, Path.Direction.CW);
+            canvas.drawPath(materialPath, paint);
+            return;
+        }
+
+        float minimumRadius = Math.min(leftRadius, rightRadius);
+        float maximumRadius = Math.max(leftRadius, rightRadius);
+        materialPath.addRoundRect(bounds, minimumRadius, minimumRadius, Path.Direction.CW);
+        canvas.save();
+        canvas.clipPath(materialPath);
+        if (leftRadius > rightRadius) {
+            materialCornerRect.set(
+                    bounds.left,
+                    bounds.top,
+                    bounds.left + 2.0f * maximumRadius,
+                    bounds.bottom
+            );
+        } else {
+            materialCornerRect.set(
+                    bounds.right - 2.0f * maximumRadius,
+                    bounds.top,
+                    bounds.right,
+                    bounds.bottom
+            );
+        }
+        canvas.drawRoundRect(
+                materialCornerRect,
+                maximumRadius,
+                maximumRadius,
+                paint
+        );
+        canvas.restore();
     }
 
     @Override

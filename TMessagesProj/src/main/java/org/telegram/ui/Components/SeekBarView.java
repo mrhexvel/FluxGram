@@ -54,11 +54,21 @@ import java.util.Collections;
 
 public class SeekBarView extends FrameLayout implements Theme.Colorable {
 
+    private static volatile SliderGeometry defaultSliderGeometry;
+
     private int themedOuterColor;
+    private int themedInnerColor;
 
     @Override
     public void updateColors() {
         try {
+            if (innerPaint1 != null && innerPaint1.getColor() == themedInnerColor) {
+                final int color = getThemedColor(Theme.key_player_progressBackground);
+                if (color != themedInnerColor) {
+                    innerPaint1.setColor(themedInnerColor = color);
+                    invalidate();
+                }
+            }
             if (outerPaint1 != null && outerPaint1.getColor() == themedOuterColor) {
                 final int color = getThemedColor(Theme.key_player_progress);
                 if (color != themedOuterColor) {
@@ -130,8 +140,10 @@ public class SeekBarView extends FrameLayout implements Theme.Colorable {
     public SeekBarView(Context context, boolean inPercents, Theme.ResourcesProvider resourcesProvider) {
         super(context);
         this.resourcesProvider = resourcesProvider;
+        sliderGeometry = defaultSliderGeometry;
         setWillNotDraw(false);
         innerPaint1 = new Paint(Paint.ANTI_ALIAS_FLAG);
+        innerPaint1.setColor(themedInnerColor = getThemedColor(Theme.key_player_progressBackground));
 
         outerPaint1 = new Paint(Paint.ANTI_ALIAS_FLAG);
         outerPaint1.setColor(themedOuterColor = getThemedColor(Theme.key_player_progress));
@@ -265,11 +277,7 @@ public class SeekBarView extends FrameLayout implements Theme.Colorable {
                     int additionWidth = (getMeasuredHeight() - thumbSize) / 2;
                     if (!(thumbX - additionWidth <= ev.getX() && ev.getX() <= thumbX + thumbSize + additionWidth)) {
                         thumbX = (int) ev.getX() - thumbSize / 2;
-                        if (thumbX < minThumbX()) {
-                            thumbX = minThumbX();
-                        } else if (thumbX > getMeasuredWidth() - selectorWidth) {
-                            thumbX = getMeasuredWidth() - selectorWidth;
-                        }
+                        thumbX = clampThumbX(thumbX);
                     }
                     thumbDX = (int) (ev.getX() - thumbX);
                     pressed = pressedDelayed = true;
@@ -310,11 +318,7 @@ public class SeekBarView extends FrameLayout implements Theme.Colorable {
                     if (ev.getY() >= 0 && ev.getY() <= getMeasuredHeight()) {
                         if (!(thumbX - additionWidth <= ev.getX() && ev.getX() <= thumbX + thumbSize + additionWidth)) {
                             thumbX = (int) ev.getX() - thumbSize / 2;
-                            if (thumbX < minThumbX()) {
-                                thumbX = minThumbX();
-                            } else if (thumbX > getMeasuredWidth() - selectorWidth) {
-                                thumbX = getMeasuredWidth() - selectorWidth;
-                            }
+                            thumbX = clampThumbX(thumbX);
                         }
                         thumbDX = (int) (ev.getX() - thumbX);
                         pressed = pressedDelayed = true;
@@ -330,11 +334,7 @@ public class SeekBarView extends FrameLayout implements Theme.Colorable {
             } else {
                 if (pressed) {
                     thumbX = (int) (ev.getX() - thumbDX);
-                    if (thumbX < minThumbX()) {
-                        thumbX = minThumbX();
-                    } else if (thumbX > getMeasuredWidth() - selectorWidth) {
-                        thumbX = getMeasuredWidth() - selectorWidth;
-                    }
+                    thumbX = clampThumbX(thumbX);
                     if (reportChanges) {
                         if (twoSided) {
                             float w = (getMeasuredWidth() - selectorWidth) / 2;
@@ -358,8 +358,24 @@ public class SeekBarView extends FrameLayout implements Theme.Colorable {
         return false;
     }
 
-    private int minThumbX() {
-        return Math.max((int) (minProgress * (getMeasuredWidth() - selectorWidth)), 0);
+    private int clampThumbX(int value) {
+        int range = getMeasuredWidth() - selectorWidth;
+        int minimum = 0;
+        int maximum = range;
+        if (minProgress >= 0) {
+            if (isMaterialRtl()) {
+                maximum = Math.round((1.0f - minProgress) * range);
+            } else {
+                minimum = sliderGeometry == null
+                        ? (int) (minProgress * range)
+                        : Math.round(minProgress * range);
+            }
+        }
+        return Utilities.clamp(value, maximum, minimum);
+    }
+
+    private boolean isMaterialRtl() {
+        return sliderGeometry != null && LocaleController.isRTL;
     }
 
     public void setLineWidth(int dp) {
@@ -369,6 +385,22 @@ public class SeekBarView extends FrameLayout implements Theme.Colorable {
     public void setSliderGeometry(SliderGeometry geometry) {
         sliderGeometry = geometry;
         invalidate();
+    }
+
+    public SliderGeometry getSliderGeometry() {
+        return sliderGeometry;
+    }
+
+    public int getPreferredHeightDp(int fallbackHeightDp) {
+        return sliderGeometry == null ? fallbackHeightDp : sliderGeometry.getTouchTargetHeightDp();
+    }
+
+    public static void initializeDefaultGeometry(SliderGeometry geometry) {
+        defaultSliderGeometry = geometry;
+    }
+
+    public static boolean hasDefaultGeometry() {
+        return defaultSliderGeometry != null;
     }
 
     int lastValue;
@@ -394,7 +426,7 @@ public class SeekBarView extends FrameLayout implements Theme.Colorable {
 
     private float progressForThumbX(int thumbX) {
         float progress = thumbX / (float) (getMeasuredWidth() - selectorWidth);
-        return sliderGeometry != null && LocaleController.isRTL ? 1.0f - progress : progress;
+        return isMaterialRtl() ? 1.0f - progress : progress;
     }
 
     public void setProgress(float progress) {
@@ -417,7 +449,7 @@ public class SeekBarView extends FrameLayout implements Theme.Colorable {
                 newThumbX = (int) Math.ceil(cx + w / 2 * progress);
             }
         } else {
-            if (sliderGeometry != null && LocaleController.isRTL) {
+            if (isMaterialRtl()) {
                 progress = 1.0f - progress;
             }
             newThumbX = (int) Math.ceil((getMeasuredWidth() - selectorWidth) * progress);
@@ -428,11 +460,7 @@ public class SeekBarView extends FrameLayout implements Theme.Colorable {
                 transitionProgress = 0f;
             }
             thumbX = newThumbX;
-            if (thumbX < minThumbX()) {
-                thumbX = minThumbX();
-            } else if (thumbX > getMeasuredWidth() - selectorWidth) {
-                thumbX = getMeasuredWidth() - selectorWidth;
-            }
+            thumbX = clampThumbX(thumbX);
             invalidate();
         }
     }
@@ -487,7 +515,7 @@ public class SeekBarView extends FrameLayout implements Theme.Colorable {
             return;
         }
         int y = (getMeasuredHeight() - thumbSize) / 2;
-        innerPaint1.setColor(getThemedColor(Theme.key_player_progressBackground));
+        innerPaint1.setColor(themedInnerColor = getThemedColor(Theme.key_player_progressBackground));
 
         float centerY = getMeasuredHeight() / 2f;
         float left = selectorWidth / 2f, right = getMeasuredWidth() - selectorWidth / 2;
@@ -600,6 +628,10 @@ public class SeekBarView extends FrameLayout implements Theme.Colorable {
         float inactiveLeft = centerX + gap;
         float startStopX = selectorWidth / 2.0f;
         float endStopX = getMeasuredWidth() - selectorWidth / 2.0f;
+        boolean isRtl = LocaleController.isRTL;
+        float minCenterX = isRtl
+                ? endStopX - minProgress * (endStopX - startStopX)
+                : startStopX + minProgress * (endStopX - startStopX);
         float startRadius = Math.min(
                 outerRadius,
                 Math.max(centerX - startStopX, innerRadius)
@@ -608,7 +640,7 @@ public class SeekBarView extends FrameLayout implements Theme.Colorable {
                 outerRadius,
                 Math.max(endStopX - centerX, innerRadius)
         );
-        boolean isRtl = LocaleController.isRTL;
+        boolean hasMinimum = minProgress > 0 && !twoSided;
 
         if (isRtl) {
             if (activeRight - trackLeft > outerRadius - gap) {
@@ -616,12 +648,30 @@ public class SeekBarView extends FrameLayout implements Theme.Colorable {
                 drawSliderGeometryTrack(canvas, rect, innerPaint1, startRadius, innerRadius);
             }
 
-            if (inactiveLeft < trackRight) {
+            if (hasMinimum) {
+                if (inactiveLeft < minCenterX) {
+                    rect.set(inactiveLeft, trackTop, minCenterX, trackBottom);
+                    drawSliderGeometryTrack(canvas, rect, outerPaint1, innerRadius, innerRadius);
+                }
+                if (minCenterX < trackRight) {
+                    rect.set(minCenterX, trackTop, trackRight, trackBottom);
+                    drawSliderGeometryTrackWithAlpha(canvas, rect, outerPaint1, innerRadius, endRadius, 0.5f);
+                }
+            } else if (inactiveLeft < trackRight) {
                 rect.set(inactiveLeft, trackTop, trackRight, trackBottom);
                 drawSliderGeometryTrack(canvas, rect, outerPaint1, innerRadius, endRadius);
             }
         } else {
-            if (activeRight > trackLeft) {
+            if (hasMinimum) {
+                if (minCenterX > trackLeft) {
+                    rect.set(trackLeft, trackTop, minCenterX, trackBottom);
+                    drawSliderGeometryTrackWithAlpha(canvas, rect, outerPaint1, startRadius, innerRadius, 0.5f);
+                }
+                if (activeRight > minCenterX) {
+                    rect.set(minCenterX, trackTop, activeRight, trackBottom);
+                    drawSliderGeometryTrack(canvas, rect, outerPaint1, innerRadius, innerRadius);
+                }
+            } else if (activeRight > trackLeft) {
                 rect.set(trackLeft, trackTop, activeRight, trackBottom);
                 drawSliderGeometryTrack(canvas, rect, outerPaint1, startRadius, innerRadius);
             }
@@ -646,6 +696,20 @@ public class SeekBarView extends FrameLayout implements Theme.Colorable {
                 centerY + thumbHeight / 2.0f
         );
         canvas.drawRoundRect(rect, thumbWidth / 2.0f, thumbWidth / 2.0f, outerPaint1);
+    }
+
+    private void drawSliderGeometryTrackWithAlpha(
+            Canvas canvas,
+            RectF bounds,
+            Paint paint,
+            float leftRadius,
+            float rightRadius,
+            float alpha
+    ) {
+        int previousAlpha = paint.getAlpha();
+        paint.setAlpha(Math.round(previousAlpha * alpha));
+        drawSliderGeometryTrack(canvas, bounds, paint, leftRadius, rightRadius);
+        paint.setAlpha(previousAlpha);
     }
 
     private void drawSliderGeometryTrack(

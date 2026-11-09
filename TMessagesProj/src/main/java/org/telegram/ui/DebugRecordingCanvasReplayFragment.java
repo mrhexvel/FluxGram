@@ -91,6 +91,7 @@ public class DebugRecordingCanvasReplayFragment extends BaseFragment {
 
         // SeekBar
         seekBarView = new SeekBarView(context);
+        seekBarView.setSliderGeometry(null);
         seekBarView.setReportChanges(true);
         seekBarView.setDelegate(new SeekBarView.SeekBarViewDelegate() {
             @Override

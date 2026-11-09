@@ -58,6 +58,7 @@ import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.Components.ForegroundDetector;
 import org.telegram.ui.Components.ItemOptions;
+import org.telegram.ui.Components.SeekBarView;
 import org.telegram.ui.Components.Switch;
 import org.telegram.ui.IUpdateLayout;
 import org.telegram.ui.LauncherIconController;
@@ -339,6 +340,8 @@ public class ApplicationLoader extends Application {
         MaterialVisualStyleRuntime.initialize(MaterialStylePolicy.resolve(
                 MaterialStyleSettings.getState(applicationContext)));
         Switch.initializeDefaultGeometry(MaterialControlsStyle.switchGeometry(
+                MaterialVisualStyleRuntime.getSnapshot()));
+        SeekBarView.initializeDefaultGeometry(MaterialControlsStyle.sliderGeometry(
                 MaterialVisualStyleRuntime.getSnapshot()));
 
         // AndroidUtilities must be initialized before FileLog

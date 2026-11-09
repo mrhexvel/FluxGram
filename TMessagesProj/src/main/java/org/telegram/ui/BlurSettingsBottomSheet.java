@@ -55,6 +55,7 @@ public class BlurSettingsBottomSheet extends BottomSheet {
         linearLayout.addView(saturationTextView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.MATCH_PARENT, (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.TOP, 21, 13, 21, 0));
 
         SeekBarView seekBar = new SeekBarView(context);
+        seekBar.setSliderGeometry(null);
         seekBar.setDelegate(new SeekBarView.SeekBarViewDelegate() {
             @Override
             public void onSeekBarDrag(boolean stop, float progress) {
@@ -84,6 +85,7 @@ public class BlurSettingsBottomSheet extends BottomSheet {
         linearLayout.addView(alphaTextView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.MATCH_PARENT, (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.TOP, 21, 13, 21, 0));
 
         SeekBarView seekBar3 = new SeekBarView(context);
+        seekBar3.setSliderGeometry(null);
         seekBar3.setDelegate(new SeekBarView.SeekBarViewDelegate() {
             @Override
             public void onSeekBarDrag(boolean stop, float progress) {
@@ -113,6 +115,7 @@ public class BlurSettingsBottomSheet extends BottomSheet {
         linearLayout.addView(radiusTextView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.MATCH_PARENT, (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.TOP, 21, 13, 21, 0));
 
         SeekBarView seekBar2 = new SeekBarView(context);
+        seekBar2.setSliderGeometry(null);
         seekBar2.setDelegate(new SeekBarView.SeekBarViewDelegate() {
             @Override
             public void onSeekBarDrag(boolean stop, float progress) {

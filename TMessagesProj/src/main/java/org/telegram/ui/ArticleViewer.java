@@ -784,6 +784,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
     private class TextSizeCell extends FrameLayout {
 
         private SeekBarView sizeBar;
+        private boolean materialSlider;
         private int startFontSize = 12;
         private int endFontSize = 30;
         private int lastWidth;
@@ -799,6 +800,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             textPaint.setTextSize(dp(16));
 
             sizeBar = new SeekBarView(context, getResourcesProvider());
+            materialSlider = sizeBar.getSliderGeometry() != null;
             sizeBar.setReportChanges(true);
             sizeBar.setSeparatorsCount(endFontSize - startFontSize + 1);
             sizeBar.setDelegate(new SeekBarView.SeekBarViewDelegate() {
@@ -831,13 +833,27 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                     return endFontSize - startFontSize;
                 }
             });
-            addView(sizeBar, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 38, Gravity.LEFT | Gravity.TOP, 5, 5, 39, 0));
+            addView(sizeBar, LayoutHelper.createFrame(
+                    LayoutHelper.MATCH_PARENT,
+                    sizeBar.getPreferredHeightDp(38),
+                    Gravity.LEFT | Gravity.TOP,
+                    materialSlider && LocaleController.isRTL ? 39 : 5,
+                    5,
+                    materialSlider && LocaleController.isRTL ? 5 : 39,
+                    0
+            ));
         }
 
         @Override
         protected void onDraw(Canvas canvas) {
             textPaint.setColor(getThemedColor(Theme.key_windowBackgroundWhiteValueText));
-            canvas.drawText("" + SharedConfig.ivFontSize, getMeasuredWidth() - dp(39), dp(28), textPaint);
+            textPaint.setTextAlign(materialSlider && LocaleController.isRTL ? Paint.Align.RIGHT : Paint.Align.LEFT);
+            canvas.drawText(
+                    "" + SharedConfig.ivFontSize,
+                    materialSlider && LocaleController.isRTL ? dp(39) : getMeasuredWidth() - dp(39),
+                    dp(28),
+                    textPaint
+            );
         }
 
         @Override

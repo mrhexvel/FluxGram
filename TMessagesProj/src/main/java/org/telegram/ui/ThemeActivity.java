@@ -306,6 +306,7 @@ public class ThemeActivity extends BaseFragment implements NotificationCenter.No
 
         private ThemePreviewMessagesCell messagesCell;
         private SeekBarView sizeBar;
+        private boolean materialSlider;
         private TextCheckCell compactModeCell;
         private int startFontSize = 12;
         private int endFontSize = 30;
@@ -322,6 +323,7 @@ public class ThemeActivity extends BaseFragment implements NotificationCenter.No
             textPaint.setTextSize(dp(16));
 
             sizeBar = new SeekBarView(context);
+            materialSlider = sizeBar.getSliderGeometry() != null;
             sizeBar.setReportChanges(true);
             sizeBar.setSeparatorsCount(endFontSize - startFontSize + 1);
             sizeBar.setDelegate(new SeekBarView.SeekBarViewDelegate() {
@@ -345,7 +347,15 @@ public class ThemeActivity extends BaseFragment implements NotificationCenter.No
                 }
             });
             sizeBar.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
-            addView(sizeBar, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 38, Gravity.LEFT | Gravity.TOP, 5, 5, 39, 0));
+            addView(sizeBar, LayoutHelper.createFrame(
+                    LayoutHelper.MATCH_PARENT,
+                    sizeBar.getPreferredHeightDp(38),
+                    Gravity.LEFT | Gravity.TOP,
+                    materialSlider && LocaleController.isRTL ? 39 : 5,
+                    5,
+                    materialSlider && LocaleController.isRTL ? 5 : 39,
+                    0
+            ));
 
             final boolean showCompactMode = BuildVars.DEBUG_PRIVATE_VERSION;
             compactModeCell = new TextCheckCell(context);
@@ -365,20 +375,42 @@ public class ThemeActivity extends BaseFragment implements NotificationCenter.No
                 NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.didSetNewWallpapper);
             });
             if (showCompactMode) {
-                addView(compactModeCell, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 50, Gravity.LEFT | Gravity.TOP, 0, 48, 0, 0));
+                addView(compactModeCell, LayoutHelper.createFrame(
+                        LayoutHelper.MATCH_PARENT,
+                        50,
+                        Gravity.LEFT | Gravity.TOP,
+                        0,
+                        materialSlider ? 58 : 48,
+                        0,
+                        0
+                ));
             }
 
             messagesCell = new ThemePreviewMessagesCell(context, parentLayout, 0);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
                 messagesCell.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
             }
-            addView(messagesCell, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.LEFT | Gravity.TOP, 0, 53 + (showCompactMode ? 50 : 0), 0, 0));
+            addView(messagesCell, LayoutHelper.createFrame(
+                    LayoutHelper.MATCH_PARENT,
+                    LayoutHelper.WRAP_CONTENT,
+                    Gravity.LEFT | Gravity.TOP,
+                    0,
+                    (materialSlider ? 63 : 53) + (showCompactMode ? 50 : 0),
+                    0,
+                    0
+            ));
         }
 
         @Override
         protected void onDraw(Canvas canvas) {
             textPaint.setColor(Theme.getColor(Theme.key_windowBackgroundWhiteValueText));
-            canvas.drawText("" + SharedConfig.fontSize, getMeasuredWidth() - dp(39), dp(28), textPaint);
+            textPaint.setTextAlign(materialSlider && LocaleController.isRTL ? Paint.Align.RIGHT : Paint.Align.LEFT);
+            canvas.drawText(
+                    "" + SharedConfig.fontSize,
+                    materialSlider && LocaleController.isRTL ? dp(39) : getMeasuredWidth() - dp(39),
+                    dp(28),
+                    textPaint
+            );
         }
 
         @Override
@@ -437,6 +469,7 @@ public class ThemeActivity extends BaseFragment implements NotificationCenter.No
     private class BubbleRadiusCell extends FrameLayout implements Theme.Colorable {
 
         private SeekBarView sizeBar;
+        private boolean materialSlider;
         private int startRadius = 0;
         private int endRadius = 17;
 
@@ -451,6 +484,7 @@ public class ThemeActivity extends BaseFragment implements NotificationCenter.No
             textPaint.setTextSize(dp(16));
 
             sizeBar = new SeekBarView(context);
+            materialSlider = sizeBar.getSliderGeometry() != null;
             sizeBar.setReportChanges(true);
             sizeBar.setSeparatorsCount(endRadius - startRadius + 1);
             sizeBar.setDelegate(new SeekBarView.SeekBarViewDelegate() {
@@ -474,13 +508,27 @@ public class ThemeActivity extends BaseFragment implements NotificationCenter.No
                 }
             });
             sizeBar.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
-            addView(sizeBar, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 38, Gravity.LEFT | Gravity.TOP, 5, 5, 39, 0));
+            addView(sizeBar, LayoutHelper.createFrame(
+                    LayoutHelper.MATCH_PARENT,
+                    sizeBar.getPreferredHeightDp(38),
+                    Gravity.LEFT | Gravity.TOP,
+                    materialSlider && LocaleController.isRTL ? 39 : 5,
+                    5,
+                    materialSlider && LocaleController.isRTL ? 5 : 39,
+                    0
+            ));
         }
 
         @Override
         protected void onDraw(Canvas canvas) {
             textPaint.setColor(Theme.getColor(Theme.key_windowBackgroundWhiteValueText));
-            canvas.drawText("" + SharedConfig.bubbleRadius, getMeasuredWidth() - dp(39), dp(28), textPaint);
+            textPaint.setTextAlign(materialSlider && LocaleController.isRTL ? Paint.Align.RIGHT : Paint.Align.LEFT);
+            canvas.drawText(
+                    "" + SharedConfig.bubbleRadius,
+                    materialSlider && LocaleController.isRTL ? dp(39) : getMeasuredWidth() - dp(39),
+                    dp(28),
+                    textPaint
+            );
         }
 
         @Override

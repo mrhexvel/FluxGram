@@ -773,6 +773,7 @@ public class LiteModeSettingsActivity extends BaseFragment {
             addView(headerLayout, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.FILL_HORIZONTAL, 21, 17, 21, 0));
 
             seekBarView = new SeekBarView(context, true, null);
+            boolean materialSlider = seekBarView.getSliderGeometry() != null;
             seekBarView.setReportChanges(true);
             seekBarView.setDelegate(new SeekBarView.SeekBarViewDelegate() {
                 @Override
@@ -799,7 +800,15 @@ public class LiteModeSettingsActivity extends BaseFragment {
             });
             seekBarView.setProgress(LiteMode.getPowerSaverLevel() / 100F);
             seekBarView.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
-            addView(seekBarView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 38 + 6, Gravity.TOP, 6, 68, 6, 0));
+            addView(seekBarView, LayoutHelper.createFrame(
+                    LayoutHelper.MATCH_PARENT,
+                    seekBarView.getPreferredHeightDp(44),
+                    Gravity.TOP,
+                    6,
+                    68,
+                    6,
+                    0
+            ));
 
             valuesView = new FrameLayout(context);
             valuesView.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
@@ -807,9 +816,13 @@ public class LiteModeSettingsActivity extends BaseFragment {
             leftTextView = new TextView(context);
             leftTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
             leftTextView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
-            leftTextView.setGravity(Gravity.LEFT);
+            leftTextView.setGravity(materialSlider ? Gravity.START : Gravity.LEFT);
             leftTextView.setText(LocaleController.getString(R.string.LiteBatteryDisabled));
-            valuesView.addView(leftTextView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.LEFT | Gravity.CENTER_VERTICAL));
+            valuesView.addView(leftTextView, LayoutHelper.createFrame(
+                    LayoutHelper.WRAP_CONTENT,
+                    LayoutHelper.WRAP_CONTENT,
+                    (materialSlider ? Gravity.START : Gravity.LEFT) | Gravity.CENTER_VERTICAL
+            ));
 
             middleTextView = new AnimatedTextView(context, false, true, true) {
                 @Override
@@ -839,9 +852,13 @@ public class LiteModeSettingsActivity extends BaseFragment {
             rightTextView = new TextView(context);
             rightTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
             rightTextView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
-            rightTextView.setGravity(Gravity.RIGHT);
+            rightTextView.setGravity(materialSlider ? Gravity.END : Gravity.RIGHT);
             rightTextView.setText(LocaleController.getString(R.string.LiteBatteryEnabled));
-            valuesView.addView(rightTextView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.RIGHT | Gravity.CENTER_VERTICAL));
+            valuesView.addView(rightTextView, LayoutHelper.createFrame(
+                    LayoutHelper.WRAP_CONTENT,
+                    LayoutHelper.WRAP_CONTENT,
+                    (materialSlider ? Gravity.END : Gravity.RIGHT) | Gravity.CENTER_VERTICAL
+            ));
 
             addView(valuesView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.FILL_HORIZONTAL, 21, 52, 21, 0));
 
@@ -1050,7 +1067,7 @@ public class LiteModeSettingsActivity extends BaseFragment {
         protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
             super.onMeasure(
                 MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(widthMeasureSpec), MeasureSpec.EXACTLY),
-                MeasureSpec.makeMeasureSpec(dp(112), MeasureSpec.EXACTLY)
+                MeasureSpec.makeMeasureSpec(dp(seekBarView.getSliderGeometry() == null ? 112 : 116), MeasureSpec.EXACTLY)
             );
         }
     }
