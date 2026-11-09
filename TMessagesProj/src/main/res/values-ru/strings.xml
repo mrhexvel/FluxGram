@@ -652,6 +652,12 @@
     <string name="FluxGramNavigationInfo">Режим планшета и нижняя навигация управляют компоновкой приложения. Стили переходов применяются только к обычной навигации и сохраняют специальные анимации Telegram. Интенсивность предиктивного жеста управляет интерактивным переходом Android 14 и новее.</string>
     <string name="FluxGramBottomNavigationRestartMessage">Изменение нижней навигации перестраивает корневые страницы приложения. Для применения нужен перезапуск FluxGram.</string>
     <string name="FluxGramBottomNavigationRestartError">Не удалось сохранить режим нижней навигации или перезапустить FluxGram.</string>
+    <string name="FluxGramRootNavigation">Вкладки нижней панели</string>
+    <string name="FluxGramRootNavigationInfo">Выберите до четырёх вкладок. «Чаты» обязательны. Перетаскивайте активные вкладки за маркеры, чтобы изменить порядок, затем нажмите галочку для сохранения и перезапуска FluxGram.</string>
+    <string name="FluxGramRootNavigationLimit">Можно включить не больше четырёх вкладок.</string>
+    <string name="FluxGramRootNavigationRequired">Вкладка «Чаты» обязательна, её нельзя отключить.</string>
+    <string name="FluxGramRootNavigationRestartMessage">Изменение состава вкладок перестраивает корневые страницы приложения. Для сохранения выбора FluxGram нужно перезапустить.</string>
+    <string name="FluxGramRootNavigationRestartError">Не удалось сохранить состав вкладок или перезапустить FluxGram.</string>
     <string name="FluxGramTransitionStyle">Переходы между экранами</string>
     <string name="FluxGramTransitionStyleDefault">По умолчанию</string>
     <string name="FluxGramTransitionStyleSpring">Spring</string>

@@ -371,7 +371,7 @@ class RootNavigationPolicyTest(unittest.TestCase):
                 check=True,
             )
 
-    def test_new_state_has_no_production_consumer(self):
+    def test_new_state_is_not_consumed_by_root_runtime(self):
         consumers = []
         for path in JAVA.rglob("*.java"):
             if path in (POLICY, SETTINGS):
@@ -380,7 +380,13 @@ class RootNavigationPolicyTest(unittest.TestCase):
             if "RootNavigationPolicy" in source or "RootNavigationSettings" in source:
                 consumers.append(path.relative_to(JAVA).as_posix())
 
-        self.assertEqual([], consumers)
+        self.assertEqual(
+            [
+                "ui/FluxGramRootNavigationSettingsActivity.java",
+                "ui/FluxGramSettingsActivity.java",
+            ],
+            sorted(consumers),
+        )
 
 
 if __name__ == "__main__":

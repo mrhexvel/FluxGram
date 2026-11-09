@@ -186,6 +186,7 @@ public class FluxGramSettingsActivity extends BaseFragment {
     private static final int MATERIAL_STYLE_MODULE_FIRST = 96;
     private static final int MATERIAL_STYLE_MODULE_LAST = MATERIAL_STYLE_MODULE_FIRST
             + MaterialStylePolicy.Module.PROGRESS.ordinal();
+    private static final int ROOT_NAVIGATION = 102;
     private static final MaterialStylePolicy.Module[] MATERIAL_STYLE_MODULES = {
             MaterialStylePolicy.Module.MATERIAL_SYMBOLS,
             MaterialStylePolicy.Module.NAVIGATION,
@@ -937,6 +938,10 @@ public class FluxGramSettingsActivity extends BaseFragment {
                     bottomNavigationOption(SharedConfig.bottomNavigationMode)
             ));
             items.add(UItem.asButton(
+                    ROOT_NAVIGATION,
+                    LocaleController.getString(R.string.FluxGramRootNavigation)
+            ));
+            items.add(UItem.asButton(
                     MAIN_MENU,
                     LocaleController.getString(R.string.FluxGramMainMenu)
             ));
@@ -1560,6 +1565,8 @@ public class FluxGramSettingsActivity extends BaseFragment {
                 showTabletModeDialog();
             } else if (item.id == BOTTOM_NAVIGATION) {
                 showBottomNavigationDialog();
+            } else if (item.id == ROOT_NAVIGATION) {
+                presentFragment(new FluxGramRootNavigationSettingsActivity());
             } else if (item.id == MAIN_MENU) {
                 presentFragment(new FluxGramMainMenuSettingsActivity());
             } else if (item.id == TRANSITION_STYLE) {
