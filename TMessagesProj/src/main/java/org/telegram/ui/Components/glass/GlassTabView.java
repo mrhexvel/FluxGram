@@ -423,7 +423,7 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
                 iconPackSelected = isSelected;
             }
 
-            updateColors();
+            applyColors();
             return;
         }
 

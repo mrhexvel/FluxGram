@@ -171,6 +171,11 @@ class IconPackAndroidAdapterTest(unittest.TestCase):
         self.assertIn("new RLottieDrawable(", topics)
         self.assertIn("R.raw.boosts", topics)
         self.assertIn('BOOSTS(R.raw.boosts, 25, 49, "boosts")', tabs)
+        icon_pack_branch = tabs.split("if (iconPackDrawable != null) {", 1)[1].split(
+            "if (usesIconPack) {", 1
+        )[0]
+        self.assertIn("applyColors();", icon_pack_branch)
+        self.assertNotIn("updateColors();", icon_pack_branch)
         for name in ("msg_sticker", "input_keyboard", "input_smile", "msg_gif"):
             self.assertIn(f"R.drawable.{name}", composer)
         self.assertIn(
