@@ -2112,6 +2112,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
             t -= dp(5 * Math.max(filterTabsVisibility, topPanelsVisibility));
             additionalPadding -= dp(5 * Math.max(filterTabsVisibility, topPanelsVisibility));
+            t += audioMiniPlayerMiddleInset;
+            additionalPadding += audioMiniPlayerMiddleInset;
             final int b = calculateListViewPaddingBottom();
             if (t != topPadding || b != getPaddingBottom()) {
                 setTopGlowOffset(t);
@@ -14663,7 +14665,44 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     private final RectF audioMiniPlayerActionBarBounds = new RectF();
     private final RectF audioMiniPlayerOccupiedBounds = new RectF();
     private boolean audioMiniPlayerTopActive;
+    private int audioMiniPlayerMiddleInset;
     private int audioMiniPlayerTitleRightMargin;
+
+    @Override
+    public void setAudioMiniPlayerMiddleInset(int padding) {
+        int boundedPadding = Math.max(0, padding);
+        if (audioMiniPlayerMiddleInset == boundedPadding) {
+            return;
+        }
+
+        audioMiniPlayerMiddleInset = boundedPadding;
+        if (viewPages != null) {
+            for (ViewPage viewPage : viewPages) {
+                if (viewPage != null && viewPage.listView != null) {
+                    viewPage.listView.requestLayout();
+                }
+            }
+        }
+    }
+
+    @Override
+    public boolean getAudioMiniPlayerMiddleBounds(RectF out) {
+        if (!usesFluxGramRootDialogsAppearance()
+                || fragmentView == null
+                || viewPages == null
+                || viewPages.length == 0
+                || viewPages[0] == null
+                || viewPages[0].listView == null
+                || fragmentView.getWidth() <= dp(24)) {
+            return false;
+        }
+
+        float top = viewPages[0].listView.topPadding
+                - audioMiniPlayerMiddleInset
+                + dp(8);
+        out.set(dp(12), top, fragmentView.getWidth() - dp(12), top + dp(64));
+        return true;
+    }
 
     @Override
     public void setAudioMiniPlayerTopActive(boolean active) {

@@ -2,6 +2,7 @@ package org.telegram.messenger.fluxgram;
 
 public enum AudioMiniPlayerPosition {
     BOTTOM("bottom"),
+    MIDDLE("middle"),
     TOP("top");
 
     private final String persistedValue;

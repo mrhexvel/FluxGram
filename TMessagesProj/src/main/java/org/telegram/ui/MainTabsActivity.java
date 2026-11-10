@@ -136,6 +136,8 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
     private DockedNavigationDrawable dockedNavigationBackground;
     private View fadeView;
     private MaterialAudioMiniPlayer audioMiniPlayer;
+    private final RectF audioMiniPlayerMiddleBounds = new RectF();
+    private final RectF audioMiniPlayerResolvedMiddleBounds = new RectF();
     private final RectF audioMiniPlayerTopBounds = new RectF();
     private final RectF audioMiniPlayerResolvedTopBounds = new RectF();
     private final RectF audioMiniPlayerFragmentBounds = new RectF();
@@ -1276,6 +1278,14 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
 
         }
 
+        default void setAudioMiniPlayerMiddleInset(int padding) {
+
+        }
+
+        default boolean getAudioMiniPlayerMiddleBounds(RectF out) {
+            return false;
+        }
+
         default boolean getAudioMiniPlayerTopBounds(RectF out) {
             return false;
         }
@@ -1566,10 +1576,14 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         }
 
         float visibility = 1.0f;
+        boolean resolvedMiddleBounds = false;
         boolean resolvedTopBounds = false;
         if (chats instanceof TabFragmentDelegate) {
             TabFragmentDelegate delegate = (TabFragmentDelegate) chats;
             visibility = delegate.getAudioMiniPlayerTopVisibility();
+            resolvedMiddleBounds = delegate.getAudioMiniPlayerMiddleBounds(
+                    audioMiniPlayerMiddleBounds
+            );
             resolvedTopBounds = visibility >= 0.99f
                     && delegate.getAudioMiniPlayerTopBounds(audioMiniPlayerTopBounds);
             if (resolvedTopBounds) {
@@ -1595,6 +1609,17 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
             audioMiniPlayerResolvedTopBounds.setEmpty();
         }
 
+        if (resolvedMiddleBounds && fragmentPositionReady) {
+            audioMiniPlayerResolvedMiddleBounds.set(audioMiniPlayerMiddleBounds);
+            audioMiniPlayerResolvedMiddleBounds.offset(
+                    audioMiniPlayerFragmentBounds.left,
+                    audioMiniPlayerFragmentBounds.top
+            );
+        } else {
+            audioMiniPlayerResolvedMiddleBounds.setEmpty();
+        }
+
+        audioMiniPlayer.setMiddleState(audioMiniPlayerResolvedMiddleBounds, zone, visibility);
         audioMiniPlayer.setTopState(audioMiniPlayerResolvedTopBounds, zone, visibility);
     }
 
@@ -1619,6 +1644,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
                 audioMiniPlayer.getVisibleOffset(chats),
                 audioMiniPlayer.getTargetOffset(chats)
         );
+        delegate.setAudioMiniPlayerMiddleInset(audioMiniPlayer.getMiddleTargetOffset(chats));
         delegate.setAudioMiniPlayerTopActive(audioMiniPlayer.isTopTarget(chats));
     }
 

@@ -86,6 +86,7 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
     private final Theme.ResourcesProvider resourcesProvider;
     private final MiniPlayerGeometry geometry;
     private final String coverFilter;
+    private final String middleCoverFilter = "44_44";
     private final Runnable openPlayer;
     private final PositionListener positionListener;
     private final MorphingCardView morphingCard;
@@ -96,6 +97,14 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
     private final RLottieImageView previousButton;
     private final PlaybackRingView playButton;
     private final RLottieImageView nextButton;
+    private final DraggableCard middleCard;
+    private final GradientDrawable middleCardBackground = new GradientDrawable();
+    private final BackupImageView middleCoverView;
+    private final TextView middleTitleView;
+    private final TextView middleArtistView;
+    private final RLottieImageView middlePreviousButton;
+    private final PlaybackRingView middlePlayButton;
+    private final RLottieImageView middleNextButton;
     private final DraggableCard topCard;
     private final LinearLayout topCardContent;
     private final GradientDrawable topCardBackground = new GradientDrawable();
@@ -105,6 +114,7 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
     private final PlaybackButtonView topPlayButton;
     private final int touchSlop;
     private final int[] cardLocation = new int[2];
+    private final RectF middleBounds = new RectF();
     private final RectF topBounds = new RectF();
     private final Runnable startDragging = this::startDragging;
     private final Runnable releaseActivationRipple;
@@ -143,6 +153,7 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
     private float dragStartProgress;
     private int magnetTarget;
     private int moveUpAccessibilityActionId = -1;
+    private int moveUpMiddleAccessibilityActionId = -1;
     private Runnable offsetListener;
     private View dragCard;
 
@@ -168,7 +179,7 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
                 ? AudioMiniPlayerPosition.BOTTOM
                 : initialPosition;
         targetPosition = settledPosition;
-        placementProgress = settledPosition == AudioMiniPlayerPosition.TOP ? 1.0f : 0.0f;
+        placementProgress = getPositionProgress(settledPosition);
         touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
 
         setClipChildren(false);
@@ -264,6 +275,97 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
                 48
         ));
 
+        middleCard = new DraggableCard(context);
+        middleCard.setOrientation(LinearLayout.HORIZONTAL);
+        middleCard.setGravity(Gravity.CENTER_VERTICAL);
+        middleCard.setPadding(dp(10), 0, dp(6), 0);
+        middleCardBackground.setCornerRadius(dp(20));
+        middleCard.setBackground(middleCardBackground);
+        middleCard.setClipChildren(false);
+        middleCard.setClipToPadding(false);
+        middleCard.setClipToOutline(false);
+        middleCard.setElevation(dp(6));
+        middleCard.setOnClickListener(view -> {
+            if (currentMessage != null) {
+                openPlayer.run();
+            }
+        });
+        ViewCompat.addAccessibilityAction(
+                middleCard,
+                getString(R.string.FluxGramMoveDown),
+                (view, arguments) -> {
+                    settleTo(AudioMiniPlayerPosition.BOTTOM);
+                    return true;
+                }
+        );
+        addView(middleCard, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT,
+                64,
+                Gravity.TOP,
+                12,
+                0,
+                12,
+                0
+        ));
+
+        middleCoverView = new BackupImageView(context);
+        middleCoverView.setRoundRadius(dp(12));
+        middleCard.addView(middleCoverView, LayoutHelper.createLinear(44, 44));
+
+        LinearLayout middleTexts = new LinearLayout(context);
+        middleTexts.setOrientation(LinearLayout.VERTICAL);
+        middleTitleView = new TextView(context);
+        middleTitleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
+        middleTitleView.setTypeface(AndroidUtilities.bold());
+        middleTitleView.setSingleLine(true);
+        middleTitleView.setEllipsize(TextUtils.TruncateAt.END);
+        middleTexts.addView(middleTitleView, LayoutHelper.createLinear(
+                LayoutHelper.MATCH_PARENT,
+                LayoutHelper.WRAP_CONTENT
+        ));
+        middleArtistView = new TextView(context);
+        middleArtistView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+        middleArtistView.setSingleLine(true);
+        middleArtistView.setEllipsize(TextUtils.TruncateAt.END);
+        middleTexts.addView(middleArtistView, LayoutHelper.createLinear(
+                LayoutHelper.MATCH_PARENT,
+                LayoutHelper.WRAP_CONTENT,
+                0,
+                2,
+                0,
+                0
+        ));
+        middleCard.addView(middleTexts, LayoutHelper.createLinear(
+                0,
+                LayoutHelper.WRAP_CONTENT,
+                1.0f,
+                12,
+                0,
+                4,
+                0
+        ));
+
+        middlePreviousButton = createNavigationButton(context, false, R.string.AccDescrPrevious);
+        middlePreviousButton.setOnClickListener(view -> {
+            MediaController.getInstance().playPreviousMessage();
+            middlePreviousButton.setProgress(0.0f);
+            middlePreviousButton.playAnimation();
+        });
+        middleCard.addView(middlePreviousButton, LayoutHelper.createLinear(44, 48));
+
+        middlePlayButton = new PlaybackRingView(context, geometry.getProgressGeometry());
+        middlePlayButton.setContentDescription(getString(R.string.AccActionPlay));
+        middlePlayButton.setOnClickListener(view -> togglePlayback());
+        middleCard.addView(middlePlayButton, LayoutHelper.createLinear(48, 48));
+
+        middleNextButton = createNavigationButton(context, true, R.string.Next);
+        middleNextButton.setOnClickListener(view -> {
+            MediaController.getInstance().playNextMessage();
+            middleNextButton.setProgress(0.0f);
+            middleNextButton.playAnimation();
+        });
+        middleCard.addView(middleNextButton, LayoutHelper.createLinear(44, 48));
+
         topCard = new DraggableCard(context);
         topCard.setGravity(Gravity.CENTER);
         topCard.setOnClickListener(view -> {
@@ -275,7 +377,9 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
                 topCard,
                 getString(R.string.FluxGramMoveDown),
                 (view, arguments) -> {
-                    settleTo(AudioMiniPlayerPosition.BOTTOM);
+                    settleTo(middleBounds.isEmpty()
+                            ? AudioMiniPlayerPosition.BOTTOM
+                            : AudioMiniPlayerPosition.MIDDLE);
                     return true;
                 }
         );
@@ -334,14 +438,17 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
             public void onChange(boolean selfChange) {
                 topWaveView.invalidate();
                 playButton.invalidate();
+                middlePlayButton.invalidate();
             }
         };
         powerSaverCallback = applied -> {
             topWaveView.invalidate();
             playButton.invalidate();
+            middlePlayButton.invalidate();
         };
         releaseActivationRipple = () -> {
             card.setPressed(false);
+            middleCard.setPressed(false);
             topCard.setPressed(false);
         };
 
@@ -391,6 +498,38 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
         }
     }
 
+    public void setMiddleState(RectF bounds, float zone, float visibility) {
+        float boundedZone = clamp(zone, 0.0f, 1.0f);
+        float boundedVisibility = clamp(visibility, 0.0f, 1.0f);
+        boolean availabilityChanged = middleBounds.isEmpty() != bounds.isEmpty();
+        boolean boundsChanged = !middleBounds.equals(bounds);
+        boolean stateChanged = topZone != boundedZone
+                || topVisibility != boundedVisibility;
+        if (!boundsChanged
+                && topZone == boundedZone
+                && topVisibility == boundedVisibility) {
+            return;
+        }
+
+        middleBounds.set(bounds);
+        updateMoveAccessibilityActions();
+        topZone = boundedZone;
+        topVisibility = boundedVisibility;
+        interruptHiddenPlacement();
+        if (boundsChanged) {
+            FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) middleCard.getLayoutParams();
+            params.width = Math.max(1, Math.round(bounds.width()));
+            params.height = bounds.isEmpty() ? 1 : dp(64);
+            params.leftMargin = Math.round(bounds.left) - getPaddingLeft();
+            params.topMargin = Math.round(bounds.top) - getPaddingTop();
+            middleCard.setLayoutParams(params);
+        }
+        applyVisibility();
+        if (availabilityChanged || stateChanged) {
+            notifyOffsetChanged();
+        }
+    }
+
     public void setTopState(RectF bounds, float zone, float visibility) {
         float boundedZone = clamp(zone, 0.0f, 1.0f);
         float boundedVisibility = clamp(visibility, 0.0f, 1.0f);
@@ -403,18 +542,10 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
         }
 
         topBounds.set(bounds);
-        updateMoveUpAccessibilityAction();
+        updateMoveAccessibilityActions();
         topZone = boundedZone;
         topVisibility = boundedVisibility;
-        if (boundedVisibility < 0.99f && (dragging || positionSpring != null)) {
-            AudioMiniPlayerPosition interruptedPosition = targetPosition;
-            if (dragging) {
-                interruptedPosition = placementProgress >= 0.5f
-                        ? AudioMiniPlayerPosition.TOP
-                        : AudioMiniPlayerPosition.BOTTOM;
-            }
-            finishPositionImmediately(interruptedPosition);
-        }
+        interruptHiddenPlacement();
         if (boundsChanged) {
             FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) topCard.getLayoutParams();
             params.width = Math.max(1, Math.round(bounds.width()));
@@ -429,18 +560,36 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
         }
     }
 
-    private void updateMoveUpAccessibilityAction() {
-        if (topBounds.isEmpty()) {
+    private void updateMoveAccessibilityActions() {
+        if (middleBounds.isEmpty() && topBounds.isEmpty()) {
             if (moveUpAccessibilityActionId != -1) {
                 ViewCompat.removeAccessibilityAction(card, moveUpAccessibilityActionId);
                 moveUpAccessibilityActionId = -1;
             }
-            return;
-        }
-
-        if (moveUpAccessibilityActionId == -1) {
+        } else if (moveUpAccessibilityActionId == -1) {
             moveUpAccessibilityActionId = ViewCompat.addAccessibilityAction(
                     card,
+                    getString(R.string.FluxGramMoveUp),
+                    (view, arguments) -> {
+                        settleTo(middleBounds.isEmpty()
+                                ? AudioMiniPlayerPosition.TOP
+                                : AudioMiniPlayerPosition.MIDDLE);
+                        return true;
+                    }
+            );
+        }
+
+        if (topBounds.isEmpty()) {
+            if (moveUpMiddleAccessibilityActionId != -1) {
+                ViewCompat.removeAccessibilityAction(
+                        middleCard,
+                        moveUpMiddleAccessibilityActionId
+                );
+                moveUpMiddleAccessibilityActionId = -1;
+            }
+        } else if (moveUpMiddleAccessibilityActionId == -1) {
+            moveUpMiddleAccessibilityActionId = ViewCompat.addAccessibilityAction(
+                    middleCard,
                     getString(R.string.FluxGramMoveUp),
                     (view, arguments) -> {
                         settleTo(AudioMiniPlayerPosition.TOP);
@@ -455,20 +604,32 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
     }
 
     public float getVisibleOffset(boolean chats) {
-        float effectiveTopZone = topBounds.isEmpty() ? 0.0f : topZone;
+        float placement = chats ? getAvailableChatsPlacementProgress() : 0.0f;
+        float liftedProgress = clamp(placement * 2.0f, 0.0f, 1.0f) * topZone;
         return dp(geometry.getHeightDp() + 8)
                 * showProgress
                 * hostFactor
-                * (chats ? 1.0f - placementProgress * effectiveTopZone : 1.0f);
+                * (1.0f - liftedProgress);
     }
 
     public int getTargetOffset(boolean chats) {
         return shown
                 && (!chats
                 || targetPosition == AudioMiniPlayerPosition.BOTTOM
-                || topBounds.isEmpty())
+                || (targetPosition == AudioMiniPlayerPosition.MIDDLE && middleBounds.isEmpty())
+                || (targetPosition == AudioMiniPlayerPosition.TOP && topBounds.isEmpty()))
                 && hostFactor > 0.5f
                 ? dp(geometry.getHeightDp() + 8)
+                : 0;
+    }
+
+    public int getMiddleTargetOffset(boolean chats) {
+        return chats
+                && shown
+                && targetPosition == AudioMiniPlayerPosition.MIDDLE
+                && !middleBounds.isEmpty()
+                && hostFactor > 0.5f
+                ? Math.round(dp(80) * topVisibility)
                 : 0;
     }
 
@@ -517,9 +678,7 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
             boolean wasDragging = dragging;
             if (dragging) {
                 dragging = false;
-                settleTo(placementProgress >= 0.5f
-                        ? AudioMiniPlayerPosition.TOP
-                        : AudioMiniPlayerPosition.BOTTOM);
+                settleTo(getNearestPosition(placementProgress));
             }
             recycleVelocityTracker();
             return wasDragging;
@@ -532,7 +691,7 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
             if (!dragging && !dismissDragging
                     && (Math.abs(deltaX) > touchSlop || Math.abs(deltaY) > touchSlop)) {
                 removeCallbacks(startDragging);
-                int direction = resolveDismissDirection(deltaX, deltaY);
+                int direction = resolveDismissDirection(view, deltaX, deltaY);
                 if (direction != DISMISS_NONE) {
                     beginDismissGesture(view, direction);
                 } else {
@@ -595,9 +754,7 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
 
         if (action == MotionEvent.ACTION_CANCEL && dragging) {
             touchActive = false;
-            settleTo(placementProgress >= 0.5f
-                    ? AudioMiniPlayerPosition.TOP
-                    : AudioMiniPlayerPosition.BOTTOM);
+            settleTo(getNearestPosition(placementProgress));
             dragging = false;
             recycleVelocityTracker();
             return true;
@@ -608,18 +765,25 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
         return false;
     }
 
-    private int resolveDismissDirection(float deltaX, float deltaY) {
+    private int resolveDismissDirection(View view, float deltaX, float deltaY) {
         if (positionSpring != null) {
             return DISMISS_NONE;
         }
 
-        if (settledPosition == AudioMiniPlayerPosition.BOTTOM && placementProgress <= 0.001f) {
+        if (view == card) {
             return deltaY > 0.0f && Math.abs(deltaY) >= Math.abs(deltaX)
                     ? DISMISS_DOWN
                     : DISMISS_NONE;
         }
 
-        if (settledPosition != AudioMiniPlayerPosition.TOP || placementProgress < 0.999f) {
+        if (view == middleCard) {
+            if (Math.abs(deltaX) <= Math.abs(deltaY)) {
+                return DISMISS_NONE;
+            }
+            return deltaX < 0.0f ? DISMISS_LEFT : DISMISS_RIGHT;
+        }
+
+        if (view != topCard) {
             return DISMISS_NONE;
         }
 
@@ -730,9 +894,10 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
             return 0.0f;
         }
 
-        float baseX = topCard.getX() - dismissOffsetX;
+        View activeCard = dragCard == null ? getSettledCard() : dragCard;
+        float baseX = activeCard.getX() - dismissOffsetX;
         return dismissDirection == DISMISS_LEFT
-                ? -baseX - topCard.getWidth() - dp(16)
+                ? -baseX - activeCard.getWidth() - dp(16)
                 : getWidth() - baseX + dp(16);
     }
 
@@ -741,7 +906,7 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
             return 0.0f;
         }
 
-        View activeCard = dismissDirection == DISMISS_DOWN ? card : topCard;
+        View activeCard = dragCard == null ? getSettledCard() : dragCard;
         float baseY = activeCard.getY() - dismissOffsetY;
         return dismissDirection == DISMISS_UP
                 ? -baseY - activeCard.getHeight() - dp(16)
@@ -783,8 +948,8 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
                 || hostFactor < 0.99f
                 || topVisibility < 0.99f
                 || topZone < 0.99f
-                || topBounds.isEmpty()
-                || hostBottom - topBounds.top <= dp(48)) {
+                || (middleBounds.isEmpty() && topBounds.isEmpty())
+                || hostBottom - getHighestAvailableTop() <= dp(48)) {
             return;
         }
 
@@ -792,8 +957,9 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
         ((DraggableCard) dragCard).captureDrag();
         cancelPositionSpring();
         dragStartRawY = lastRawY;
-        dragStartProgress = placementProgress;
-        magnetTarget = placementProgress >= 0.5f ? 1 : -1;
+        dragStartProgress = getDisplayPlacementProgress(true);
+        setPlacementProgress(dragStartProgress);
+        magnetTarget = getMagnetTarget(placementProgress);
         animateDragActivation();
         performDragHaptic();
         if (getParent() != null) {
@@ -802,29 +968,15 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
     }
 
     private void updateDrag(float rawY) {
-        float range = Math.max(1.0f, hostBottom - topBounds.top);
-        float rawProgress = clamp(
-                dragStartProgress + (dragStartRawY - rawY) / range,
-                0.0f,
-                1.0f
-        );
-        int nextMagnetTarget = rawProgress <= MAGNET_ZONE
-                ? -1
-                : rawProgress >= 1.0f - MAGNET_ZONE ? 1 : 0;
+        float startY = getPositionY(dragStartProgress);
+        float rawProgress = getProgressForY(startY + rawY - dragStartRawY);
+        int nextMagnetTarget = getMagnetTarget(rawProgress);
         if (nextMagnetTarget != 0 && nextMagnetTarget != magnetTarget) {
             performDragHaptic();
         }
         magnetTarget = nextMagnetTarget;
 
-        if (rawProgress < MAGNET_ZONE) {
-            float normalized = rawProgress / MAGNET_ZONE;
-            rawProgress = MAGNET_ZONE * normalized * normalized;
-        } else if (rawProgress > 1.0f - MAGNET_ZONE) {
-            float normalized = (1.0f - rawProgress) / MAGNET_ZONE;
-            rawProgress = 1.0f - MAGNET_ZONE * normalized * normalized;
-        }
-
-        setPlacementProgress(rawProgress);
+        setPlacementProgress(applyMagnet(rawProgress));
     }
 
     private void performDragHaptic() {
@@ -836,13 +988,11 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
     private void settleAfterDrag(float velocityY) {
         AudioMiniPlayerPosition position;
         if (velocityY <= -FLING_THRESHOLD) {
-            position = AudioMiniPlayerPosition.TOP;
+            position = getAdjacentPosition(placementProgress, true);
         } else if (velocityY >= FLING_THRESHOLD) {
-            position = AudioMiniPlayerPosition.BOTTOM;
+            position = getAdjacentPosition(placementProgress, false);
         } else {
-            position = placementProgress >= 0.5f
-                    ? AudioMiniPlayerPosition.TOP
-                    : AudioMiniPlayerPosition.BOTTOM;
+            position = getNearestPosition(placementProgress);
         }
 
         dragging = false;
@@ -854,7 +1004,7 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
         dragCard = null;
         targetPosition = position;
         notifyOffsetChanged();
-        float target = position == AudioMiniPlayerPosition.TOP ? 1.0f : 0.0f;
+        float target = getPositionProgress(position);
         if (!isAttachedToWindow() || !areAnimationsEnabled()) {
             setPlacementProgress(target);
             finishPositionSettle(position);
@@ -890,7 +1040,7 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
         cancelPositionSpring();
         recycleVelocityTracker();
         setDragLifted(false, false);
-        setPlacementProgress(position == AudioMiniPlayerPosition.TOP ? 1.0f : 0.0f);
+        setPlacementProgress(getPositionProgress(position));
         finishPositionSettle(position);
     }
 
@@ -921,6 +1071,160 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
         }
     }
 
+    private void interruptHiddenPlacement() {
+        if (topVisibility >= 0.99f || (!dragging && positionSpring == null)) {
+            return;
+        }
+
+        AudioMiniPlayerPosition interruptedPosition = dragging
+                ? getNearestPosition(placementProgress)
+                : targetPosition;
+        finishPositionImmediately(interruptedPosition);
+    }
+
+    private float getDisplayPlacementProgress(boolean chats) {
+        if (!chats || topZone < 0.5f) {
+            return 0.0f;
+        }
+        return getAvailableChatsPlacementProgress();
+    }
+
+    private float getAvailableChatsPlacementProgress() {
+        if (targetPosition == AudioMiniPlayerPosition.MIDDLE && middleBounds.isEmpty()) {
+            return 0.0f;
+        }
+        if (placementProgress > 0.5f && topBounds.isEmpty()) {
+            return 0.0f;
+        }
+        if (placementProgress > 0.0f && middleBounds.isEmpty() && topBounds.isEmpty()) {
+            return 0.0f;
+        }
+        return placementProgress;
+    }
+
+    private static float getPositionProgress(AudioMiniPlayerPosition position) {
+        if (position == AudioMiniPlayerPosition.TOP) {
+            return 1.0f;
+        }
+        if (position == AudioMiniPlayerPosition.MIDDLE) {
+            return 0.5f;
+        }
+        return 0.0f;
+    }
+
+    private AudioMiniPlayerPosition getNearestPosition(float progress) {
+        if (!topBounds.isEmpty() && progress >= 0.75f) {
+            return AudioMiniPlayerPosition.TOP;
+        }
+        if (!middleBounds.isEmpty() && progress >= 0.25f) {
+            return AudioMiniPlayerPosition.MIDDLE;
+        }
+        return AudioMiniPlayerPosition.BOTTOM;
+    }
+
+    private AudioMiniPlayerPosition getAdjacentPosition(float progress, boolean upward) {
+        if (upward) {
+            if (!middleBounds.isEmpty() && progress < 0.5f - 0.001f) {
+                return AudioMiniPlayerPosition.MIDDLE;
+            }
+            if (!topBounds.isEmpty()) {
+                return AudioMiniPlayerPosition.TOP;
+            }
+            return middleBounds.isEmpty()
+                    ? AudioMiniPlayerPosition.BOTTOM
+                    : AudioMiniPlayerPosition.MIDDLE;
+        }
+
+        if (!middleBounds.isEmpty() && progress > 0.5f + 0.001f) {
+            return AudioMiniPlayerPosition.MIDDLE;
+        }
+        return AudioMiniPlayerPosition.BOTTOM;
+    }
+
+    private float getHighestAvailableTop() {
+        if (!topBounds.isEmpty()) {
+            return topBounds.top;
+        }
+        if (!middleBounds.isEmpty()) {
+            return middleBounds.top;
+        }
+        return hostBottom;
+    }
+
+    private float getPositionY(float progress) {
+        if (middleBounds.isEmpty()) {
+            if (topBounds.isEmpty()) {
+                return hostBottom;
+            }
+            return lerp(hostBottom, topBounds.top, progress);
+        }
+        if (progress <= 0.5f || topBounds.isEmpty()) {
+            return lerp(hostBottom, middleBounds.top, clamp(progress * 2.0f, 0.0f, 1.0f));
+        }
+        return lerp(middleBounds.top, topBounds.top, (progress - 0.5f) * 2.0f);
+    }
+
+    private float getProgressForY(float y) {
+        if (middleBounds.isEmpty()) {
+            float range = Math.max(1.0f, hostBottom - getHighestAvailableTop());
+            return clamp((hostBottom - y) / range, 0.0f, topBounds.isEmpty() ? 0.0f : 1.0f);
+        }
+        if (y >= middleBounds.top || topBounds.isEmpty()) {
+            float range = Math.max(1.0f, hostBottom - middleBounds.top);
+            return clamp((hostBottom - y) / range * 0.5f, 0.0f, 0.5f);
+        }
+
+        float range = Math.max(1.0f, middleBounds.top - topBounds.top);
+        return clamp(
+                0.5f + (middleBounds.top - y) / range * 0.5f,
+                0.5f,
+                1.0f
+        );
+    }
+
+    private int getMagnetTarget(float progress) {
+        float zone = MAGNET_ZONE * 0.5f;
+        if (progress <= zone) {
+            return 1;
+        }
+        if (!middleBounds.isEmpty() && Math.abs(progress - 0.5f) <= zone) {
+            return 2;
+        }
+        if (!topBounds.isEmpty() && progress >= 1.0f - zone) {
+            return 3;
+        }
+        return 0;
+    }
+
+    private float applyMagnet(float progress) {
+        float zone = MAGNET_ZONE * 0.5f;
+        float anchor;
+        int target = getMagnetTarget(progress);
+        if (target == 1) {
+            anchor = 0.0f;
+        } else if (target == 2) {
+            anchor = 0.5f;
+        } else if (target == 3) {
+            anchor = 1.0f;
+        } else {
+            return progress;
+        }
+
+        float delta = progress - anchor;
+        float normalized = Math.abs(delta) / zone;
+        return anchor + Math.signum(delta) * zone * normalized * normalized;
+    }
+
+    private View getSettledCard() {
+        if (settledPosition == AudioMiniPlayerPosition.TOP) {
+            return topCard;
+        }
+        if (settledPosition == AudioMiniPlayerPosition.MIDDLE) {
+            return middleCard;
+        }
+        return card;
+    }
+
     private void animateDragActivation() {
         View activatedCard = dragCard == null ? card : dragCard;
         activatedCard.getLocationOnScreen(cardLocation);
@@ -947,16 +1251,24 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
 
     private void setDragLifted(boolean lifted, boolean animated) {
         card.animate().cancel();
+        middleCard.animate().cancel();
         topCard.animate().cancel();
         float scale = lifted ? 1.02f : 1.0f;
         float translationZ = lifted ? dp(3) : 0.0f;
         if (!animated || !areAnimationsEnabled()) {
             setCardTransform(card, scale, translationZ);
+            setCardTransform(middleCard, scale, translationZ);
             setCardTransform(topCard, scale, translationZ);
             return;
         }
 
         card.animate()
+                .scaleX(scale)
+                .scaleY(scale)
+                .translationZ(translationZ)
+                .setDuration(lifted ? 160 : 220)
+                .start();
+        middleCard.animate()
                 .scaleX(scale)
                 .scaleY(scale)
                 .translationZ(translationZ)
@@ -1017,20 +1329,33 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
         int rippleColor = ColorUtils.setAlphaComponent(controlColor, 0x1f);
 
         cardBackground.setColor(backgroundColor);
+        middleCardBackground.setColor(backgroundColor);
         topCardBackground.setColor(backgroundColor);
         morphingCard.setColor(backgroundColor);
         morphingCard.setControlColor(controlColor);
         titleView.setTextColor(titleColor);
+        middleTitleView.setTextColor(titleColor);
+        middleArtistView.setTextColor(ColorUtils.setAlphaComponent(artistColor, 0xcc));
         topTitleView.setTextColor(titleColor);
         this.artistColor = ColorUtils.setAlphaComponent(artistColor, 0xcc);
         bindText();
         previousButton.setColorFilter(controlColor, PorterDuff.Mode.MULTIPLY);
         nextButton.setColorFilter(controlColor, PorterDuff.Mode.MULTIPLY);
+        middlePreviousButton.setColorFilter(controlColor, PorterDuff.Mode.MULTIPLY);
+        middleNextButton.setColorFilter(controlColor, PorterDuff.Mode.MULTIPLY);
         previousButton.setBackground(Theme.createSelectorDrawable(
                 rippleColor,
                 Theme.RIPPLE_MASK_CIRCLE_20DP
         ));
         nextButton.setBackground(Theme.createSelectorDrawable(
+                rippleColor,
+                Theme.RIPPLE_MASK_CIRCLE_20DP
+        ));
+        middlePreviousButton.setBackground(Theme.createSelectorDrawable(
+                rippleColor,
+                Theme.RIPPLE_MASK_CIRCLE_20DP
+        ));
+        middleNextButton.setBackground(Theme.createSelectorDrawable(
                 rippleColor,
                 Theme.RIPPLE_MASK_CIRCLE_20DP
         ));
@@ -1042,6 +1367,14 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
                 controlColor,
                 ColorUtils.setAlphaComponent(controlColor, 46)
         );
+        middlePlayButton.setBackground(Theme.createSelectorDrawable(
+                rippleColor,
+                Theme.RIPPLE_MASK_CIRCLE_20DP
+        ));
+        middlePlayButton.setColors(
+                controlColor,
+                ColorUtils.setAlphaComponent(controlColor, 46)
+        );
         topWaveView.setColors(
                 controlColor,
                 ColorUtils.setAlphaComponent(controlColor, 46)
@@ -1049,12 +1382,15 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
         topPlayButton.setColor(controlColor);
         topPlayButton.setBackground(null);
         card.setForeground(null);
+        middleCard.setForeground(null);
         topCard.setForeground(null);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             int shadowColor = ColorUtils.setAlphaComponent(Color.BLACK, 48);
             card.setOutlineAmbientShadowColor(shadowColor);
             card.setOutlineSpotShadowColor(shadowColor);
+            middleCard.setOutlineAmbientShadowColor(shadowColor);
+            middleCard.setOutlineSpotShadowColor(shadowColor);
             topCard.setOutlineAmbientShadowColor(shadowColor);
             topCard.setOutlineSpotShadowColor(shadowColor);
         }
@@ -1093,6 +1429,7 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
         removeCallbacks(startDragging);
         removeCallbacks(releaseActivationRipple);
         card.setPressed(false);
+        middleCard.setPressed(false);
         topCard.setPressed(false);
         AudioMiniPlayerPosition detachedTarget = targetPosition;
         boolean settlingPosition = positionSpring != null;
@@ -1109,7 +1446,7 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
         }
         showProgress = shown ? 1.0f : 0.0f;
         if (settlingPosition) {
-            setPlacementProgress(detachedTarget == AudioMiniPlayerPosition.TOP ? 1.0f : 0.0f);
+            setPlacementProgress(getPositionProgress(detachedTarget));
             finishPositionSettle(detachedTarget);
         }
 
@@ -1129,6 +1466,7 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
     public void didReceivedNotification(int id, int account, Object... args) {
         if (id == NotificationCenter.messagePlayingProgressDidChanged) {
             playButton.progressChanged();
+            middlePlayButton.progressChanged();
         } else if (id == NotificationCenter.fileLoaded) {
             MessageObject messageObject = currentMessage;
             if (messageObject != null
@@ -1160,10 +1498,14 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
                 && areAnimationsEnabled()
                 && !LiteMode.isPowerSaverApplied();
         playButton.setPlaying(playing, animateControls);
+        middlePlayButton.setPlaying(playing, animateControls);
         topWaveView.setPlaying(playing);
         morphingCard.setPlaying(playing);
         topPlayButton.setPlaying(playing, animateControls);
         playButton.setContentDescription(getString(
+                playing ? R.string.AccActionPause : R.string.AccActionPlay
+        ));
+        middlePlayButton.setContentDescription(getString(
                 playing ? R.string.AccActionPause : R.string.AccActionPlay
         ));
         topPlayButton.setContentDescription(getString(
@@ -1184,7 +1526,9 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
                 artistText
         ));
         topCard.setContentDescription(card.getContentDescription());
+        middleCard.setContentDescription(card.getContentDescription());
         playButton.setMessage(messageObject);
+        middlePlayButton.setMessage(messageObject);
 
         if (changed) {
             updateCover(messageObject);
@@ -1214,15 +1558,19 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
             );
         }
         titleView.setText(text);
+        middleTitleView.setText(titleText);
+        middleArtistView.setText(artistText);
         topTitleView.setText(titleText);
     }
 
     private void updateCover(MessageObject messageObject) {
         coverView.getImageReceiver().setCurrentAccount(messageObject.currentAccount);
+        middleCoverView.getImageReceiver().setCurrentAccount(messageObject.currentAccount);
         topCoverView.getImageReceiver().setCurrentAccount(messageObject.currentAccount);
         AudioInfo audioInfo = MediaController.getInstance().getAudioInfo();
         if (audioInfo != null && audioInfo.getCover() != null) {
             coverView.setImageBitmap(audioInfo.getCover());
+            middleCoverView.setImageBitmap(audioInfo.getCover());
             topCoverView.setImageBitmap(audioInfo.getCover());
             return;
         }
@@ -1244,6 +1592,14 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
                 coverFilter,
                 thumbLocation,
                 coverFilter,
+                getContext().getDrawable(R.drawable.nocover_small),
+                messageObject
+        );
+        middleCoverView.setImage(
+                artworkLocation,
+                middleCoverFilter,
+                thumbLocation,
+                middleCoverFilter,
                 getContext().getDrawable(R.drawable.nocover_small),
                 messageObject
         );
@@ -1272,9 +1628,7 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
         if (!value) {
             AudioMiniPlayerPosition hiddenPosition = targetPosition;
             if (dragging) {
-                hiddenPosition = placementProgress >= 0.5f
-                        ? AudioMiniPlayerPosition.TOP
-                        : AudioMiniPlayerPosition.BOTTOM;
+                hiddenPosition = getNearestPosition(placementProgress);
             }
             finishPositionImmediately(hiddenPosition);
         }
@@ -1315,206 +1669,140 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
             return;
         }
 
-        boolean top = placementProgress > 0.0f
-                && topZone >= 0.5f
-                && !topBounds.isEmpty();
+        float displayPlacementProgress = getDisplayPlacementProgress(true);
+        boolean lifted = displayPlacementProgress > 0.0f
+                && (!middleBounds.isEmpty() || !topBounds.isEmpty());
         float swap = Math.min(1.0f, Math.abs(topZone - 0.5f) * 2.0f);
-        float positionVisibility = placementProgress > 0.0f
-                ? lerp(hostFactor, topVisibility, placementProgress)
+        float positionVisibility = displayPlacementProgress > 0.0f
+                ? lerp(
+                        hostFactor,
+                        topVisibility,
+                        clamp(displayPlacementProgress * 2.0f, 0.0f, 1.0f)
+                )
                 : hostFactor;
         float progress = showProgress * positionVisibility * swap;
-        float position = top
-                ? lerp(hostBottom, topBounds.top, placementProgress)
-                : hostBottom;
-        float direction = top ? 1.0f - 2.0f * placementProgress : 1.0f;
-        float islandProgress = top
-                ? clamp((placementProgress - 0.55f) / 0.45f, 0.0f, 1.0f)
-                : 0.0f;
-        float transitionProgress = smoothStep(top ? placementProgress : 0.0f);
-        float bottomPrimaryAlpha = 1.0f - smoothStep(0.96f, 1.0f, transitionProgress);
-        float bottomSecondaryAlpha = 1.0f - smoothStep(0.12f, 0.40f, transitionProgress);
-        float topPrimaryAlpha = smoothStep(0.96f, 1.0f, transitionProgress);
-        float topWaveAlpha = topPrimaryAlpha;
-        float morphAlpha = smoothStep(0.02f, 0.16f, transitionProgress)
-                * (1.0f - smoothStep(0.96f, 1.0f, transitionProgress));
+        float position = lifted ? getPositionY(displayPlacementProgress) : hostBottom;
+        float direction = lifted ? 1.0f - 2.0f * displayPlacementProgress : 1.0f;
+        float bottomAlpha = 1.0f - smoothStep(0.32f, 0.48f, displayPlacementProgress);
+        float middleAlpha = smoothStep(0.32f, 0.48f, displayPlacementProgress)
+                * (1.0f - smoothStep(0.52f, 0.68f, displayPlacementProgress));
+        float topAlpha = smoothStep(0.52f, 0.68f, displayPlacementProgress);
+        boolean upperSegment = displayPlacementProgress > 0.5f;
+        float segmentProgress = !upperSegment
+                ? displayPlacementProgress * 2.0f
+                : (displayPlacementProgress - 0.5f) * 2.0f;
+        float morphAlpha = (float) Math.sin(Math.PI * segmentProgress);
+        float showTranslation = dp(24) * (1.0f - progress) * direction;
+
         card.setTranslationX(dismissOffsetX);
         card.setTranslationY(position
-                + dp(24) * (1.0f - progress) * direction
+                + showTranslation
                 + dismissOffsetY);
-        card.setAlpha(progress
-                * (1.0f - smoothStep(0.995f, 1.0f, transitionProgress))
-                * dismissAlpha);
-        cardBackground.setAlpha(Math.round(255.0f * (1.0f - smoothStep(
-                0.02f,
-                0.18f,
-                transitionProgress
-        ))));
-        coverView.setAlpha(bottomPrimaryAlpha);
-        titleView.setAlpha(bottomPrimaryAlpha);
-        previousButton.setAlpha(bottomSecondaryAlpha);
-        playButton.setTransitionProgress(transitionProgress);
-        playButton.setAlpha(bottomPrimaryAlpha);
-        nextButton.setAlpha(bottomSecondaryAlpha);
+        card.setAlpha(progress * bottomAlpha * dismissAlpha);
+        cardBackground.setAlpha(255);
+        coverView.setAlpha(1.0f);
+        titleView.setAlpha(1.0f);
+        previousButton.setAlpha(1.0f);
+        playButton.setTransitionProgress(0.0f);
+        playButton.setAlpha(1.0f);
+        nextButton.setAlpha(1.0f);
         card.setVisibility(card.getAlpha() > 0.0f ? VISIBLE : INVISIBLE);
+
+        middleCard.setTranslationX(dismissOffsetX);
+        middleCard.setTranslationY(
+                position
+                        - middleCard.getTop()
+                        + showTranslation
+                        + dismissOffsetY
+        );
+        middleCard.setAlpha(progress * middleAlpha * dismissAlpha);
+        middleCardBackground.setAlpha(255);
+        middlePlayButton.setTransitionProgress(
+                upperSegment ? smoothStep(segmentProgress) : 0.0f
+        );
+        middleCard.setVisibility(middleCard.getAlpha() > 0.0f ? VISIBLE : INVISIBLE);
+
         topCard.setTranslationX(dismissOffsetX);
-        topCard.setTranslationY(dp(8) * (1.0f - islandProgress) + dismissOffsetY);
-        topCard.setAlpha(progress * topPrimaryAlpha * dismissAlpha);
-        topCardBackground.setAlpha(Math.round(255.0f * smoothStep(
-                0.96f,
-                1.0f,
-                transitionProgress
-        )));
-        topCoverView.setAlpha(topPrimaryAlpha);
-        topTitleView.setAlpha(topPrimaryAlpha);
-        topWaveView.setAlpha(topWaveAlpha);
-        topPlayButton.setAlpha(topPrimaryAlpha);
+        topCard.setTranslationY(
+                position
+                        - topCard.getTop()
+                        + showTranslation
+                        + dismissOffsetY
+        );
+        topCard.setAlpha(progress * topAlpha * dismissAlpha);
+        topCardBackground.setAlpha(255);
+        topCoverView.setAlpha(1.0f);
+        topTitleView.setAlpha(1.0f);
+        topWaveView.setAlpha(1.0f);
+        topPlayButton.setAlpha(1.0f);
         topCard.setVisibility(topCard.getAlpha() > 0.0f ? VISIBLE : INVISIBLE);
-        adaptBottomContent(transitionProgress);
-        updateMorphingCard(transitionProgress, progress * morphAlpha);
-        boolean interactionsEnabled = placementProgress < 0.5f || topVisibility >= 0.99f;
+
+        updateMorphingCard(
+                segmentProgress,
+                progress * morphAlpha * dismissAlpha,
+                upperSegment
+        );
+        boolean interactionsEnabled = displayPlacementProgress < 0.5f
+                || topVisibility >= 0.99f;
         card.setEnabled(interactionsEnabled);
+        middleCard.setEnabled(interactionsEnabled);
+        middlePlayButton.setEnabled(interactionsEnabled);
         topCard.setEnabled(interactionsEnabled);
         topPlayButton.setEnabled(interactionsEnabled);
-        int accessibility = interactionsEnabled
-                ? IMPORTANT_FOR_ACCESSIBILITY_AUTO
-                : IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS;
-        card.setImportantForAccessibility(accessibility);
-        topCard.setImportantForAccessibility(accessibility);
+        int hiddenAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS;
+        card.setImportantForAccessibility(
+                interactionsEnabled && displayPlacementProgress < 0.4f
+                        ? IMPORTANT_FOR_ACCESSIBILITY_AUTO
+                        : hiddenAccessibility
+        );
+        middleCard.setImportantForAccessibility(
+                interactionsEnabled
+                        && displayPlacementProgress >= 0.4f
+                        && displayPlacementProgress < 0.6f
+                        ? IMPORTANT_FOR_ACCESSIBILITY_AUTO
+                        : hiddenAccessibility
+        );
+        topCard.setImportantForAccessibility(
+                interactionsEnabled && displayPlacementProgress >= 0.6f
+                        ? IMPORTANT_FOR_ACCESSIBILITY_AUTO
+                        : hiddenAccessibility
+        );
         setVisibility(progress > 0.0f ? VISIBLE : GONE);
     }
 
-    private void adaptBottomContent(float progress) {
-        if (card.getWidth() <= 0 || topCard.getWidth() <= 0) {
-            return;
-        }
-
-        float adaptation = progress;
-        float topContentLeft = topCard.getLeft() + topCardContent.getLeft();
-        float topContentTop = topCard.getTop() + topCardContent.getTop();
-        float topCoverCenterX = topContentLeft + topCoverView.getLeft() + topCoverView.getWidth() / 2.0f;
-        float topCoverCenterY = topContentTop + topCoverView.getTop() + topCoverView.getHeight() / 2.0f;
-        float topWaveCenterX = topContentLeft + topWaveView.getLeft() + topWaveView.getWidth() / 2.0f;
-        float topWaveCenterY = topContentTop + topWaveView.getTop() + topWaveView.getHeight() / 2.0f;
-        float topPlayCenterX = topContentLeft + topPlayButton.getLeft() + topPlayButton.getWidth() / 2.0f;
-        float topPlayCenterY = topContentTop + topPlayButton.getTop() + topPlayButton.getHeight() / 2.0f;
-
-        adaptViewToCenter(
-                coverView,
-                topCoverCenterX,
-                topCoverCenterY,
-                adaptation,
-                24.0f / geometry.getCoverSizeDp()
-        );
-        float coverScale = lerp(
-                1.0f,
-                24.0f / geometry.getCoverSizeDp(),
-                adaptation
-        );
-        coverView.setRoundRadius(Math.round(lerp(
-                dp(geometry.getCoverRadiusDp()),
-                dp(12) / coverScale,
-                adaptation
-        )));
-        adaptViewToCenter(
-                previousButton,
-                topWaveCenterX,
-                topWaveCenterY,
-                adaptation,
-                0.24f
-        );
-        adaptViewToCenter(
-                playButton,
-                topPlayCenterX,
-                topPlayCenterY,
-                adaptation,
-                14.0f / 16.0f
-        );
-        adaptViewToCenter(
-                nextButton,
-                topWaveCenterX,
-                topWaveCenterY,
-                adaptation,
-                0.24f
-        );
-
-        float titleScale = lerp(1.0f, 12.0f / 14.0f, adaptation);
-        float titleTargetLeft = topContentLeft + topTitleView.getLeft();
-        float titleTargetCenterY = topContentTop
-                + topTitleView.getTop()
-                + topTitleView.getHeight() / 2.0f;
-        float titleSourceLeft = card.getLeft() + titleView.getLeft();
-        float titleStableCenterY = card.getTop()
-                + hostBottom
-                + titleView.getTop()
-                + titleView.getHeight() / 2.0f;
-        float titleCurrentCenterY = card.getTop()
-                + card.getTranslationY() - dismissOffsetY
-                + titleView.getTop()
-                + titleView.getHeight() / 2.0f;
-        float titleCenterY = lerp(titleStableCenterY, titleTargetCenterY, adaptation);
-        titleView.setPivotX(0.0f);
-        titleView.setPivotY(titleView.getHeight() / 2.0f);
-        titleView.setTranslationX((titleTargetLeft - titleSourceLeft) * adaptation);
-        titleView.setTranslationY(titleCenterY - titleCurrentCenterY);
-        titleView.setScaleX(titleScale);
-        titleView.setScaleY(titleScale);
-    }
-
-    private void adaptViewToCenter(
-            View view,
-            float targetCenterX,
-            float targetCenterY,
-            float progress,
-            float targetScale
-    ) {
-        float sourceCenterX = card.getLeft() + view.getLeft() + view.getWidth() / 2.0f;
-        float stableCenterY = card.getTop()
-                + hostBottom
-                + view.getTop()
-                + view.getHeight() / 2.0f;
-        float currentCenterY = card.getTop()
-                + card.getTranslationY() - dismissOffsetY
-                + view.getTop()
-                + view.getHeight() / 2.0f;
-        float centerX = lerp(sourceCenterX, targetCenterX, progress);
-        float centerY = lerp(stableCenterY, targetCenterY, progress);
-        view.setPivotX(view.getWidth() / 2.0f);
-        view.setPivotY(view.getHeight() / 2.0f);
-        view.setTranslationX(centerX - sourceCenterX);
-        view.setTranslationY(centerY - currentCenterY);
-        float scale = lerp(1.0f, targetScale, progress);
-        view.setScaleX(scale);
-        view.setScaleY(scale);
-    }
-
-    private void updateMorphingCard(float progress, float alpha) {
+    private void updateMorphingCard(float progress, float alpha, boolean upperSegment) {
         if (alpha <= 0.0f
                 || card.getWidth() <= 0
+                || middleCard.getWidth() <= 0
                 || topCard.getWidth() <= 0) {
             morphingCard.setVisibility(INVISIBLE);
             return;
         }
 
-        float bottomWidth = card.getWidth();
-        float bottomHeight = dp(geometry.getHeightDp());
-        float topWidth = topCard.getWidth();
-        float topHeight = dp(36);
+        View startCard = upperSegment ? middleCard : card;
+        View endCard = upperSegment ? topCard : middleCard;
+        float startWidth = startCard.getWidth();
+        float startHeight = upperSegment ? dp(64) : dp(geometry.getHeightDp());
+        float endWidth = endCard.getWidth();
+        float endHeight = upperSegment ? dp(36) : dp(64);
+        float startTop = upperSegment ? middleBounds.top : hostBottom;
+        float endTop = upperSegment ? topCard.getTop() + dp(6) : middleBounds.top;
         float centerX = lerp(
-                card.getLeft() + bottomWidth / 2.0f,
-                topCard.getLeft() + topWidth / 2.0f,
+                startCard.getLeft() + startWidth / 2.0f,
+                endCard.getLeft() + endWidth / 2.0f,
                 progress
         );
         float centerY = lerp(
-                hostBottom + bottomHeight / 2.0f,
-                topCard.getTop() + dp(24),
+                startTop + startHeight / 2.0f,
+                endTop + endHeight / 2.0f,
                 progress
         );
         float stretch = (float) Math.sin(Math.PI * progress);
-        float width = lerp(bottomWidth, topWidth, progress) + dp(8) * stretch;
-        float height = lerp(bottomHeight, topHeight, progress) + dp(12) * stretch;
+        float width = lerp(startWidth, endWidth, progress) + dp(8) * stretch;
+        float height = lerp(startHeight, endHeight, progress) + dp(12) * stretch;
         float radius = lerp(
-                dp(geometry.getCornerRadiusDp()),
-                dp(18),
+                upperSegment ? dp(20) : dp(geometry.getCornerRadiusDp()),
+                upperSegment ? dp(18) : dp(20),
                 progress
         );
 
@@ -1525,7 +1813,7 @@ public final class MaterialAudioMiniPlayer extends FrameLayout implements Notifi
                 height,
                 Math.min(radius, height / 2.0f),
                 alpha,
-                progress
+                upperSegment ? progress : 0.0f
         );
     }
 
