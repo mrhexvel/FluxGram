@@ -1603,6 +1603,7 @@ public class WebPlayerView extends ViewGroup implements VideoPlayer.VideoPlayerD
         }
 
         progressView = new RadialProgressView(context);
+        progressView.setCircularProgressGeometry(null);
         progressView.setProgressColor(0xffffffff);
         addView(progressView, LayoutHelper.createFrame(48, 48, Gravity.CENTER));
 

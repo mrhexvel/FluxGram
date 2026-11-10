@@ -1831,6 +1831,7 @@ public class StatisticActivity extends BaseFragment implements NotificationCente
             chartView.sharedUiComponents = sharedUi;
             zoomedChartView.sharedUiComponents = sharedUi;
             progressView = new RadialProgressView(context);
+            progressView.setCircularProgressGeometry(null);
             frameLayout.addView(chartView);
             frameLayout.addView(chartView.legendSignatureView, WRAP_CONTENT, WRAP_CONTENT);
             frameLayout.addView(zoomedChartView);

@@ -9,6 +9,7 @@
 package org.telegram.ui.Components;
 
 import android.content.Context;
+import android.content.ContentResolver;
 import android.database.ContentObserver;
 import android.graphics.Canvas;
 import android.graphics.Paint;
@@ -34,6 +35,12 @@ import org.telegram.ui.ActionBar.Theme;
 import java.util.HashSet;
 
 public class RadialProgressView extends View implements Theme.Colorable {
+
+    private static volatile CircularProgressGeometry defaultCircularProgressGeometry;
+    private static boolean defaultCircularProgressGeometryInitialized;
+    private static final HashSet<RadialProgressView> circularProgressViews = new HashSet<>();
+    private static ContentObserver circularProgressAnimatorScaleObserver;
+    private static ContentResolver circularProgressContentResolver;
 
     private long lastUpdateTime;
     private float radOffset;
@@ -69,13 +76,13 @@ public class RadialProgressView extends View implements Theme.Colorable {
     private final Path circularProgressDisplayedPath = new Path();
     private final PathMeasure circularProgressPathMeasure = new PathMeasure();
     private CircularProgressGeometry circularProgressGeometry;
+    private boolean circularProgressGeometryExplicit;
+    private boolean circularProgressTrackColorExplicit;
     private double circularProgressTime;
     private long lastCircularProgressUpdateTime;
     private float circularProgressPathRadius;
     private float circularProgressAnimatorDurationScale = 1.0f;
     private Drawable circularProgressStaticDrawable;
-    private ContentObserver circularProgressAnimatorScaleObserver;
-    private boolean circularProgressAnimatorScaleObserverRegistered;
     private float progressStrokeWidth;
 
     public RadialProgressView(Context context) {
@@ -85,6 +92,7 @@ public class RadialProgressView extends View implements Theme.Colorable {
     public RadialProgressView(Context context, Theme.ResourcesProvider resourcesProvider) {
         super(context);
         this.resourcesProvider = resourcesProvider;
+        circularProgressGeometry = defaultCircularProgressGeometry;
 
         size = AndroidUtilities.dp(40);
 
@@ -99,7 +107,19 @@ public class RadialProgressView extends View implements Theme.Colorable {
         progressPaint.setColor(progressColor);
         circularProgressTrackPaint.setStyle(Paint.Style.STROKE);
         circularProgressTrackPaint.setStrokeCap(Paint.Cap.ROUND);
+        updateCircularProgressTrackColor();
         themedProgressColor = progressColor;
+    }
+
+    public static synchronized void initializeDefaultCircularProgressGeometry(
+            CircularProgressGeometry geometry
+    ) {
+        if (defaultCircularProgressGeometryInitialized) {
+            return;
+        }
+
+        defaultCircularProgressGeometry = geometry;
+        defaultCircularProgressGeometryInitialized = true;
     }
 
     // the key progressColor came from (Theme.key_progressCircle by default, see setProgressColorKey), and the color it gave
@@ -160,6 +180,9 @@ public class RadialProgressView extends View implements Theme.Colorable {
 
     public void setNoProgress(boolean value) {
         noProgress = value;
+        if (!value) {
+            clearDefaultCircularProgressGeometry();
+        }
     }
 
     public void setProgress(float value) {
@@ -305,15 +328,24 @@ public class RadialProgressView extends View implements Theme.Colorable {
 
     public void setSize(int value) {
         size = value;
+        if (value != AndroidUtilities.dp(40)) {
+            clearDefaultCircularProgressGeometry();
+        }
         invalidate();
     }
 
     public void setStrokeWidth(float value) {
         progressStrokeWidth = AndroidUtilities.dp(value);
         progressPaint.setStrokeWidth(progressStrokeWidth);
+        clearDefaultCircularProgressGeometry();
     }
 
     public void setCircularProgressGeometry(CircularProgressGeometry geometry) {
+        circularProgressGeometryExplicit = true;
+        setCircularProgressGeometryInternal(geometry);
+    }
+
+    private void setCircularProgressGeometryInternal(CircularProgressGeometry geometry) {
         if (circularProgressGeometry == geometry) {
             return;
         }
@@ -334,6 +366,7 @@ public class RadialProgressView extends View implements Theme.Colorable {
     }
 
     public void setCircularProgressTrackColor(int color) {
+        circularProgressTrackColorExplicit = true;
         circularProgressTrackPaint.setColor(color);
         invalidate();
     }
@@ -353,9 +386,11 @@ public class RadialProgressView extends View implements Theme.Colorable {
     }
 
     private void registerCircularProgressAnimatorScaleObserver() {
-        if (circularProgressGeometry == null
-                || !isAttachedToWindow()
-                || circularProgressAnimatorScaleObserverRegistered) {
+        if (circularProgressGeometry == null || !isAttachedToWindow()) {
+            return;
+        }
+
+        if (!circularProgressViews.add(this)) {
             return;
         }
 
@@ -364,27 +399,33 @@ public class RadialProgressView extends View implements Theme.Colorable {
                     new Handler(Looper.getMainLooper())) {
                 @Override
                 public void onChange(boolean selfChange) {
-                    updateCircularProgressAnimatorDurationScale();
+                    updateCircularProgressAnimatorDurationScales();
                 }
             };
         }
 
-        getContext().getContentResolver().registerContentObserver(
+        if (circularProgressContentResolver != null) {
+            return;
+        }
+
+        circularProgressContentResolver = getContext().getApplicationContext().getContentResolver();
+        circularProgressContentResolver.registerContentObserver(
                 Settings.Global.getUriFor(Settings.Global.ANIMATOR_DURATION_SCALE),
                 false,
                 circularProgressAnimatorScaleObserver
         );
-        circularProgressAnimatorScaleObserverRegistered = true;
     }
 
     private void unregisterCircularProgressAnimatorScaleObserver() {
-        if (!circularProgressAnimatorScaleObserverRegistered) {
+        if (!circularProgressViews.remove(this) || !circularProgressViews.isEmpty()) {
             return;
         }
 
-        getContext().getContentResolver().unregisterContentObserver(
-                circularProgressAnimatorScaleObserver);
-        circularProgressAnimatorScaleObserverRegistered = false;
+        if (circularProgressContentResolver != null) {
+            circularProgressContentResolver.unregisterContentObserver(
+                    circularProgressAnimatorScaleObserver);
+            circularProgressContentResolver = null;
+        }
     }
 
     private void updateCircularProgressAnimatorDurationScale() {
@@ -394,30 +435,65 @@ public class RadialProgressView extends View implements Theme.Colorable {
             return;
         }
 
+        circularProgressAnimatorDurationScale =
+                readCircularProgressAnimatorDurationScale(getContext());
+        lastCircularProgressUpdateTime = 0;
+        invalidate();
+    }
+
+    private static void updateCircularProgressAnimatorDurationScales() {
+        if (circularProgressViews.isEmpty()) {
+            return;
+        }
+
+        RadialProgressView first = circularProgressViews.iterator().next();
+        float durationScale = readCircularProgressAnimatorDurationScale(first.getContext());
+        for (RadialProgressView view : circularProgressViews) {
+            view.circularProgressAnimatorDurationScale = durationScale;
+            view.lastCircularProgressUpdateTime = 0;
+            view.invalidate();
+        }
+    }
+
+    private static float readCircularProgressAnimatorDurationScale(Context context) {
         float durationScale = Settings.Global.getFloat(
-                getContext().getContentResolver(),
+                context.getContentResolver(),
                 Settings.Global.ANIMATOR_DURATION_SCALE,
                 1.0f
         );
 
         if (Float.isNaN(durationScale) || Float.isInfinite(durationScale) || durationScale < 0.0f) {
-            durationScale = 1.0f;
+            return 1.0f;
         }
 
-        circularProgressAnimatorDurationScale = durationScale;
-        lastCircularProgressUpdateTime = 0;
-        invalidate();
+        return durationScale;
     }
 
     public void setProgressColor(int color) {
         progressColor = color;
         progressPaint.setColor(progressColor);
+        updateCircularProgressTrackColor();
     }
 
     public void toCircle(boolean toCircle, boolean animated) {
+        clearDefaultCircularProgressGeometry();
         this.toCircle = toCircle;
         if (!animated) {
             toCircleProgress = toCircle ? 1f : 0f;
+        }
+    }
+
+    private void clearDefaultCircularProgressGeometry() {
+        if (!circularProgressGeometryExplicit
+                && circularProgressGeometry == defaultCircularProgressGeometry) {
+            setCircularProgressGeometryInternal(null);
+        }
+    }
+
+    private void updateCircularProgressTrackColor() {
+        if (!circularProgressTrackColorExplicit) {
+            circularProgressTrackPaint.setColor(
+                    (progressColor & 0x00ffffff) | 0x2e000000);
         }
     }
 

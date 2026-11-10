@@ -848,6 +848,7 @@ public class EmbedBottomSheet extends BottomSheet {
         containerLayout.addView(progressBarBlackBackground, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.LEFT, 0, 0, 0, 48 + 36 + (hasDescription ? 22 : 0)));
 
         progressBar = new RadialProgressView(context);
+        progressBar.setCircularProgressGeometry(null);
         progressBar.setVisibility(View.INVISIBLE);
         containerLayout.addView(progressBar, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER, 0, 0, 0, (48 + 36 + (hasDescription ? 22 : 0)) / 2));
 

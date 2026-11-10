@@ -1,3 +1,4 @@
+from collections import Counter
 from pathlib import Path
 import shutil
 import subprocess
@@ -30,6 +31,12 @@ DIALOGS = JAVA / "ui/DialogsActivity.java"
 CALL_LOG = JAVA / "ui/CallLogActivity.java"
 ADAPTER = JAVA / "ui/fluxgram/MaterialProgressStyle.java"
 INSTALL_SHEET = JAVA / "ui/PluginInstallSheet.java"
+APPLICATION_LOADER = JAVA / "messenger/ApplicationLoader.java"
+PHOTO_VIEWER_WEB = JAVA / "ui/Components/PhotoViewerWebView.java"
+WEB_PLAYER = JAVA / "ui/Components/WebPlayerView.java"
+EMBED_SHEET = JAVA / "ui/Components/EmbedBottomSheet.java"
+PHOTO_VIEWER = JAVA / "ui/PhotoViewer.java"
+STATISTICS = JAVA / "ui/StatisticActivity.java"
 STATIC_DRAWABLE = (
     ROOT
     / "TMessagesProj/src/main/res/drawable/ic_fluxgram_material_progress_static.xml"
@@ -37,6 +44,56 @@ STATIC_DRAWABLE = (
 
 
 class MaterialProgressStyleTest(unittest.TestCase):
+    def test_radial_progress_consumers_remain_audited(self):
+        expected = Counter({
+            "ui/SettingsActivity.java": 1,
+            "ui/ChatEditActivity.java": 1,
+            "ui/PhotoAlbumPickerActivity.java": 1,
+            "ui/Cells/GroupCallUserCell.java": 1,
+            "ui/community/CommunityEditActivity.java": 1,
+            "ui/Cells/ChatActionCell.java": 1,
+            "ui/Cells/LoadingCell.java": 1,
+            "ui/bots/ChatActivityBotWebViewButton.java": 1,
+            "ui/ChannelCreateActivity.java": 1,
+            "ui/Cells/ChatLoadingCell.java": 1,
+            "ui/TwoStepVerificationSetupActivity.java": 1,
+            "ui/StatisticActivity.java": 1,
+            "ui/NewContactBottomSheet.java": 1,
+            "ui/TwoStepVerificationActivity.java": 1,
+            "ui/TooManyCommunitiesActivity.java": 1,
+            "ui/GroupCreateFinalActivity.java": 1,
+            "ui/ContactAddActivity.java": 1,
+            "ui/LoginActivity.java": 2,
+            "ui/ChatUsersActivity.java": 1,
+            "ui/ChatActivity.java": 3,
+            "ui/PluginInstallSheet.java": 1,
+            "ui/Charts/view_data/LegendSignatureView.java": 1,
+            "ui/PhotoViewer.java": 2,
+            "ui/ChannelAdminLogActivity.java": 1,
+            "ui/TopicsFragment.java": 1,
+            "ui/GroupCallActivity.java": 1,
+            "ui/ProfileActivity.java": 1,
+            "ui/PhotoPickerActivity.java": 1,
+            "ui/ActionBar/AlertDialog.java": 1,
+            "ui/Components/EmptyTextProgressView.java": 1,
+            "ui/Components/ChatAttachAlert.java": 1,
+            "ui/Components/FragmentFloatingButton.java": 1,
+            "ui/Components/JoinGroupAlert.java": 1,
+            "ui/Components/EmojiView.java": 1,
+            "ui/Components/PhotoViewerWebView.java": 1,
+            "ui/Components/StickerEmptyView.java": 1,
+            "ui/Components/WebPlayerView.java": 1,
+            "ui/Components/EmbedBottomSheet.java": 1,
+            "ui/Components/StickersAlert.java": 1,
+        })
+        actual = Counter()
+        for source in JAVA.rglob("*.java"):
+            count = source.read_text().count("new RadialProgressView")
+            if count:
+                actual[str(source.relative_to(JAVA))] = count
+
+        self.assertEqual(actual, expected)
+
     def test_circular_geometry_resolves_only_for_progress(self):
         if not shutil.which("javac") or not shutil.which("java"):
             self.skipTest("java and javac are required")
@@ -240,6 +297,17 @@ class MaterialProgressStyleTest(unittest.TestCase):
             "setCircularProgressGeometry(CircularProgressGeometry geometry)",
             progress_view,
         )
+        self.assertIn("initializeDefaultCircularProgressGeometry(", progress_view)
+        self.assertIn(
+            "circularProgressGeometry = defaultCircularProgressGeometry",
+            progress_view,
+        )
+        self.assertIn("clearDefaultCircularProgressGeometry()", progress_view)
+        self.assertIn("value != AndroidUtilities.dp(40)", progress_view)
+        self.assertIn("static final HashSet<RadialProgressView>", progress_view)
+        self.assertIn("circularProgressViews.add(this)", progress_view)
+        self.assertIn("circularProgressViews.remove(this)", progress_view)
+        self.assertIn("0x2e000000", progress_view)
         self.assertIn("circularProgressGeometry != null && noProgress", progress_view)
         self.assertIn("circularProgressGeometry.resolve(", progress_view)
         self.assertIn("circularProgressGeometry == null\n                ? size", progress_view)
@@ -355,6 +423,27 @@ class MaterialProgressStyleTest(unittest.TestCase):
         self.assertIn("progress.setCircularProgressTrackColor(", install_sheet)
         self.assertIn("MaterialVisualStyleRuntime.getSnapshot()", install_sheet)
         self.assertEqual(install_sheet.count("progress.setCircularProgressGeometry("), 1)
+
+        application_loader = APPLICATION_LOADER.read_text()
+        self.assertIn(
+            "RadialProgressView.initializeDefaultCircularProgressGeometry(",
+            application_loader,
+        )
+        self.assertIn(
+            "MaterialProgressStyle.circularGeometry(MaterialVisualStyleRuntime.getSnapshot())",
+            application_loader,
+        )
+        for consumer in (
+            PHOTO_VIEWER_WEB,
+            WEB_PLAYER,
+            EMBED_SHEET,
+            PHOTO_VIEWER,
+            STATISTICS,
+        ):
+            self.assertIn(
+                "setCircularProgressGeometry(null)",
+                consumer.read_text(),
+            )
 
         runtime = RUNTIME.read_text()
         self.assertNotIn("MaterialProgressStyle", runtime)

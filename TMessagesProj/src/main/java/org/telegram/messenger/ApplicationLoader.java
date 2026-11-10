@@ -58,11 +58,13 @@ import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.Components.ForegroundDetector;
 import org.telegram.ui.Components.ItemOptions;
+import org.telegram.ui.Components.RadialProgressView;
 import org.telegram.ui.Components.SeekBarView;
 import org.telegram.ui.Components.Switch;
 import org.telegram.ui.IUpdateLayout;
 import org.telegram.ui.LauncherIconController;
 import org.telegram.ui.fluxgram.MaterialControlsStyle;
+import org.telegram.ui.fluxgram.MaterialProgressStyle;
 
 import java.io.File;
 import java.util.Locale;
@@ -343,6 +345,8 @@ public class ApplicationLoader extends Application {
                 MaterialVisualStyleRuntime.getSnapshot()));
         SeekBarView.initializeDefaultGeometry(MaterialControlsStyle.sliderGeometry(
                 MaterialVisualStyleRuntime.getSnapshot()));
+        RadialProgressView.initializeDefaultCircularProgressGeometry(
+                MaterialProgressStyle.circularGeometry(MaterialVisualStyleRuntime.getSnapshot()));
 
         // AndroidUtilities must be initialized before FileLog
         final String helloWorld = AndroidUtilities.getHelloWorld();

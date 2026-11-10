@@ -415,6 +415,7 @@ public class PhotoViewerWebView extends FrameLayout {
         addView(progressBarBlackBackground, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 
         progressBar = new RadialProgressView(context);
+        progressBar.setCircularProgressGeometry(null);
         progressBar.setVisibility(View.INVISIBLE);
         addView(progressBar, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER));
     }

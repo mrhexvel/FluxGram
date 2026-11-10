@@ -6160,6 +6160,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         createVideoControlsInterface();
 
         progressView = new RadialProgressView(parentActivity, resourcesProvider);
+        progressView.setCircularProgressGeometry(null);
         progressView.setProgressColor(0xffffffff);
         progressView.setBackgroundResource(R.drawable.circle_big);
         progressView.setVisibility(View.INVISIBLE);
