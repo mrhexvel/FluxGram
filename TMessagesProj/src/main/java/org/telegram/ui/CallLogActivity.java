@@ -126,6 +126,7 @@ public class CallLogActivity extends BaseFragment implements NotificationCenter.
 	private SizeNotifierFrameLayout contentView;
 	private boolean needFinishFragment = true;
 	private boolean hasMainTabs;
+	private boolean hasRootAudioMiniPlayer;
 
 
 	private ActionBarMenuItem otherItem;
@@ -700,6 +701,7 @@ public class CallLogActivity extends BaseFragment implements NotificationCenter.
 		if (arguments != null) {
 			needFinishFragment = arguments.getBoolean("needFinishFragment", true);
 			hasMainTabs = arguments.getBoolean("hasMainTabs", false);
+			hasRootAudioMiniPlayer = arguments.getBoolean("hasRootAudioMiniPlayer", false);
 		}
 
 		additionNavigationBarHeight = hasMainTabs ? dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS) : 0;
@@ -845,6 +847,7 @@ public class CallLogActivity extends BaseFragment implements NotificationCenter.
 				topPanelLayout.setViewVisible(fragmentContextViewWrapper, visibility == VISIBLE);
 			}
 		};
+		fragmentContextView.setSupportsMusicPlayer(!hasRootAudioMiniPlayer);
 		fragmentContextViewWrapper.addView(fragmentContextView);
 		topPanelLayout.setCallFragmentContextView(fragmentContextView);
 		// its glass 6dp from the sides of the screen (the layout's background is 4dp from its sides, inset by 7dp)
@@ -1396,6 +1399,24 @@ public class CallLogActivity extends BaseFragment implements NotificationCenter.
 		((ViewGroup.MarginLayoutParams) emptyView.getLayoutParams()).topMargin = mSystemInsets.top + ActionBar.getCurrentActionBarHeight();
 
 		emptyView.setPadding(0, 0, 0, navigationBarHeight + additionNavigationBarHeight);
+	}
+
+	@Override
+	public void setAudioMiniPlayerInset(float inset, int padding) {
+		int navigationBase = hasMainTabs ? dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS) : 0;
+		int floatingBase = hasMainTabs
+			? dp(DialogsActivity.MAIN_TABS_HEIGHT + DialogsActivity.MAIN_TABS_MARGIN)
+			: 0;
+		int navigationOffset = navigationBase + padding;
+		boolean navigationChanged = additionNavigationBarHeight != navigationOffset;
+		additionNavigationBarHeight = navigationOffset;
+		additionFloatingButtonOffset = floatingBase + Math.round(inset);
+		if (navigationChanged && listView != null) {
+			checkUi_listViewPadding();
+		}
+		if (floatingButton != null) {
+			checkUi_floatingButton();
+		}
 	}
 
 	@Override

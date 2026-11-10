@@ -86,6 +86,7 @@ public class SeekBarView extends FrameLayout implements Theme.Colorable {
 
     private Paint innerPaint1;
     private Paint outerPaint1;
+    private Paint bufferedPaint;
     private int thumbSize;
     private int selectorWidth;
     private int thumbX;
@@ -106,9 +107,19 @@ public class SeekBarView extends FrameLayout implements Theme.Colorable {
     private int separatorsCount;
     private int lineWidthDp = 3;
     private SliderGeometry sliderGeometry;
+    private LinearProgressGeometry linearProgressGeometry;
+    private boolean mirrorProgressInRtl = true;
+    private boolean linearProgressPlaying;
+    private float linearProgressAmplitude;
+    private float linearProgressPhase;
+    private long lastLinearProgressFrameTime;
     private final Path sliderGeometryPath = new Path();
+    private final Path sliderTimestampPath = new Path();
+    private final Path linearProgressPath = new Path();
     private final float[] sliderGeometryRadii = new float[8];
     private final RectF sliderGeometryCornerRect = new RectF();
+    private final LinearProgressGeometry.Resolved linearProgressResolved =
+            new LinearProgressGeometry.Resolved();
 
     private boolean twoSided;
     private final Theme.ResourcesProvider resourcesProvider;
@@ -147,6 +158,8 @@ public class SeekBarView extends FrameLayout implements Theme.Colorable {
 
         outerPaint1 = new Paint(Paint.ANTI_ALIAS_FLAG);
         outerPaint1.setColor(themedOuterColor = getThemedColor(Theme.key_player_progress));
+
+        bufferedPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
         selectorWidth = AndroidUtilities.dp(32);
         thumbSize = AndroidUtilities.dp(24);
@@ -276,7 +289,7 @@ public class SeekBarView extends FrameLayout implements Theme.Colorable {
                 if (Math.abs(ev.getY() - sy) < vc.getScaledTouchSlop()) {
                     int additionWidth = (getMeasuredHeight() - thumbSize) / 2;
                     if (!(thumbX - additionWidth <= ev.getX() && ev.getX() <= thumbX + thumbSize + additionWidth)) {
-                        thumbX = (int) ev.getX() - thumbSize / 2;
+                        thumbX = Math.round(ev.getX() - getTouchThumbCenterOffset());
                         thumbX = clampThumbX(thumbX);
                     }
                     thumbDX = (int) (ev.getX() - thumbX);
@@ -317,7 +330,7 @@ public class SeekBarView extends FrameLayout implements Theme.Colorable {
                     int additionWidth = (getMeasuredHeight() - thumbSize) / 2;
                     if (ev.getY() >= 0 && ev.getY() <= getMeasuredHeight()) {
                         if (!(thumbX - additionWidth <= ev.getX() && ev.getX() <= thumbX + thumbSize + additionWidth)) {
-                            thumbX = (int) ev.getX() - thumbSize / 2;
+                            thumbX = Math.round(ev.getX() - getTouchThumbCenterOffset());
                             thumbX = clampThumbX(thumbX);
                         }
                         thumbDX = (int) (ev.getX() - thumbX);
@@ -358,6 +371,10 @@ public class SeekBarView extends FrameLayout implements Theme.Colorable {
         return false;
     }
 
+    private float getTouchThumbCenterOffset() {
+        return linearProgressGeometry == null ? thumbSize / 2.0f : selectorWidth / 2.0f;
+    }
+
     private int clampThumbX(int value) {
         int range = getMeasuredWidth() - selectorWidth;
         int minimum = 0;
@@ -375,7 +392,9 @@ public class SeekBarView extends FrameLayout implements Theme.Colorable {
     }
 
     private boolean isMaterialRtl() {
-        return sliderGeometry != null && LocaleController.isRTL;
+        return (sliderGeometry != null || linearProgressGeometry != null)
+                && mirrorProgressInRtl
+                && LocaleController.isRTL;
     }
 
     public void setLineWidth(int dp) {
@@ -387,11 +406,37 @@ public class SeekBarView extends FrameLayout implements Theme.Colorable {
         invalidate();
     }
 
+    public void setLinearProgressGeometry(LinearProgressGeometry geometry) {
+        linearProgressGeometry = geometry;
+        selectorWidth = AndroidUtilities.dp(geometry == null ? 32 : 6);
+        lastLinearProgressFrameTime = 0;
+        invalidate();
+    }
+
+    public void setLinearProgressPlaying(boolean playing) {
+        if (linearProgressPlaying == playing) {
+            return;
+        }
+
+        linearProgressPlaying = playing;
+        lastLinearProgressFrameTime = 0;
+        invalidate();
+    }
+
+    public void setMirrorProgressInRtl(boolean mirrorProgressInRtl) {
+        this.mirrorProgressInRtl = mirrorProgressInRtl;
+        invalidate();
+    }
+
     public SliderGeometry getSliderGeometry() {
         return sliderGeometry;
     }
 
     public int getPreferredHeightDp(int fallbackHeightDp) {
+        if (linearProgressGeometry != null) {
+            return linearProgressGeometry.getTouchTargetHeightDp();
+        }
+
         return sliderGeometry == null ? fallbackHeightDp : sliderGeometry.getTouchTargetHeightDp();
     }
 
@@ -509,11 +554,19 @@ public class SeekBarView extends FrameLayout implements Theme.Colorable {
             float step = (getMeasuredWidth() - selectorWidth) / ((float) delegate.getStepsCount() - 1f);
             thumbX = (int) (Math.round((thumbX) / step) * step);
         }
-        if (sliderGeometry != null) {
+        if (linearProgressGeometry != null) {
+            drawLinearProgressGeometry(canvas, thumbX);
+            drawTimestampLabel(canvas);
+            return;
+        } else if (sliderGeometry != null) {
+            innerPaint1.setStyle(Paint.Style.FILL);
+            outerPaint1.setStyle(Paint.Style.FILL);
             drawSliderGeometry(canvas, thumbX);
             drawTimestampLabel(canvas);
             return;
         }
+        innerPaint1.setStyle(Paint.Style.FILL);
+        outerPaint1.setStyle(Paint.Style.FILL);
         int y = (getMeasuredHeight() - thumbSize) / 2;
         innerPaint1.setColor(themedInnerColor = getThemedColor(Theme.key_player_progressBackground));
 
@@ -628,7 +681,7 @@ public class SeekBarView extends FrameLayout implements Theme.Colorable {
         float inactiveLeft = centerX + gap;
         float startStopX = selectorWidth / 2.0f;
         float endStopX = getMeasuredWidth() - selectorWidth / 2.0f;
-        boolean isRtl = LocaleController.isRTL;
+        boolean isRtl = isMaterialRtl();
         float minCenterX = isRtl
                 ? endStopX - minProgress * (endStopX - startStopX)
                 : startStopX + minProgress * (endStopX - startStopX);
@@ -641,7 +694,6 @@ public class SeekBarView extends FrameLayout implements Theme.Colorable {
                 Math.max(endStopX - centerX, innerRadius)
         );
         boolean hasMinimum = minProgress > 0 && !twoSided;
-
         if (isRtl) {
             if (activeRight - trackLeft > outerRadius - gap) {
                 rect.set(trackLeft, trackTop, activeRight, trackBottom);
@@ -696,6 +748,266 @@ public class SeekBarView extends FrameLayout implements Theme.Colorable {
                 centerY + thumbHeight / 2.0f
         );
         canvas.drawRoundRect(rect, thumbWidth / 2.0f, thumbWidth / 2.0f, outerPaint1);
+    }
+
+    private void drawLinearProgressGeometry(Canvas canvas, int thumbX) {
+        long now = SystemClock.elapsedRealtime();
+        float deltaSeconds = lastLinearProgressFrameTime == 0
+                ? 0.016f
+                : Math.min(0.05f, (now - lastLinearProgressFrameTime) / 1000.0f);
+        lastLinearProgressFrameTime = now;
+
+        float centerY = getMeasuredHeight() / 2.0f;
+        float trackStart = selectorWidth / 2.0f;
+        float trackEnd = getMeasuredWidth() - selectorWidth / 2.0f;
+        float trackWidth = trackEnd - trackStart;
+        float thickness = AndroidUtilities.dpf2(linearProgressGeometry.getTrackThicknessDp());
+        float targetAmplitude = linearProgressPlaying
+                ? AndroidUtilities.dpf2(linearProgressGeometry.getWaveAmplitudeDp())
+                : 0.0f;
+        linearProgressAmplitude += (targetAmplitude - linearProgressAmplitude)
+                * (1.0f - (float) Math.pow(0.85, deltaSeconds / 0.04f));
+        if (Math.abs(linearProgressAmplitude - targetAmplitude) < AndroidUtilities.dpf2(0.05f)) {
+            linearProgressAmplitude = targetAmplitude;
+        }
+        if (linearProgressAmplitude > 0.0f) {
+            linearProgressPhase = (linearProgressPhase + 6.0f * deltaSeconds)
+                    % (float) (Math.PI * 2.0);
+        }
+        float maxAmplitude = AndroidUtilities.dpf2(linearProgressGeometry.getWaveAmplitudeDp());
+        boolean isRtl = isMaterialRtl();
+
+        linearProgressGeometry.resolve(
+                trackWidth,
+                getResources().getDisplayMetrics().density,
+                progressForThumbX(thumbX),
+                isRtl,
+                linearProgressResolved
+        );
+
+        float clipTop = centerY - maxAmplitude - thickness / 2.0f;
+        float clipBottom = centerY + maxAmplitude + thickness / 2.0f;
+        boolean clippedForTimestamps = clipSliderTrackForTimestamps(
+                canvas,
+                trackStart,
+                trackEnd,
+                clipTop,
+                clipBottom,
+                trackStart,
+                trackEnd,
+                thickness / 2.0f,
+                thickness / 2.0f,
+                isRtl
+        );
+
+        innerPaint1.setColor(themedInnerColor = getThemedColor(Theme.key_player_progressBackground));
+        innerPaint1.setStyle(Paint.Style.STROKE);
+        innerPaint1.setStrokeWidth(thickness);
+        innerPaint1.setStrokeCap(Paint.Cap.ROUND);
+        float inactiveStart = trackStart + linearProgressResolved.getInactiveStart();
+        float inactiveEnd = trackStart + linearProgressResolved.getInactiveEnd();
+        if (inactiveEnd > inactiveStart) {
+            canvas.drawLine(inactiveStart, centerY, inactiveEnd, centerY, innerPaint1);
+        }
+
+        bufferedPaint.setColor(getThemedColor(Theme.key_player_progressCachedBackground));
+        bufferedPaint.setStyle(Paint.Style.STROKE);
+        bufferedPaint.setStrokeWidth(thickness);
+        bufferedPaint.setStrokeCap(Paint.Cap.ROUND);
+        float bufferedX = isRtl
+                ? trackEnd - bufferedProgress * trackWidth
+                : trackStart + bufferedProgress * trackWidth;
+        if (bufferedProgress > 0) {
+            float bufferedStart = isRtl ? bufferedX : inactiveStart;
+            float bufferedEnd = isRtl ? inactiveEnd : bufferedX;
+            bufferedStart = Math.max(inactiveStart, bufferedStart);
+            bufferedEnd = Math.min(inactiveEnd, bufferedEnd);
+            if (bufferedEnd > bufferedStart) {
+                canvas.drawLine(bufferedStart, centerY, bufferedEnd, centerY, bufferedPaint);
+            }
+        }
+
+        outerPaint1.setStyle(Paint.Style.STROKE);
+        outerPaint1.setStrokeWidth(thickness);
+        outerPaint1.setStrokeCap(Paint.Cap.ROUND);
+        float activeStart = trackStart + linearProgressResolved.getActiveStart();
+        float activeEnd = trackStart + linearProgressResolved.getActiveEnd();
+        if (activeEnd > activeStart) {
+            drawLinearWave(
+                    canvas,
+                    trackStart,
+                    trackEnd,
+                    activeEnd - activeStart,
+                    centerY,
+                    linearProgressAmplitude,
+                    isRtl
+            );
+        }
+
+        if (clippedForTimestamps) {
+            canvas.restore();
+        }
+
+        float thumbCenter = trackStart + linearProgressResolved.getThumbCenter();
+        float thumbWidth = AndroidUtilities.dpf2(pressed
+                ? linearProgressGeometry.getDraggedThumbWidthDp()
+                : linearProgressGeometry.getThumbWidthDp());
+        float thumbHeight = AndroidUtilities.dpf2(linearProgressGeometry.getThumbHeightDp());
+        outerPaint1.setStyle(Paint.Style.FILL);
+        float stopRadius = AndroidUtilities.dpf2(
+                linearProgressGeometry.getStopIndicatorDiameterDp()
+        ) / 2.0f;
+        float stopCenter = isRtl ? trackStart : trackEnd;
+        canvas.drawCircle(stopCenter, centerY, stopRadius, outerPaint1);
+
+        rect.set(
+                thumbCenter - thumbWidth / 2.0f,
+                centerY - thumbHeight / 2.0f,
+                thumbCenter + thumbWidth / 2.0f,
+                centerY + thumbHeight / 2.0f
+        );
+        canvas.drawRoundRect(rect, thumbWidth / 2.0f, thumbWidth / 2.0f, outerPaint1);
+
+        if (hoverDrawable != null) {
+            int hoverSize = AndroidUtilities.dp(32);
+            int halfHover = hoverSize / 2;
+            hoverDrawable.setBounds(
+                    Math.round(thumbCenter) - halfHover,
+                    Math.round(centerY) - halfHover,
+                    Math.round(thumbCenter) + halfHover,
+                    Math.round(centerY) + halfHover
+            );
+            hoverDrawable.draw(canvas);
+        }
+
+        if (targetAmplitude != linearProgressAmplitude || linearProgressAmplitude > 0.0f) {
+            postInvalidateOnAnimation();
+        } else {
+            lastLinearProgressFrameTime = 0;
+        }
+    }
+
+    private void drawLinearWave(
+            Canvas canvas,
+            float trackStart,
+            float trackEnd,
+            float activeLength,
+            float centerY,
+            float amplitude,
+            boolean rtl
+    ) {
+        float direction = rtl ? -1.0f : 1.0f;
+        float from = rtl ? trackEnd : trackStart;
+        float wavelength = AndroidUtilities.dpf2(linearProgressGeometry.getWavelengthDp());
+        float step = AndroidUtilities.dpf2(2.0f);
+        float twoPi = (float) (Math.PI * 2.0);
+
+        linearProgressPath.rewind();
+        boolean first = true;
+        for (float offset = 0.0f; ; offset += step) {
+            boolean last = offset >= activeLength;
+            float boundedOffset = last ? activeLength : offset;
+            float x = from + direction * boundedOffset;
+            float y = centerY + amplitude * (float) Math.sin(
+                    twoPi * boundedOffset / wavelength - linearProgressPhase
+            );
+            if (first) {
+                linearProgressPath.moveTo(x, y);
+                first = false;
+            } else {
+                linearProgressPath.lineTo(x, y);
+            }
+            if (last) {
+                break;
+            }
+        }
+        canvas.drawPath(linearProgressPath, outerPaint1);
+    }
+
+    private boolean clipSliderTrackForTimestamps(
+            Canvas canvas,
+            float trackLeft,
+            float trackRight,
+            float trackTop,
+            float trackBottom,
+            float startStopX,
+            float endStopX,
+            float outerRadius,
+            float innerRadius,
+            boolean rtl
+    ) {
+        if (timestamps == null || timestamps.isEmpty()) {
+            return false;
+        }
+
+        float halfGap = AndroidUtilities.dp(TIMESTAMP_GAP * timestampsAppearing) / 2.0f;
+        float trackWidth = endStopX - startStopX;
+        if (trackWidth <= 0.0f) {
+            return false;
+        }
+        float minDuration = AndroidUtilities.dp(4) / trackWidth;
+        int start = -1;
+        int end = -1;
+        for (int index = 0; index < timestamps.size(); index++) {
+            if (timestamps.get(index).first >= minDuration) {
+                start = index;
+                break;
+            }
+        }
+        if (start < 0) {
+            start = 0;
+        }
+        for (int index = timestamps.size() - 1; index >= 0; index--) {
+            if (1.0f - timestamps.get(index).first >= minDuration) {
+                end = index + 1;
+                break;
+            }
+        }
+        if (end < 0) {
+            end = timestamps.size();
+        }
+
+        sliderTimestampPath.reset();
+        for (int index = start; index <= end; index++) {
+            float from = index == start ? 0.0f : timestamps.get(index - 1).first;
+            float to = index == end ? 1.0f : timestamps.get(index).first;
+            while (index != end
+                    && index != 0
+                    && index < timestamps.size() - 1
+                    && timestamps.get(index).first - from <= minDuration) {
+                index++;
+                to = timestamps.get(index).first;
+            }
+            float fromX = AndroidUtilities.lerp(startStopX, endStopX, rtl ? 1.0f - from : from);
+            float toX = AndroidUtilities.lerp(startStopX, endStopX, rtl ? 1.0f - to : to);
+            float left = Math.min(fromX, toX);
+            float right = Math.max(fromX, toX);
+            boolean reachesLeftEdge = left <= startStopX;
+            boolean reachesRightEdge = right >= endStopX;
+
+            left = reachesLeftEdge ? trackLeft : left + halfGap;
+            right = reachesRightEdge ? trackRight : right - halfGap;
+            if (right <= left) {
+                continue;
+            }
+
+            float leftRadius = reachesLeftEdge ? outerRadius : innerRadius;
+            float rightRadius = reachesRightEdge ? outerRadius : innerRadius;
+            sliderGeometryRadii[0] = leftRadius;
+            sliderGeometryRadii[1] = leftRadius;
+            sliderGeometryRadii[2] = rightRadius;
+            sliderGeometryRadii[3] = rightRadius;
+            sliderGeometryRadii[4] = rightRadius;
+            sliderGeometryRadii[5] = rightRadius;
+            sliderGeometryRadii[6] = leftRadius;
+            sliderGeometryRadii[7] = leftRadius;
+            rect.set(left, trackTop, right, trackBottom);
+            sliderTimestampPath.addRoundRect(rect, sliderGeometryRadii, Path.Direction.CW);
+        }
+
+        canvas.save();
+        canvas.clipPath(sliderTimestampPath);
+        return true;
     }
 
     private void drawSliderGeometryTrackWithAlpha(

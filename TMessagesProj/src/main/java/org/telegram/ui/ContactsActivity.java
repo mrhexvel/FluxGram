@@ -1420,6 +1420,24 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
         BaseFragmentSimpleGlass.setListViewParams(listView, statusBarInset, navigationBarHeight, ActionBar.getCurrentActionBarHeight(), additionNavigationBarHeight);
     }
 
+    @Override
+    public void setAudioMiniPlayerInset(float inset, int padding) {
+        int navigationBase = hasMainTabs ? dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS) : 0;
+        int floatingBase = hasMainTabs
+                ? dp(DialogsActivity.MAIN_TABS_HEIGHT + DialogsActivity.MAIN_TABS_MARGIN)
+                : 0;
+        int navigationOffset = navigationBase + padding;
+        int floatingOffset = floatingBase + Math.round(inset);
+        boolean navigationChanged = additionNavigationBarHeight != navigationOffset;
+        additionNavigationBarHeight = navigationOffset;
+        additionFloatingButtonOffset = floatingOffset;
+        if (navigationChanged && listView != null) {
+            checkUi_listViewPadding();
+            checkUi_emptyView();
+        }
+        checkUi_floatingButtonPosition();
+    }
+
     private boolean lastIsEmpty;
 
     private void checkUi_searchFieldHint() {

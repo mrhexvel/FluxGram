@@ -28,6 +28,7 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.view.accessibility.AccessibilityEvent;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
@@ -58,6 +59,7 @@ import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.fluxgram.AppearanceSettings;
+import org.telegram.messenger.fluxgram.AudioMiniPlayerSettings;
 import org.telegram.messenger.fluxgram.BottomNavigationSettings;
 import org.telegram.messenger.fluxgram.FolderSettings;
 import org.telegram.messenger.fluxgram.MaterialVisualStyleRuntime;
@@ -67,6 +69,7 @@ import org.telegram.messenger.fluxgram.RootNavigationSettings;
 import org.telegram.messenger.fluxgram.RootNavigationSnapshot;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBarMenuSubItem;
+import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.EdgeToEdgeSupportMode;
 import org.telegram.ui.ActionBar.Theme;
@@ -74,6 +77,7 @@ import org.telegram.ui.ActionBar.ThemeBind;
 import org.telegram.ui.ActionBar.ThemeDescription;
 import org.telegram.ui.Components.AnimatedEmojiDrawable;
 import org.telegram.ui.Components.ActiveIndicatorGeometry;
+import org.telegram.ui.Components.AudioPlayerAlert;
 import org.telegram.ui.Components.AvatarDrawable;
 import org.telegram.ui.Components.BackupImageView;
 import org.telegram.ui.Components.Bulletin;
@@ -82,6 +86,7 @@ import org.telegram.ui.Components.FolderDrawable;
 import org.telegram.ui.Components.HintsController;
 import org.telegram.ui.Components.ItemOptions;
 import org.telegram.ui.Components.LayoutHelper;
+import org.telegram.ui.Components.MiniPlayerGeometry;
 import org.telegram.ui.Components.Premium.LimitReachedBottomSheet;
 import org.telegram.ui.Components.blur3.BlurredBackgroundDrawableViewFactory;
 import org.telegram.ui.Components.blur3.BlurredBackgroundWithFadeDrawable;
@@ -97,7 +102,9 @@ import org.telegram.ui.Components.chat.ViewPositionWatcher;
 import org.telegram.ui.Components.glass.GlassTabView;
 import org.telegram.ui.fluxgram.FolderPresentation;
 import org.telegram.ui.fluxgram.FolderUnreadCounter;
+import org.telegram.ui.fluxgram.MaterialAudioMiniPlayer;
 import org.telegram.ui.fluxgram.MaterialNavigationStyle;
+import org.telegram.ui.fluxgram.MaterialProgressStyle;
 import org.telegram.ui.Stories.recorder.HintView2;
 import org.telegram.ui.Wallet.WalletActivity;
 
@@ -128,8 +135,14 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
     private BlurredBackgroundDrawable tabsViewBackground;
     private DockedNavigationDrawable dockedNavigationBackground;
     private View fadeView;
+    private MaterialAudioMiniPlayer audioMiniPlayer;
+    private final ViewTreeObserver.OnPreDrawListener audioMiniPlayerAnchorListener = () -> {
+        updateAudioMiniPlayerTopAnchor();
+        return true;
+    };
     private final int bottomNavigationMode;
     private final boolean materialNavigationDocked;
+    private final MiniPlayerGeometry audioMiniPlayerGeometry;
     private final RootNavigationPolicy.State rootNavigationState;
 
     public MainTabsActivity() {
@@ -143,6 +156,8 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
                 : RootNavigationPolicy.normalize(Collections.singletonList(
                         RootNavigationPolicy.CHATS));
         materialNavigationDocked = MaterialNavigationStyle.usesDockedContainer(
+                MaterialVisualStyleRuntime.getSnapshot());
+        audioMiniPlayerGeometry = MaterialProgressStyle.miniPlayerGeometry(
                 MaterialVisualStyleRuntime.getSnapshot());
         if (!materialNavigationDocked && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             iBlur3SourceTabGlass = createTabSource(false);
@@ -305,6 +320,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
             protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
                 super.onLayout(changed, left, top, right, bottom);
                 checkUi_tabsPosition();
+                checkUi_audioMiniPlayerPosition();
                 checkUi_fadeView();
                 if (!materialNavigationDocked) {
                     blur3_updateFragmentsGlass();
@@ -417,6 +433,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
             tabsViewWrapper.setVisibility(View.GONE);
             contentView.addView(tabsViewWrapper, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.BOTTOM));
 
+            setupAudioMiniPlayer(context);
             setupUpdateLayout(context);
             return contentView;
         }
@@ -513,9 +530,45 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         tabsViewWrapper.setClipToPadding(false);
         contentView.addView(tabsViewWrapper, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.BOTTOM));
 
+        setupAudioMiniPlayer(context);
         setupUpdateLayout(context);
         checkUnreadCount(false);
         return contentView;
+    }
+
+    private void setupAudioMiniPlayer(Context context) {
+        if (audioMiniPlayerGeometry == null) {
+            return;
+        }
+
+        audioMiniPlayer = new MaterialAudioMiniPlayer(
+                context,
+                resourceProvider,
+                audioMiniPlayerGeometry,
+                () -> {
+                    if (getParentActivity() != null) {
+                        new AudioPlayerAlert(getParentActivity(), resourceProvider).show();
+                    }
+                },
+                AudioMiniPlayerSettings.getPosition(),
+                AudioMiniPlayerSettings::setPosition
+        );
+        audioMiniPlayer.setOffsetListener(this::updateAudioMiniPlayerInsets);
+        contentView.addView(audioMiniPlayer, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT,
+                LayoutHelper.MATCH_PARENT
+        ));
+        contentView.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
+            @Override
+            public void onViewAttachedToWindow(@NonNull View view) {
+                view.getViewTreeObserver().addOnPreDrawListener(audioMiniPlayerAnchorListener);
+            }
+
+            @Override
+            public void onViewDetachedFromWindow(@NonNull View view) {
+                view.getViewTreeObserver().removeOnPreDrawListener(audioMiniPlayerAnchorListener);
+            }
+        });
     }
 
     private GlassTabView createTab(Context context, String destination) {
@@ -1018,6 +1071,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         bundle.putBoolean("hasMainTabs", hasBottomNavigation());
         dialogsActivity = new DialogsActivity(bundle);
         dialogsActivity.setMainTabsActivityController(new MainTabsActivityControllerImpl());
+        prepareTabFragment(dialogsActivity);
         putFragmentAtPosition(positionForDestination(RootNavigationPolicy.CHATS), dialogsActivity);
         return dialogsActivity;
     }
@@ -1030,31 +1084,42 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
             args.putBoolean("needPhonebook", true);
             args.putBoolean("needFinishFragment", false);
             args.putBoolean("hasMainTabs", hasBottomNavigation());
-            return new ContactsActivity(args);
+            return prepareTabFragment(new ContactsActivity(args));
         } else if (RootNavigationPolicy.CALLS.equals(destination)) {
             Bundle args = new Bundle();
             args.putBoolean("needFinishFragment", false);
             args.putBoolean("hasMainTabs", hasBottomNavigation());
-            return new CallLogActivity(args);
+            args.putBoolean("hasRootAudioMiniPlayer", audioMiniPlayerGeometry != null);
+            return prepareTabFragment(new CallLogActivity(args));
         } else if (RootNavigationPolicy.SETTINGS.equals(destination)) {
             Bundle args = new Bundle();
             args.putBoolean("hasMainTabs", hasBottomNavigation());
-            return new SettingsActivity(args);
+            return prepareTabFragment(new SettingsActivity(args));
         } else if (RootNavigationPolicy.CHATS.equals(destination)) {
             Bundle args = new Bundle();
             args.putBoolean("hasMainTabs", hasBottomNavigation());
             dialogsActivity = new DialogsActivity(args);
             dialogsActivity.setMainTabsActivityController(new MainTabsActivityControllerImpl());
-            return dialogsActivity;
+            return prepareTabFragment(dialogsActivity);
         } else if (RootNavigationPolicy.PROFILE.equals(destination)) {
             Bundle args = new Bundle();
             args.putLong("user_id", UserConfig.getInstance(currentAccount).getClientUserId());
             args.putBoolean("my_profile", true);
             // args.putBoolean("expandPhoto", true);
             args.putBoolean("hasMainTabs", hasBottomNavigation());
-            return new ProfileActivity(args);
+            return prepareTabFragment(new ProfileActivity(args));
         }
         return null;
+    }
+
+    private <T extends BaseFragment> T prepareTabFragment(T fragment) {
+        if (fragment instanceof TabFragmentDelegate && audioMiniPlayer != null) {
+            applyAudioMiniPlayerInset(
+                    (TabFragmentDelegate) fragment,
+                    fragment instanceof DialogsActivity
+            );
+        }
+        return fragment;
     }
 
     public DialogsActivity getDialogsActivity() {
@@ -1202,6 +1267,22 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         default GlassSourceRenderNode getFrostedGlassSource() {
             return null;
         }
+
+        default void setAudioMiniPlayerInset(float inset, int padding) {
+
+        }
+
+        default void setAudioMiniPlayerTopPadding(int padding) {
+
+        }
+
+        default float getAudioMiniPlayerTopAnchor() {
+            return -1.0f;
+        }
+
+        default float getAudioMiniPlayerTopVisibility() {
+            return 1.0f;
+        }
     }
 
     @Override
@@ -1233,6 +1314,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
     /* * */
 
     private int navigationBarHeight;
+    private int statusBarHeight;
     private int insetLeft;
     private int insetRight;
 
@@ -1244,6 +1326,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         insetLeft = systemInsets.left;
         insetRight = systemInsets.right;
 
+        statusBarHeight = systemInsets.top;
         navigationBarHeight = systemInsets.bottom;
         final boolean isUpdateLayoutVisible = updateLayoutWrapper.isUpdateLayoutVisible();
         final int updateLayoutHeight = isUpdateLayoutVisible ? dp(UpdateLayoutWrapper.HEIGHT) : 0;
@@ -1273,11 +1356,15 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         }
 
         tabsViewWrapper.setPadding(systemInsets.left, 0, systemInsets.right, navigationBarHeight);
+        if (audioMiniPlayer != null) {
+            audioMiniPlayer.setPadding(systemInsets.left, 0, systemInsets.right, 0);
+        }
 
         final WindowInsetsCompat consumed = isUpdateLayoutVisible ?
             insets.inset(0, 0, 0, navigationBarHeight) : insets;
 
         checkUi_tabsPosition();
+        checkUi_audioMiniPlayerPosition();
         checkUi_fadeView();
 
         return super.onApplyWindowInsets(v, consumed);
@@ -1365,6 +1452,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
     public void onFactorChanged(int id, float factor, float fraction, FactorAnimator callee) {
         if (id == ANIMATOR_ID_TABS_VISIBLE) {
             checkUi_tabsPosition();
+            checkUi_audioMiniPlayerPosition();
             checkUi_fadeView();
         }
     }
@@ -1422,6 +1510,97 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         }
     }
 
+    private void checkUi_audioMiniPlayerPosition() {
+        if (audioMiniPlayer == null || updateLayoutWrapper == null) {
+            return;
+        }
+
+        boolean bottomNavigationVisible = hasBottomNavigation();
+        int updateLayoutHeight = updateLayoutWrapper.isUpdateLayoutVisible()
+                ? dp(UpdateLayoutWrapper.HEIGHT)
+                : 0;
+        int tabsHeight = bottomNavigationVisible
+                ? dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS)
+                : 0;
+        int gap = !bottomNavigationVisible || materialNavigationDocked ? dp(12) : dp(4);
+        float factor = bottomNavigationVisible
+                ? animatorTabsVisible.getFloatValue()
+                : 1.0f;
+        float top = statusBarHeight + ActionBar.getCurrentActionBarHeight();
+        float bottom = contentView.getHeight()
+                - navigationBarHeight
+                - updateLayoutHeight
+                - tabsHeight
+                - gap
+                - dp(audioMiniPlayer.getBottomHeightDp());
+
+        audioMiniPlayer.setHostBounds(top, bottom, factor);
+        updateAudioMiniPlayerTopAnchor();
+    }
+
+    private void updateAudioMiniPlayerTopAnchor() {
+        if (audioMiniPlayer == null || viewPager == null) {
+            return;
+        }
+
+        FragmentState state = fragmentsArr.get(positionForDestination(RootNavigationPolicy.CHATS));
+        BaseFragment chats = state == null ? null : state.fragment;
+        View fragmentView = chats == null ? null : chats.getFragmentView();
+        View page = fragmentView != null && fragmentView.getParent() instanceof View
+                ? (View) fragmentView.getParent()
+                : null;
+        float shift = 0.0f;
+        float zone = 0.0f;
+        if (page != null
+                && page.getParent() == viewPager
+                && page.getVisibility() == View.VISIBLE
+                && viewPager.getMeasuredWidth() > 0) {
+            shift = page.getTranslationX();
+            zone = MathUtils.clamp(
+                    1.0f - Math.abs(shift) / viewPager.getMeasuredWidth(),
+                    0.0f,
+                    1.0f
+            );
+        }
+
+        float anchor = -1.0f;
+        float visibility = 1.0f;
+        if (chats instanceof TabFragmentDelegate) {
+            TabFragmentDelegate delegate = (TabFragmentDelegate) chats;
+            anchor = delegate.getAudioMiniPlayerTopAnchor();
+            visibility = delegate.getAudioMiniPlayerTopVisibility();
+        }
+        if (anchor < 0.0f) {
+            anchor = statusBarHeight + ActionBar.getCurrentActionBarHeight();
+        }
+
+        audioMiniPlayer.setTopState(anchor, zone, shift, visibility);
+    }
+
+    private void updateAudioMiniPlayerInsets() {
+        if (audioMiniPlayer == null) {
+            return;
+        }
+
+        for (int index = 0; index < fragmentsArr.size(); index++) {
+            BaseFragment fragment = fragmentsArr.valueAt(index).fragment;
+            if (fragment instanceof TabFragmentDelegate) {
+                applyAudioMiniPlayerInset(
+                        (TabFragmentDelegate) fragment,
+                        fragment instanceof DialogsActivity
+                );
+            }
+        }
+    }
+
+    private void applyAudioMiniPlayerInset(TabFragmentDelegate delegate, boolean chats) {
+        delegate.setAudioMiniPlayerInset(
+                audioMiniPlayer.getVisibleOffset(chats),
+                audioMiniPlayer.getTargetOffset(chats)
+        );
+        delegate.setAudioMiniPlayerTopPadding(audioMiniPlayer.getTargetTopOffset(chats));
+    }
+
     @Override
     public ArrayList<ThemeDescription> getThemeDescriptions() {
         ArrayList<ThemeDescription> themeDescriptions = super.getThemeDescriptions();
@@ -1454,6 +1633,11 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         @Override
         public RootNavigationSnapshot getRootNavigationSnapshot() {
             return MainTabsActivity.this.getRootNavigationSnapshot();
+        }
+
+        @Override
+        public boolean showsRootAudioMiniPlayer() {
+            return audioMiniPlayerGeometry != null;
         }
 
         @Override
@@ -1668,6 +1852,9 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         try {
             super.onThemeColorsChanged();
             blur3_updateColors();
+            if (audioMiniPlayer != null) {
+                audioMiniPlayer.updateColors();
+            }
         } catch (Exception e) {
             FileLog.e(e);
         }
@@ -1680,5 +1867,9 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         keys.add(Theme.key_dialogBackground);
         keys.add(Theme.key_divider);
         keys.add(Theme.key_windowBackgroundWhite);
+        keys.add(Theme.key_inappPlayerBackground);
+        keys.add(Theme.key_inappPlayerTitle);
+        keys.add(Theme.key_inappPlayerPerformer);
+        keys.add(Theme.key_inappPlayerPlayPause);
     }
 }

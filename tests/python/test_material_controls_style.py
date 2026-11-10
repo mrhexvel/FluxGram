@@ -325,7 +325,11 @@ class MaterialControlsStyleTest(unittest.TestCase):
         self.assertIn("sliderGeometry.getStopIndicatorSizeDp()", seek_bar)
         self.assertIn("sliderGeometry.getTouchTargetHeightDp()", seek_bar)
         self.assertIn("gap -= (thumbWidth - pressedThumbWidth) / 2.0f", seek_bar)
-        self.assertIn("return sliderGeometry != null && LocaleController.isRTL", seek_bar)
+        self.assertIn(
+            "return (sliderGeometry != null || linearProgressGeometry != null)",
+            seek_bar,
+        )
+        self.assertIn("boolean isRtl = isMaterialRtl()", seek_bar)
         self.assertIn("Math.abs(stopIndicatorX - centerX) > gap + thumbWidth / 2.0f", seek_bar)
         self.assertIn("sliderGeometry = defaultSliderGeometry", seek_bar)
         self.assertIn("initializeDefaultGeometry(SliderGeometry geometry)", seek_bar)
@@ -447,10 +451,10 @@ class MaterialControlsStyleTest(unittest.TestCase):
         self.assertEqual(28, sources.count("new SeekBarView("))
         self.assertEqual(15, sources.count("setSliderGeometry(null)"))
         self.assertEqual(4, sources.count("setSliderGeometry(sliderGeometry)"))
+        self.assertEqual(1, sources.count("setLinearProgressGeometry(playbackProgressGeometry)"))
 
         for path in {
             "ui/BlurSettingsBottomSheet.java",
-            "ui/Components/AudioPlayerAlert.java",
             "ui/Components/FloatingDebug/FloatingDebugView.java",
             "ui/DebugRecordingCanvasReplayFragment.java",
             "ui/GLIconSettingsView.java",

@@ -1096,11 +1096,33 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
     }
 
     private int navigationBarHeight;
+    private int statusBarHeight;
     private int additionNavigationBarHeight;
+
+    @Override
+    public void setAudioMiniPlayerInset(float inset, int padding) {
+        int navigationOffset = (hasMainTabs
+                ? dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS)
+                : 0) + padding;
+        if (additionNavigationBarHeight == navigationOffset) {
+            return;
+        }
+        additionNavigationBarHeight = navigationOffset;
+        if (listView != null) {
+            BaseFragmentSimpleGlass.setListViewParams(
+                    listView,
+                    statusBarHeight,
+                    navigationBarHeight,
+                    dp(12),
+                    additionNavigationBarHeight
+            );
+        }
+    }
 
     @NonNull
     private WindowInsetsCompat onApplyWindowInsets(@NonNull View v, @NonNull WindowInsetsCompat insets) {
         final Insets systemInsets = AndroidUtilities.getDefaultWindowInsets(insets, false);
+        statusBarHeight = systemInsets.top;
         navigationBarHeight = systemInsets.bottom;
         updateActionBarFadeHeight(systemInsets.top);
         BaseFragmentSimpleGlass.setListViewParams(listView, systemInsets.top, systemInsets.bottom, dp(12), additionNavigationBarHeight);

@@ -167,6 +167,7 @@ public class FragmentContextView extends FrameLayout implements NotificationCent
     private String lastString;
     private boolean isMusic;
     private boolean supportsCalls = true;
+    private boolean supportsMusicPlayer = true;
     private AvatarsImageView avatars;
 
     private Paint gradientPaint;
@@ -299,6 +300,10 @@ public class FragmentContextView extends FrameLayout implements NotificationCent
 
     public void setSupportsCalls(boolean value) {
         supportsCalls = value;
+    }
+
+    public void setSupportsMusicPlayer(boolean value) {
+        supportsMusicPlayer = value;
     }
 
     public void setDelegate(FragmentContextViewDelegate fragmentContextViewDelegate) {
@@ -1846,6 +1851,9 @@ public class FragmentContextView extends FrameLayout implements NotificationCent
             return;
         }
         MessageObject messageObject = MediaController.getInstance().getPlayingMessageObject();
+        boolean unsupportedMusic = !supportsMusicPlayer
+                && messageObject != null
+                && messageObject.isMusic();
         View fragmentView = fragment.getFragmentView();
         if (!create && fragmentView != null) {
             if (fragmentView.getParent() == null || ((View) fragmentView.getParent()).getVisibility() != VISIBLE) {
@@ -1853,7 +1861,10 @@ public class FragmentContextView extends FrameLayout implements NotificationCent
             }
         }
         boolean wasVisible = visible;
-        if (messageObject == null || messageObject.getId() == 0 || messageObject.isVideo()) {
+        if (messageObject == null
+                || messageObject.getId() == 0
+                || messageObject.isVideo()
+                || unsupportedMusic) {
             lastMessageObject = null;
             boolean callAvailable = supportsCalls && VoIPService.getSharedInstance() != null && !VoIPService.getSharedInstance().isHangingUp() && VoIPService.getSharedInstance().getCallState() != VoIPService.STATE_WAITING_INCOMING && !GroupCallPip.isShowing();
             if (!isPlayingVoice() && !callAvailable && chatActivity != null && !GroupCallPip.isShowing()) {

@@ -96,6 +96,7 @@ import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.audioinfo.AudioInfo;
 import org.telegram.messenger.chromecast.ChromecastController;
+import org.telegram.messenger.fluxgram.MaterialVisualStyleRuntime;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.InputSerializedData;
 import org.telegram.tgnet.TLObject;
@@ -122,6 +123,7 @@ import org.telegram.ui.DialogsActivity;
 import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.Stories.recorder.ButtonWithCounterView;
 import org.telegram.ui.Stories.recorder.SelectAudioAlert;
+import org.telegram.ui.fluxgram.MaterialProgressStyle;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -642,7 +644,12 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
                 return super.onTouch(ev);
             }
         };
+        LinearProgressGeometry playbackProgressGeometry = MaterialProgressStyle.linearGeometry(
+                MaterialVisualStyleRuntime.getSnapshot()
+        );
         seekBarView.setSliderGeometry(null);
+        seekBarView.setLinearProgressGeometry(playbackProgressGeometry);
+        seekBarView.setMirrorProgressInRtl(false);
         seekBarView.setLineWidth(4);
         seekBarView.setDelegate(new SeekBarView.SeekBarViewDelegate() {
             @Override
@@ -669,7 +676,19 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
             }
         });
         seekBarView.setReportChanges(true);
-        playerLayout.addView(seekBarView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 38 + 6, Gravity.TOP | Gravity.LEFT, 5, 67, 5, 0));
+        int seekBarHeight = playbackProgressGeometry == null
+                ? 38 + 6
+                : playbackProgressGeometry.getTouchTargetHeightDp();
+        int seekBarTop = playbackProgressGeometry == null ? 67 : 60;
+        playerLayout.addView(seekBarView, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT,
+                seekBarHeight,
+                Gravity.TOP | Gravity.LEFT,
+                5,
+                seekBarTop,
+                5,
+                0
+        ));
 
         seekBarBufferSpring = new SpringAnimation(new FloatValueHolder(0))
                 .setSpring(new SpringForce()
@@ -2297,9 +2316,11 @@ public class AudioPlayerAlert extends BottomSheet implements NotificationCenter.
 
             if (MediaController.getInstance().isMessagePaused()) {
                 playPauseDrawable.setPause(false);
+                seekBarView.setLinearProgressPlaying(false);
                 playButton.setContentDescription(LocaleController.getString(R.string.AccActionPlay));
             } else {
                 playPauseDrawable.setPause(true);
+                seekBarView.setLinearProgressPlaying(true);
                 playButton.setContentDescription(LocaleController.getString(R.string.AccActionPause));
             }
             String title = messageObject.getMusicTitle();

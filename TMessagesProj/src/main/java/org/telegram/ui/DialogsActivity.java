@@ -2112,6 +2112,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
             t -= dp(5 * Math.max(filterTabsVisibility, topPanelsVisibility));
             additionalPadding -= dp(5 * Math.max(filterTabsVisibility, topPanelsVisibility));
+            t += audioMiniPlayerTopPadding;
 
             final int b = calculateListViewPaddingBottom();
             if (t != topPadding || b != getPaddingBottom()) {
@@ -4907,6 +4908,10 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     topPanelLayout.setViewVisible(fragmentContextViewWrapper, visibility == VISIBLE);
                 }
             };
+            fragmentContextView.setSupportsMusicPlayer(
+                    mainTabsActivityController == null
+                            || !mainTabsActivityController.showsRootAudioMiniPlayer()
+            );
             fragmentContextViewWrapper.addView(fragmentContextView);
             topPanelLayout.setCallFragmentContextView(fragmentContextView);
 
@@ -14629,6 +14634,83 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     @Override
     public GlassSourceRenderNode getFrostedGlassSource() {
         return iBlur3SourceGlassFrosted;
+    }
+
+    @Override
+    public void setAudioMiniPlayerInset(float inset, int padding) {
+        int navigationBase = hasMainTabs ? dp(MAIN_TABS_HEIGHT_WITH_MARGINS) : 0;
+        int floatingBase = hasMainTabs ? dp(MAIN_TABS_HEIGHT + MAIN_TABS_MARGIN) : 0;
+        int navigationOffset = navigationBase + padding;
+        int floatingOffset = floatingBase + Math.round(inset);
+        boolean navigationChanged = additionNavigationBarHeight != navigationOffset;
+        boolean floatingChanged = additionFloatingButtonOffset != floatingOffset;
+        if (!navigationChanged && !floatingChanged) {
+            return;
+        }
+
+        additionNavigationBarHeight = navigationOffset;
+        additionFloatingButtonOffset = floatingOffset;
+        if (navigationChanged) {
+            checkUi_chatListViewPaddingsBottom();
+        }
+        if (floatingChanged) {
+            updateFloatingButtonOffset();
+        }
+        if (navigationChanged && fragmentView != null) {
+            ViewCompat.requestApplyInsets(fragmentView);
+        }
+    }
+
+    private int audioMiniPlayerTopPadding;
+
+    @Override
+    public void setAudioMiniPlayerTopPadding(int padding) {
+        if (audioMiniPlayerTopPadding == padding) {
+            return;
+        }
+
+        audioMiniPlayerTopPadding = padding;
+        if (viewPages == null) {
+            return;
+        }
+
+        for (ViewPage viewPage : viewPages) {
+            if (viewPage != null) {
+                viewPage.listView.requestLayout();
+            }
+        }
+    }
+
+    @Override
+    public float getAudioMiniPlayerTopAnchor() {
+        if (viewPages == null || viewPages[0] == null) {
+            return -1.0f;
+        }
+
+        return viewPages[0].listView.topPadding
+                - audioMiniPlayerTopPadding
+                + scrollYOffset
+                + storiesOverscroll
+                + viewPages[0].getTranslationY();
+    }
+
+    @Override
+    public float getAudioMiniPlayerTopVisibility() {
+        float visibility = 1.0f - Utilities.clamp(searchAnimationProgress, 1.0f, 0.0f);
+        if (rightSlidingDialogContainer != null && rightSlidingDialogContainer.hasFragment()) {
+            visibility *= 1.0f - Utilities.clamp(
+                    rightSlidingDialogContainer.openedProgress,
+                    1.0f,
+                    0.0f
+            );
+        }
+        if (blurredView != null
+                && blurredView.getVisibility() == View.VISIBLE
+                && blurredView.getBackground() != null) {
+            visibility *= 1.0f - Utilities.clamp(blurredView.getAlpha(), 1.0f, 0.0f);
+        }
+
+        return visibility;
     }
 
     @Override

@@ -17418,9 +17418,28 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     private int additionFloatingButtonOffset;
     private int navigationBarHeight;
 
+    @Override
+    public void setAudioMiniPlayerInset(float inset, int padding) {
+        int navigationOffset = (hasMainTabs
+                ? dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS)
+                : 0) + padding;
+        boolean navigationChanged = additionNavigationBarHeight != navigationOffset;
+        additionNavigationBarHeight = navigationOffset;
+        additionFloatingButtonOffset = (hasMainTabs
+                ? dp(DialogsActivity.MAIN_TABS_HEIGHT + DialogsActivity.MAIN_TABS_MARGIN)
+                : 0) + Math.round(inset);
+        applyBottomInsets(navigationChanged);
+    }
+
     @NonNull
     private WindowInsetsCompat onApplyWindowInsets(@NonNull View v, @NonNull WindowInsetsCompat insets) {
         navigationBarHeight = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom;
+
+        applyBottomInsets(true);
+        return WindowInsetsCompat.CONSUMED;
+    }
+
+    private void applyBottomInsets(boolean updatePages) {
 
         ViewGroup.MarginLayoutParams lp;
 
@@ -17435,7 +17454,9 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         }
 
         if (sharedMediaLayout != null) {
-            applyPagesInsets();
+            if (updatePages) {
+                applyPagesInsets();
+            }
 
             if (sharedMediaLayout.giftsContainer != null) {
                 sharedMediaLayout.giftsContainer.setButtonOffset(navigationBarHeight + additionFloatingButtonOffset);
@@ -17443,7 +17464,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         }
 
         // listView.setPadding(0, 0, 0, navigationBarHeight + additionNavigationBarHeight);
-        return WindowInsetsCompat.CONSUMED;
     }
 
     /* * */

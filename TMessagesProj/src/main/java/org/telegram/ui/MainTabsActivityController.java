@@ -11,6 +11,8 @@ public interface MainTabsActivityController {
 
     RootNavigationSnapshot getRootNavigationSnapshot();
 
+    boolean showsRootAudioMiniPlayer();
+
     boolean navigateToRootDestination(
             RootNavigationSnapshot snapshot,
             String destination
