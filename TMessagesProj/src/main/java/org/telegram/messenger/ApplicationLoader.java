@@ -60,6 +60,7 @@ import org.telegram.ui.Components.ForegroundDetector;
 import org.telegram.ui.Components.ItemOptions;
 import org.telegram.ui.Components.RadialProgressView;
 import org.telegram.ui.Components.SeekBarView;
+import org.telegram.ui.Components.SlideChooseView;
 import org.telegram.ui.Components.Switch;
 import org.telegram.ui.IUpdateLayout;
 import org.telegram.ui.LauncherIconController;
@@ -345,6 +346,9 @@ public class ApplicationLoader extends Application {
                 MaterialVisualStyleRuntime.getSnapshot()));
         SeekBarView.initializeDefaultGeometry(MaterialControlsStyle.sliderGeometry(
                 MaterialVisualStyleRuntime.getSnapshot()));
+        SlideChooseView.initializeDefaultDiscreteSliderGeometry(
+                MaterialControlsStyle.discreteSliderGeometry(
+                        MaterialVisualStyleRuntime.getSnapshot()));
         RadialProgressView.initializeDefaultCircularProgressGeometry(
                 MaterialProgressStyle.circularGeometry(MaterialVisualStyleRuntime.getSnapshot()));
 

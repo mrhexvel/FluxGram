@@ -346,6 +346,17 @@ class MaterialControlsStyleTest(unittest.TestCase):
         self.assertNotIn("MaterialVisualStyle", seek_bar)
 
         self.assertIn("setDiscreteSliderGeometry(DiscreteSliderGeometry geometry)", slide_choose)
+        self.assertIn("initializeDefaultDiscreteSliderGeometry(", slide_choose)
+        self.assertIn("defaultDiscreteSliderGeometryInitialized", slide_choose)
+        self.assertIn(
+            "discreteSliderGeometry = defaultDiscreteSliderGeometry",
+            slide_choose,
+        )
+        self.assertIn("discreteSliderGeometryExplicit", slide_choose)
+        self.assertIn("discreteSliderGeometryExplicit = true", slide_choose)
+        self.assertIn("if (!discreteSliderGeometryExplicit)", slide_choose)
+        self.assertIn("index >= 0\n                    ? null", slide_choose)
+        self.assertIn("discreteSliderGeometry != null && leftDrawables == null", slide_choose)
         self.assertIn("drawDiscreteSlider(canvas)", slide_choose)
         self.assertIn("discreteSliderGeometry.getTickSizeDp()", slide_choose)
         self.assertIn("materialCenterForIndex", slide_choose)
@@ -358,16 +369,20 @@ class MaterialControlsStyleTest(unittest.TestCase):
         self.assertNotIn("MaterialStylePolicy", slide_choose)
         self.assertNotIn("MaterialVisualStyle", slide_choose)
 
-        keep_media_case, max_cache_case = cache_control.split(
-            "case VIEW_TYPE_MAX_CACHE_SIZE:", 1
-        )
-        self.assertNotIn("setDiscreteSliderGeometry", keep_media_case)
-        self.assertIn("slideChooseView2.setDiscreteSliderGeometry(", max_cache_case)
-        self.assertIn("MaterialControlsStyle.discreteSliderGeometry(", max_cache_case)
-        self.assertEqual(1, cache_control.count("setDiscreteSliderGeometry("))
+        self.assertNotIn("setDiscreteSliderGeometry", cache_control)
+        self.assertNotIn("MaterialControlsStyle", cache_control)
+        self.assertNotIn("MaterialVisualStyleRuntime", cache_control)
 
         self.assertIn(
             "SeekBarView.initializeDefaultGeometry(MaterialControlsStyle.sliderGeometry(",
+            application,
+        )
+        self.assertIn(
+            "SlideChooseView.initializeDefaultDiscreteSliderGeometry(",
+            application,
+        )
+        self.assertIn(
+            "MaterialControlsStyle.discreteSliderGeometry(",
             application,
         )
         self.assertIn("SeekBarView.initializeDefaultGeometry(", on_create)
@@ -417,6 +432,32 @@ class MaterialControlsStyleTest(unittest.TestCase):
         self.assertIn("textParams.leftMargin = textEndInset", session_sheet)
         self.assertIn("textParams.rightMargin = dp(64)", session_sheet)
         self.assertIn("getMeasuredWidth() - dp(64)", session_sheet)
+        self.assertLess(
+            universal.index("slideView.setOptions(item.intValue, item.texts)"),
+            universal.index("slideView.setMinAllowedIndex((int) item.longValue)"),
+        )
+
+    def test_all_slide_choose_consumers_remain_audited(self):
+        expected = {
+            "ui/LinkEditActivity.java",
+            "ui/DataAutoDownloadActivity.java",
+            "ui/ProxyListActivity.java",
+            "ui/CacheControlActivity.java",
+            "ui/FluxGramStealthActivity.java",
+            "ui/ChatUsersActivity.java",
+            "ui/Components/UniversalAdapter.java",
+            "ui/Components/ClearHistoryAlert.java",
+            "ui/Components/Premium/boosts/cells/SliderCell.java",
+        }
+        consumers = {
+            path.relative_to(JAVA).as_posix()
+            for path in JAVA.rglob("*.java")
+            if path != SLIDE_CHOOSE and "new SlideChooseView(" in path.read_text()
+        }
+
+        self.assertEqual(expected, consumers)
+        sources = "\n".join((JAVA / path).read_text() for path in sorted(consumers))
+        self.assertEqual(12, sources.count("new SlideChooseView("))
 
     def test_all_seek_bar_consumers_have_explicit_global_classification(self):
         expected = {

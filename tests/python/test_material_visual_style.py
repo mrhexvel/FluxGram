@@ -273,7 +273,6 @@ class MaterialVisualStyleTest(unittest.TestCase):
             [
                 "org/telegram/messenger/ApplicationLoader.java",
                 "org/telegram/messenger/fluxgram/icons/MaterialSymbolsCatalog.java",
-                "org/telegram/ui/CacheControlActivity.java",
                 "org/telegram/ui/Components/AudioPlayerAlert.java",
                 "org/telegram/ui/Components/FluxGramFolderPreviewCell.java",
                 "org/telegram/ui/Components/FluxGramSettingsHeaderCell.java",

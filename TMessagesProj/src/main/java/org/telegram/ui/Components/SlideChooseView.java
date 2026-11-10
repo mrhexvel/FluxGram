@@ -24,6 +24,9 @@ import org.telegram.ui.ActionBar.Theme;
 
 public class SlideChooseView extends View {
 
+    private static volatile DiscreteSliderGeometry defaultDiscreteSliderGeometry;
+    private static boolean defaultDiscreteSliderGeometryInitialized;
+
     private final SeekBarAccessibilityDelegate accessibilityDelegate;
 
     private Paint paint;
@@ -60,6 +63,7 @@ public class SlideChooseView extends View {
 
     private boolean touchWasClose = false;
     private DiscreteSliderGeometry discreteSliderGeometry;
+    private boolean discreteSliderGeometryExplicit;
     private final RectF materialRect = new RectF();
     private final RectF materialCornerRect = new RectF();
     private final Path materialPath = new Path();
@@ -72,6 +76,7 @@ public class SlideChooseView extends View {
     public SlideChooseView(Context context, Theme.ResourcesProvider resourcesProvider) {
         super(context);
         this.resourcesProvider = resourcesProvider;
+        discreteSliderGeometry = defaultDiscreteSliderGeometry;
 
         paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         textPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
@@ -101,6 +106,17 @@ public class SlideChooseView extends View {
                 return selectedIndex < optionsStr.length ? optionsStr[selectedIndex] : null;
             }
         };
+    }
+
+    public static synchronized void initializeDefaultDiscreteSliderGeometry(
+            DiscreteSliderGeometry geometry
+    ) {
+        if (defaultDiscreteSliderGeometryInitialized) {
+            return;
+        }
+
+        defaultDiscreteSliderGeometry = geometry;
+        defaultDiscreteSliderGeometryInitialized = true;
     }
 
     public void setCallback(Callback callback) {
@@ -138,6 +154,11 @@ public class SlideChooseView extends View {
             }
             invalidate();
         }
+        if (!discreteSliderGeometryExplicit) {
+            setDiscreteSliderGeometryInternal(index >= 0
+                    ? null
+                    : defaultDiscreteSliderGeometry);
+        }
     }
 
     public void setDashedFrom(int from) {
@@ -145,6 +166,15 @@ public class SlideChooseView extends View {
     }
 
     public void setDiscreteSliderGeometry(DiscreteSliderGeometry geometry) {
+        discreteSliderGeometryExplicit = true;
+        setDiscreteSliderGeometryInternal(geometry);
+    }
+
+    private void setDiscreteSliderGeometryInternal(DiscreteSliderGeometry geometry) {
+        if (discreteSliderGeometry == geometry) {
+            return;
+        }
+
         discreteSliderGeometry = geometry;
         requestLayout();
         invalidate();

@@ -70,7 +70,6 @@ import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.Utilities;
-import org.telegram.messenger.fluxgram.MaterialVisualStyleRuntime;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.SimpleActionBarMenu;
@@ -116,7 +115,6 @@ import org.telegram.ui.Components.TypefaceSpan;
 import org.telegram.ui.Components.blur3.drawable.color.impl.BlurredBackgroundProviderImpl;
 import org.telegram.ui.Components.blur3.utils.Blur3Utils;
 import org.telegram.ui.Storage.CacheModel;
-import org.telegram.ui.fluxgram.MaterialControlsStyle;
 
 import me.vkryl.android.animator.BoolAnimator;
 
@@ -2538,11 +2536,6 @@ public class CacheControlActivity extends BaseFragment implements NotificationCe
                     break;
                 case VIEW_TYPE_MAX_CACHE_SIZE:
                     SlideChooseView slideChooseView2 = new SlideChooseView(mContext);
-                    slideChooseView2.setDiscreteSliderGeometry(
-                            MaterialControlsStyle.discreteSliderGeometry(
-                                    MaterialVisualStyleRuntime.getSnapshot()
-                            )
-                    );
                     view = slideChooseView2;
 
                     float totalSizeInGb = (int) (totalDeviceSize / 1024L / 1024L) / 1000.0f;
