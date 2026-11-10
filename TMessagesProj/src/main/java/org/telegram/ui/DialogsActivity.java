@@ -2112,8 +2112,6 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
             t -= dp(5 * Math.max(filterTabsVisibility, topPanelsVisibility));
             additionalPadding -= dp(5 * Math.max(filterTabsVisibility, topPanelsVisibility));
-            t += audioMiniPlayerTopPadding;
-
             final int b = calculateListViewPaddingBottom();
             if (t != topPadding || b != getPaddingBottom()) {
                 setTopGlowOffset(t);
@@ -2980,7 +2978,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         if (usesFluxGramRootDialogsAppearance()) {
             boolean hideStatus = AppearanceSettings.hidesActionBarStatus(currentAccount);
             actionBar.setTitleCentered(
-                    AppearanceSettings.centersActionBarTitle(currentAccount)
+                    !audioMiniPlayerTopActive
+                            && AppearanceSettings.centersActionBarTitle(currentAccount)
             );
             actionBar.setTitle(
                     AppearanceSettings.getActionBarTitle(currentAccount),
@@ -14661,42 +14660,127 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         }
     }
 
-    private int audioMiniPlayerTopPadding;
+    private final RectF audioMiniPlayerActionBarBounds = new RectF();
+    private final RectF audioMiniPlayerOccupiedBounds = new RectF();
+    private boolean audioMiniPlayerTopActive;
+    private int audioMiniPlayerTitleRightMargin;
 
     @Override
-    public void setAudioMiniPlayerTopPadding(int padding) {
-        if (audioMiniPlayerTopPadding == padding) {
+    public void setAudioMiniPlayerTopActive(boolean active) {
+        if (audioMiniPlayerTopActive == active) {
             return;
         }
 
-        audioMiniPlayerTopPadding = padding;
-        if (viewPages == null) {
+        audioMiniPlayerTopActive = active;
+        applyAudioMiniPlayerTitleLayout();
+    }
+
+    private void applyAudioMiniPlayerTitleLayout() {
+        if (actionBar == null) {
             return;
         }
 
-        for (ViewPage viewPage : viewPages) {
-            if (viewPage != null) {
-                viewPage.listView.requestLayout();
-            }
-        }
+        actionBar.setTitleRightMargin(
+                audioMiniPlayerTopActive ? audioMiniPlayerTitleRightMargin : 0
+        );
+        actionBar.setTitleCentered(
+                !audioMiniPlayerTopActive
+                        && AppearanceSettings.centersActionBarTitle(currentAccount)
+        );
+        actionBar.requestLayout();
     }
 
     @Override
-    public float getAudioMiniPlayerTopAnchor() {
-        if (viewPages == null || viewPages[0] == null) {
-            return -1.0f;
+    public boolean getAudioMiniPlayerTopBounds(RectF out) {
+        if (!usesFluxGramRootDialogsAppearance()
+                || fragmentView == null
+                || actionBar == null
+                || actionBar.getWidth() <= 0
+                || !ViewPositionWatcher.computeRectInParent(
+                        actionBar,
+                        fragmentView,
+                        audioMiniPlayerActionBarBounds
+                )) {
+            return false;
         }
 
-        return viewPages[0].listView.topPadding
-                - audioMiniPlayerTopPadding
-                + scrollYOffset
-                + storiesOverscroll
-                + viewPages[0].getTranslationY();
+        float leftLimit = audioMiniPlayerActionBarBounds.left + dp(12);
+        float rightLimit = audioMiniPlayerActionBarBounds.right - dp(12);
+        float titleRightBoundary = audioMiniPlayerActionBarBounds.right;
+        SimpleTextView transitionTitle = actionBar.getTitleTextView2();
+        SimpleTextView subtitle = actionBar.getSubtitleTextView();
+        if ((transitionTitle != null
+                && transitionTitle.getVisibility() == View.VISIBLE
+                && transitionTitle.getAlpha() > 0.0f)
+                || (subtitle != null
+                && subtitle.getVisibility() == View.VISIBLE
+                && subtitle.getAlpha() > 0.0f)) {
+            return false;
+        }
+
+        View menu = actionBar.getMenuView();
+        if (menu != null
+                && menu.getVisibility() == View.VISIBLE
+                && menu.getAlpha() > 0.0f
+                && ViewPositionWatcher.computeRectInParent(
+                        menu,
+                        fragmentView,
+                        audioMiniPlayerOccupiedBounds
+                )) {
+            titleRightBoundary = Math.min(
+                    titleRightBoundary,
+                    audioMiniPlayerOccupiedBounds.left
+            );
+            rightLimit = Math.min(rightLimit, audioMiniPlayerOccupiedBounds.left - dp(6));
+        }
+        if (doneItem != null
+                && doneItem.getVisibility() == View.VISIBLE
+                && doneItem.getAlpha() > 0.0f
+                && ViewPositionWatcher.computeRectInParent(
+                        doneItem,
+                        fragmentView,
+                        audioMiniPlayerOccupiedBounds
+                )) {
+            titleRightBoundary = Math.min(
+                    titleRightBoundary,
+                    audioMiniPlayerOccupiedBounds.left
+            );
+            rightLimit = Math.min(rightLimit, audioMiniPlayerOccupiedBounds.left - dp(6));
+        }
+
+        float center = audioMiniPlayerActionBarBounds.centerX();
+        float side = Math.min(center - leftLimit, rightLimit - center);
+        float width = Math.min(dp(220), side * 2.0f);
+        if (width < dp(148)) {
+            return false;
+        }
+
+        float left = center - width / 2.0f;
+        float top = audioMiniPlayerActionBarBounds.top
+                + (actionBar.getOccupyStatusBar() ? AndroidUtilities.statusBarHeight : 0)
+                + (ActionBar.getCurrentActionBarHeight() - dp(44)) / 2.0f;
+        out.set(left, top, left + width, top + dp(44));
+
+        int titleRightMargin = Math.max(
+                0,
+                Math.round(titleRightBoundary - dp(16) - (left - dp(8)))
+        );
+        if (audioMiniPlayerTitleRightMargin != titleRightMargin) {
+            audioMiniPlayerTitleRightMargin = titleRightMargin;
+            if (audioMiniPlayerTopActive) {
+                applyAudioMiniPlayerTitleLayout();
+            }
+        }
+        return true;
     }
 
     @Override
     public float getAudioMiniPlayerTopVisibility() {
         float visibility = 1.0f - Utilities.clamp(searchAnimationProgress, 1.0f, 0.0f);
+        visibility *= 1.0f - Math.max(
+                progressToActionMode,
+                animatorActionModeVisible.getFloatValue()
+        );
         if (rightSlidingDialogContainer != null && rightSlidingDialogContainer.hasFragment()) {
             visibility *= 1.0f - Utilities.clamp(
                     rightSlidingDialogContainer.openedProgress,

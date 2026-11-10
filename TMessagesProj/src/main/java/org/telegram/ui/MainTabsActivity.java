@@ -136,6 +136,10 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
     private DockedNavigationDrawable dockedNavigationBackground;
     private View fadeView;
     private MaterialAudioMiniPlayer audioMiniPlayer;
+    private final RectF audioMiniPlayerTopBounds = new RectF();
+    private final RectF audioMiniPlayerResolvedTopBounds = new RectF();
+    private final RectF audioMiniPlayerFragmentBounds = new RectF();
+    private boolean audioMiniPlayerHasTopBounds;
     private final ViewTreeObserver.OnPreDrawListener audioMiniPlayerAnchorListener = () -> {
         updateAudioMiniPlayerTopAnchor();
         return true;
@@ -1272,12 +1276,12 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
 
         }
 
-        default void setAudioMiniPlayerTopPadding(int padding) {
-
+        default boolean getAudioMiniPlayerTopBounds(RectF out) {
+            return false;
         }
 
-        default float getAudioMiniPlayerTopAnchor() {
-            return -1.0f;
+        default void setAudioMiniPlayerTopActive(boolean active) {
+
         }
 
         default float getAudioMiniPlayerTopVisibility() {
@@ -1549,32 +1553,49 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         View page = fragmentView != null && fragmentView.getParent() instanceof View
                 ? (View) fragmentView.getParent()
                 : null;
-        float shift = 0.0f;
         float zone = 0.0f;
         if (page != null
                 && page.getParent() == viewPager
                 && page.getVisibility() == View.VISIBLE
                 && viewPager.getMeasuredWidth() > 0) {
-            shift = page.getTranslationX();
             zone = MathUtils.clamp(
-                    1.0f - Math.abs(shift) / viewPager.getMeasuredWidth(),
+                    1.0f - Math.abs(page.getTranslationX()) / viewPager.getMeasuredWidth(),
                     0.0f,
                     1.0f
             );
         }
 
-        float anchor = -1.0f;
         float visibility = 1.0f;
+        boolean resolvedTopBounds = false;
         if (chats instanceof TabFragmentDelegate) {
             TabFragmentDelegate delegate = (TabFragmentDelegate) chats;
-            anchor = delegate.getAudioMiniPlayerTopAnchor();
             visibility = delegate.getAudioMiniPlayerTopVisibility();
+            resolvedTopBounds = visibility >= 0.99f
+                    && delegate.getAudioMiniPlayerTopBounds(audioMiniPlayerTopBounds);
+            if (resolvedTopBounds) {
+                audioMiniPlayerHasTopBounds = true;
+            } else if (visibility >= 0.99f) {
+                audioMiniPlayerHasTopBounds = false;
+                audioMiniPlayerTopBounds.setEmpty();
+            }
         }
-        if (anchor < 0.0f) {
-            anchor = statusBarHeight + ActionBar.getCurrentActionBarHeight();
+        boolean fragmentPositionReady = fragmentView != null
+                && ViewPositionWatcher.computeRectInParent(
+                        fragmentView,
+                        contentView,
+                        audioMiniPlayerFragmentBounds
+                );
+        if (audioMiniPlayerHasTopBounds && fragmentPositionReady) {
+            audioMiniPlayerResolvedTopBounds.set(audioMiniPlayerTopBounds);
+            audioMiniPlayerResolvedTopBounds.offset(
+                    audioMiniPlayerFragmentBounds.left,
+                    audioMiniPlayerFragmentBounds.top
+            );
+        } else {
+            audioMiniPlayerResolvedTopBounds.setEmpty();
         }
 
-        audioMiniPlayer.setTopState(anchor, zone, shift, visibility);
+        audioMiniPlayer.setTopState(audioMiniPlayerResolvedTopBounds, zone, visibility);
     }
 
     private void updateAudioMiniPlayerInsets() {
@@ -1598,7 +1619,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
                 audioMiniPlayer.getVisibleOffset(chats),
                 audioMiniPlayer.getTargetOffset(chats)
         );
-        delegate.setAudioMiniPlayerTopPadding(audioMiniPlayer.getTargetTopOffset(chats));
+        delegate.setAudioMiniPlayerTopActive(audioMiniPlayer.isTopTarget(chats));
     }
 
     @Override
