@@ -495,6 +495,7 @@
     <string name="FluxGramMaterialSurfaces">Шапка настроек FluxGram</string>
     <string name="FluxGramMaterialLists">Фильтры папок и плагинов</string>
     <string name="FluxGramMaterialProgress">Индикатор установки плагина</string>
+    <string name="FluxGramMaterialPlayer">Музыкальный плеер</string>
     <string name="FluxGramMaterialSaveError">Не удалось сохранить выбор Material Design 3.</string>
     <string name="FluxGramFontMode">Режим шрифта</string>
     <string name="FluxGramFontModeInfo">Настройка общая для всех аккаунтов. Предпросмотр показывает сохранённый выбор. Полностью перезапустите FluxGram, чтобы применить его к интерфейсу.</string>

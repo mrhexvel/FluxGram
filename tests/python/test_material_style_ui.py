@@ -50,6 +50,7 @@ class MaterialStyleUiTest(unittest.TestCase):
             "SURFACES",
             "LISTS",
             "PROGRESS",
+            "PLAYER",
         ):
             self.assertIn(f"MaterialStylePolicy.Module.{module}", supported)
         for module in ("MOTION", "CHAT_CHROME", "MESSAGE_BUBBLES", "PROFILE"):
@@ -122,6 +123,7 @@ class MaterialStyleUiTest(unittest.TestCase):
             "FluxGramMaterialSurfaces",
             "FluxGramMaterialLists",
             "FluxGramMaterialProgress",
+            "FluxGramMaterialPlayer",
         )
 
         for key in keys:

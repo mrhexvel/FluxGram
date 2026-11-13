@@ -11537,6 +11537,7 @@
     <string name="FluxGramMaterialSurfaces">FluxGram settings header</string>
     <string name="FluxGramMaterialLists">Folder and plugin filters</string>
     <string name="FluxGramMaterialProgress">Plugin installation indicator</string>
+    <string name="FluxGramMaterialPlayer">Music player</string>
     <string name="FluxGramMaterialSaveError">Could not save the Material Design 3 selection.</string>
     <string name="FluxGramFontMode">Font mode</string>
     <string name="FluxGramFontModeInfo">This setting is global for all accounts. The preview shows the saved selection. Fully restart FluxGram to apply it to the interface.</string>

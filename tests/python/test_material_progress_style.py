@@ -145,7 +145,7 @@ class MaterialProgressStyleTest(unittest.TestCase):
 
                         LinearProgressGeometry linearGeometry =
                                 MaterialProgressStyle.linearGeometry(style(
-                                        MaterialStylePolicy.Module.PROGRESS));
+                                        MaterialStylePolicy.Module.PLAYER));
                         require(linearGeometry != null);
                         require(linearGeometry.getTrackThicknessDp() == 4);
                         require(linearGeometry.getTrackGapDp() == 6);
@@ -158,6 +158,8 @@ class MaterialProgressStyleTest(unittest.TestCase):
                         require(linearGeometry.getTouchTargetHeightDp() == 48);
                         require(MaterialProgressStyle.linearGeometry(style(
                                 MaterialStylePolicy.Module.CONTROLS)) == null);
+                        require(MaterialProgressStyle.linearGeometry(style(
+                                MaterialStylePolicy.Module.PROGRESS)) == null);
 
                         LinearProgressGeometry.Resolved linearResolved =
                                 new LinearProgressGeometry.Resolved();
@@ -177,7 +179,7 @@ class MaterialProgressStyleTest(unittest.TestCase):
 
                         MiniPlayerGeometry miniPlayerGeometry =
                                 MaterialProgressStyle.miniPlayerGeometry(style(
-                                         MaterialStylePolicy.Module.PROGRESS));
+                                         MaterialStylePolicy.Module.PLAYER));
                         require(miniPlayerGeometry != null);
                         require(miniPlayerGeometry.getHeightDp() == 52);
                         require(miniPlayerGeometry.getHorizontalMarginDp() == 12);
@@ -197,7 +199,11 @@ class MaterialProgressStyleTest(unittest.TestCase):
                         require(playbackGeometry.getWaveAmplitudeDp() == 1.3f);
                         require(playbackGeometry.getWavelengthDp() == 10.5f);
                         require(MaterialProgressStyle.miniPlayerGeometry(style(
-                                 MaterialStylePolicy.Module.CONTROLS)) == null);
+                                MaterialStylePolicy.Module.CONTROLS)) == null);
+                        require(MaterialProgressStyle.miniPlayerGeometry(style(
+                                MaterialStylePolicy.Module.PROGRESS)) == null);
+                        require(MaterialProgressStyle.circularGeometry(style(
+                                MaterialStylePolicy.Module.PLAYER)) == null);
 
                         CircularProgressGeometry.Resolved resolved =
                                 new CircularProgressGeometry.Resolved();
@@ -281,6 +287,7 @@ class MaterialProgressStyleTest(unittest.TestCase):
         static_drawable = STATIC_DRAWABLE.read_text()
 
         self.assertIn("MaterialStylePolicy.Module.PROGRESS", adapter)
+        self.assertIn("MaterialStylePolicy.Module.PLAYER", adapter)
         self.assertIn("MaterialVisualStyle.ShapeRole.FULL", adapter)
         self.assertNotIn("MaterialStyleSettings", adapter)
         self.assertNotIn("Theme", adapter)

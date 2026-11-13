@@ -7,7 +7,8 @@ import java.util.Objects;
 import java.util.Set;
 
 public final class MaterialStylePolicy {
-    private static final String FORMAT_VERSION = "1";
+    private static final String FORMAT_VERSION = "2";
+    private static final String LEGACY_FORMAT_VERSION = "1";
     private static final int MAX_ENCODED_LENGTH = 64;
     private static final long LEGACY_DYNAMIC_COLORS_MASK = 1L;
     private static final long KNOWN_MODULE_MASK = LEGACY_DYNAMIC_COLORS_MASK | moduleMask(
@@ -78,18 +79,30 @@ public final class MaterialStylePolicy {
 
         String[] fields = encoded.split(":", -1);
 
-        if (fields.length != 3 || !FORMAT_VERSION.equals(fields[0])) {
+        if (fields.length != 3
+                || (!FORMAT_VERSION.equals(fields[0])
+                && !LEGACY_FORMAT_VERSION.equals(fields[0]))) {
             return defaults();
         }
 
         Preset preset = parsePreset(fields[1]);
         Long moduleMask = parseModuleMask(fields[2]);
 
-        if (preset == null || moduleMask == null || (moduleMask & ~KNOWN_MODULE_MASK) != 0) {
+        long knownModuleMask = FORMAT_VERSION.equals(fields[0])
+                ? KNOWN_MODULE_MASK & ~LEGACY_DYNAMIC_COLORS_MASK
+                : KNOWN_MODULE_MASK & ~(1L << Module.PLAYER.bit);
+
+        if (preset == null || moduleMask == null || (moduleMask & ~knownModuleMask) != 0) {
             return defaults();
         }
 
-        return new State(preset, modulesFromMask(moduleMask));
+        EnumSet<Module> modules = modulesFromMask(moduleMask);
+
+        if (LEGACY_FORMAT_VERSION.equals(fields[0]) && modules.contains(Module.PROGRESS)) {
+            modules.add(Module.PLAYER);
+        }
+
+        return new State(preset, modules);
     }
 
     private static State normalizeState(State state) {
@@ -129,7 +142,8 @@ public final class MaterialStylePolicy {
                     Module.CONTROLS,
                     Module.SURFACES,
                     Module.LISTS,
-                    Module.PROGRESS
+                    Module.PROGRESS,
+                    Module.PLAYER
             );
         }
 
@@ -222,6 +236,7 @@ public final class MaterialStylePolicy {
         SURFACES(4),
         LISTS(5),
         PROGRESS(6),
+        PLAYER(11),
         MOTION(7),
         CHAT_CHROME(8),
         MESSAGE_BUBBLES(9),

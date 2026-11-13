@@ -64,7 +64,8 @@ class MaterialStylePolicyTest(unittest.TestCase):
                                 Module.CONTROLS,
                                 Module.SURFACES,
                                 Module.LISTS,
-                                Module.PROGRESS
+                                Module.PROGRESS,
+                                Module.PLAYER
                         )));
                         require(!balancedSnapshot.isRequested(Module.MOTION));
                         require(!balancedSnapshot.isRequested(Module.CHAT_CHROME));
@@ -116,7 +117,8 @@ class MaterialStylePolicyTest(unittest.TestCase):
                                 Module.NAVIGATION,
                                 Module.SURFACES,
                                 Module.LISTS,
-                                Module.PROGRESS
+                                Module.PROGRESS,
+                                Module.PLAYER
                         )));
 
                         State advancedEdited = MaterialStylePolicy.setModuleEnabled(
@@ -142,7 +144,23 @@ class MaterialStylePolicyTest(unittest.TestCase):
                                 Module.MESSAGE_BUBBLES,
                                 Module.PROFILE
                         )));
-                        require(MaterialStylePolicy.encode(decoded).equals("1:3:600"));
+                        require(MaterialStylePolicy.encode(decoded).equals("2:3:600"));
+
+                        State progress = MaterialStylePolicy.decode("1:3:40");
+                        require(progress.getCustomModules().equals(setOf(
+                                Module.PROGRESS,
+                                Module.PLAYER
+                        )));
+                        require(MaterialStylePolicy.encode(progress).equals("2:3:840"));
+
+                        State independentProgress = MaterialStylePolicy.decode("2:3:40");
+                        require(independentProgress.getCustomModules().equals(setOf(
+                                Module.PROGRESS
+                        )));
+                        State independentPlayer = MaterialStylePolicy.decode("2:3:800");
+                        require(independentPlayer.getCustomModules().equals(setOf(
+                                Module.PLAYER
+                        )));
                     }
 
                     private static void checkCodec() {
@@ -160,9 +178,11 @@ class MaterialStylePolicyTest(unittest.TestCase):
 
                         String[] invalid = {
                                 "",
-                                "2:3:0",
+                                "3:3:0",
                                 "1:4:0",
                                 "1:3:800",
+                                "2:3:1",
+                                "2:3:1000",
                                 "1:3:-1",
                                 "1:3:0:extra",
                                 "1:03:0",
@@ -349,12 +369,12 @@ class MaterialStylePolicyTest(unittest.TestCase):
                             }
                         };
 
-                        preferences.values.put(KEY, "2:3:0");
+                        preferences.values.put(KEY, "3:3:0");
                         State fallback = MaterialStyleSettings.getState(context);
                         require(fallback.equals(MaterialStylePolicy.defaults()));
                         require(preferences.commits == 0);
                         require(preferences.applies == 0);
-                        require("2:3:0".equals(preferences.values.get(KEY)));
+                        require("3:3:0".equals(preferences.values.get(KEY)));
 
                         preferences.values.put(KEY, Integer.valueOf(7));
                         fallback = MaterialStyleSettings.getState();

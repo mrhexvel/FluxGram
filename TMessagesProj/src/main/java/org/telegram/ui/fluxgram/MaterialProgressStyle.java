@@ -52,11 +52,11 @@ public final class MaterialProgressStyle {
     }
 
     public static LinearProgressGeometry linearGeometry(MaterialVisualStyle.Snapshot style) {
-        return usesMaterialProgress(style) ? LINEAR_GEOMETRY : null;
+        return usesMaterialPlayer(style) ? LINEAR_GEOMETRY : null;
     }
 
     public static MiniPlayerGeometry miniPlayerGeometry(MaterialVisualStyle.Snapshot style) {
-        return usesMaterialProgress(style) ? MINI_PLAYER_GEOMETRY : null;
+        return usesMaterialPlayer(style) ? MINI_PLAYER_GEOMETRY : null;
     }
 
     private static boolean usesMaterialProgress(MaterialVisualStyle.Snapshot style) {
@@ -66,6 +66,19 @@ public final class MaterialProgressStyle {
 
         MaterialVisualStyle.Shape shape = style.getShape(
                 MaterialStylePolicy.Module.PROGRESS,
+                MaterialVisualStyle.ShapeRole.FULL
+        );
+
+        return shape != null && shape.isFull();
+    }
+
+    private static boolean usesMaterialPlayer(MaterialVisualStyle.Snapshot style) {
+        if (style == null || !style.isEnabled(MaterialStylePolicy.Module.PLAYER)) {
+            return false;
+        }
+
+        MaterialVisualStyle.Shape shape = style.getShape(
+                MaterialStylePolicy.Module.PLAYER,
                 MaterialVisualStyle.ShapeRole.FULL
         );
 

@@ -185,15 +185,16 @@ public class FluxGramSettingsActivity extends BaseFragment {
     private static final int MATERIAL_STYLE_EXPAND = 94;
     private static final int MATERIAL_STYLE_MODULE_FIRST = 96;
     private static final int MATERIAL_STYLE_MODULE_LAST = MATERIAL_STYLE_MODULE_FIRST
-            + MaterialStylePolicy.Module.PROGRESS.ordinal();
-    private static final int ROOT_NAVIGATION = 102;
+            + MaterialStylePolicy.Module.PLAYER.ordinal();
+    private static final int ROOT_NAVIGATION = MATERIAL_STYLE_MODULE_LAST + 1;
     private static final MaterialStylePolicy.Module[] MATERIAL_STYLE_MODULES = {
             MaterialStylePolicy.Module.MATERIAL_SYMBOLS,
             MaterialStylePolicy.Module.NAVIGATION,
             MaterialStylePolicy.Module.CONTROLS,
             MaterialStylePolicy.Module.SURFACES,
             MaterialStylePolicy.Module.LISTS,
-            MaterialStylePolicy.Module.PROGRESS
+            MaterialStylePolicy.Module.PROGRESS,
+            MaterialStylePolicy.Module.PLAYER
     };
     private static final int DOWNLOADS_DIRECTORY_REQUEST = 1001;
 
@@ -2082,6 +2083,8 @@ public class FluxGramSettingsActivity extends BaseFragment {
                 return R.string.FluxGramMaterialLists;
             case PROGRESS:
                 return R.string.FluxGramMaterialProgress;
+            case PLAYER:
+                return R.string.FluxGramMaterialPlayer;
             default:
                 throw new IllegalArgumentException();
         }
